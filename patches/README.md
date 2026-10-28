@@ -1,5 +1,11 @@
 # Patch experimental do codegen ReXGlue
 
+O patch de vídeo `rexglue-spatial-fsr-vsync.patch` habilita FSR 1/CAS espaciais,
+VSync do monitor e tamanho físico da janela. Use `scripts/build-video-sdk.ps1`
+para compilar uma cópia isolada, sem modificar o SDK de origem. Consulte
+[configuração, testes e limitações](../docs/VIDEO.md). Esse patch é separado
+da correção de codegen abaixo.
+
 `rexglue-snoopy-fallback-v2.patch` registra o diff atual de `src/codegen/builders/context.cpp` no SDK experimental utilizado.
 
 - Commit base do SDK: `7236893039fac7e6ce8a21351a430933899f9320`.

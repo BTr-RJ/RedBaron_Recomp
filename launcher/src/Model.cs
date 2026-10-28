@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -33,6 +34,8 @@ namespace RedBaron {
         public int Anisotropic { get; set; }
         public int Adapter { get; set; }
         public int Scale { get; set; }
+        public int Fps { get; set; }
+        public int FsrSharpness { get; set; }
         public string Antialiasing { get; set; }
         public string Upscaling { get; set; }
         public int KeyboardPlayer { get; set; }
@@ -41,6 +44,7 @@ namespace RedBaron {
             Version = 1; ShowLauncher = true; PlayerName = "Player";
             Resolution = "1280x720"; Fullscreen = true; Vsync = true;
             Anisotropic = 3; Adapter = -1; Scale = 1;
+            FsrSharpness = 90;
             Antialiasing = "none"; Upscaling = "bilinear"; KeyboardPlayer = 0;
             Players = Enumerable.Range(0, 4).Select(i => new Player()).ToList();
         }
@@ -73,10 +77,12 @@ namespace RedBaron {
                 s.Resolution = t.String("resolution", s.Resolution);
                 if (String.IsNullOrEmpty(s.Resolution)) s.Resolution = "1280x720";
                 s.Fullscreen = t.Bool("fullscreen", s.Fullscreen);
-                s.Vsync = t.Bool("vsync", s.Vsync);
+                s.Vsync = t.Bool("present_vsync", s.Vsync);
                 s.Anisotropic = t.Int("anisotropic_override", s.Anisotropic);
                 s.Adapter = t.Int("d3d12_adapter", s.Adapter);
                 s.Scale = t.Int("resolution_scale", s.Scale);
+                s.Fps = t.Int("redbaron_fps", s.Fps);
+                s.FsrSharpness = (int)Math.Round(100 - 50 * t.Number("present_fsr_sharpness_reduction", (100-s.FsrSharpness)/50.0));
                 s.Antialiasing = t.String("swap_post_effect", s.Antialiasing);
                 s.Upscaling = t.String("present_effect", s.Upscaling);
                 s.KeyboardPlayer = t.Bool("mnk_mode", true) ? t.Int("redbaron_keyboard_player", 0) : -1;
@@ -98,9 +104,9 @@ namespace RedBaron {
         public void Validate() {
             if (!Regex.IsMatch(PlayerName ?? "", @"^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,13}[A-Za-z0-9_-])?$"))
                 throw new InvalidDataException("Name: use 1–15 characters; letters A–Z, numbers, internal spaces, hyphens or underscores.");
-            if (!new[]{"1280x720","1920x1080","2560x1440","3840x2160"}.Contains(Resolution))
+            if (!Resolutions.Contains(Resolution))
                 throw new InvalidDataException("Choose a resolution from the list.");
-            if (KeyboardPlayer < -1 || KeyboardPlayer > 4 || Anisotropic < -1 || Anisotropic > 5 || Scale < 1 || Scale > 3)
+            if (KeyboardPlayer < -1 || KeyboardPlayer > 4 || Anisotropic < -1 || Anisotropic > 5 || Scale < 1 || Scale > 6 || FsrSharpness < 0 || FsrSharpness > 100 || !new[]{0,30,60,90,120}.Contains(Fps))
                 throw new InvalidDataException("A graphics or input setting is outside the allowed range.");
             var devices = new HashSet<string>();
             for (int p = 0; p < 4; p++) {
@@ -126,7 +132,14 @@ namespace RedBaron {
             var t = new Toml(original);
             var values = new Dictionary<string,string> {
                 {"resolution",Json.Quote(Resolution)}, {"fullscreen", Bool(Fullscreen)},
-                {"vsync", Bool(Vsync)}, {"anisotropic_override", Anisotropic.ToString()},
+                // The guest vblank timer and host monitor synchronization are independent.
+                {"vsync", "true"}, {"present_vsync", Bool(Vsync)}, {"anisotropic_override", Anisotropic.ToString()},
+                {"resolution_scale", Scale.ToString()}, {"draw_resolution_scale_x",Scale.ToString()}, {"draw_resolution_scale_y",Scale.ToString()},
+                {"window_width", Resolution.Split('x')[0]}, {"window_height", Resolution.Split('x')[1]},
+                {"window_size_in_physical_pixels", "true"},
+                // Keep the title's original 16:9 layout; scale its render targets separately.
+                {"video_mode_width","1280"}, {"video_mode_height","720"},
+                {"present_fsr_sharpness_reduction", ((100-FsrSharpness)/50.0).ToString("0.00",CultureInfo.InvariantCulture)},
                 {"d3d12_adapter",Adapter.ToString()},
                 {"swap_post_effect",Json.Quote(Antialiasing)}, {"present_effect",Json.Quote(Upscaling)},
                 {"render_target_path_d3d12","\"rov\""}, {"input_backend","\"sdl\""},
@@ -139,6 +152,7 @@ namespace RedBaron {
             return t.Patch(values);
         }
         static string Bool(bool value) { return value ? "true" : "false"; }
+        public static readonly string[] Resolutions = {"1280x720","1600x900","1920x1080","2560x1440","3440x1440","3840x2160","5120x1440","5120x2880","7680x4320"};
     }
 
     public static class Actions {
@@ -199,6 +213,7 @@ namespace RedBaron {
             throw new InvalidDataException("Invalid TOML string for " + key);
         }
         public int Int(string key,int fallback) { string raw; return root.TryGetValue(key,out raw) ? Int32.Parse(raw.Split('#')[0].Trim()) : fallback; }
+        public double Number(string key,double fallback) { string raw; return root.TryGetValue(key,out raw) ? Double.Parse(raw.Split('#')[0].Trim(),CultureInfo.InvariantCulture) : fallback; }
         public bool Bool(string key,bool fallback) { string raw; return root.TryGetValue(key,out raw) ? Boolean.Parse(raw.Split('#')[0].Trim()) : fallback; }
         public string Patch(Dictionary<string,string> values) {
             var pending = new Dictionary<string,string>(values);

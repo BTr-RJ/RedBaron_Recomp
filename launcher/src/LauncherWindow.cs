@@ -29,6 +29,7 @@ namespace RedBaron {
         bool loading=true, dirty=false, probing=false;
         int playerIndex=0;
         Binding capture;
+        WindowLayout layout;
         T Get<T>(string name) where T:FrameworkElement {return (T)window.FindName(name);}
         ComboBox Combo(string name) {return Get<ComboBox>(name);}
         TextBox Text(string name) {return Get<TextBox>(name);}
@@ -53,16 +54,25 @@ namespace RedBaron {
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attr,ref int value,int size);
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
-            window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);};
+            layout=new WindowLayout(window,Button("ToggleFullscreen"));
+            window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);layout.Center();};
+            Button("ToggleFullscreen").Click+=(sender,e)=>layout.Toggle();
+            Button("CloseLauncher").Click+=(sender,e)=>window.Close();
+            window.PreviewKeyDown+=(sender,e)=>{
+                if(capture==null && (e.Key==Key.F11 || (e.Key==Key.Escape && layout.Fullscreen))) {layout.Toggle();e.Handled=true;}
+            };
             ConfigureGrid();
             Choices("Player",Enumerable.Range(1,4).Select(i=>new Choice("Player "+i,i-1)),0);
             Choices("KeyboardPlayer",new[]{new Choice("Share with player 1",0),new Choice("Disabled",-1),new Choice("Exclusive · player 1",1),new Choice("Exclusive · player 2",2),new Choice("Exclusive · player 3",3),new Choice("Exclusive · player 4",4)},s.KeyboardPlayer);
-            Choices("Resolution",new[]{new Choice("1280 × 720 · 720p","1280x720"),new Choice("1920 × 1080 · 1080p","1920x1080"),new Choice("2560 × 1440 · 1440p","2560x1440"),new Choice("3840 × 2160 · 4K","3840x2160")},s.Resolution);
-            Choices("DisplayMode",new[]{new Choice("Fullscreen",1),new Choice("Windowed",0)},s.Fullscreen?1:0);
+            Choices("Resolution",Settings.Resolutions.Select(r=>new Choice(r.Replace("x"," × "),r)),s.Resolution);
+            Choices("DisplayMode",new[]{new Choice("Borderless fullscreen",1),new Choice("Windowed",0)},s.Fullscreen?1:0);
+            Choices("RenderScale",Enumerable.Range(1,6).Select(i=>new Choice(i+"× · "+(1280*i)+" × "+(720*i),i)),s.Scale);
+            Choices("FsrSharpness",new[]{new Choice("Soft",0),new Choice("Medium",50),new Choice("Sharp (default)",90),new Choice("Maximum",100)},s.FsrSharpness);
             Choices("Anisotropic",new[]{new Choice("Game default",-1),new Choice("Off",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
             ApplySettings();
             foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
-            foreach(var name in new[]{"Resolution","DisplayMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
+            foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
+            Combo("Upscaling").SelectionChanged+=(sender,e)=>{Combo("FsrSharpness").IsEnabled=Val(Combo("Upscaling"))=="fsr";};
             foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
             Combo("Player").SelectionChanged+=(sender,e)=>{if(loading)return;CommitGrid();playerIndex=Number(Combo("Player"));ShowPlayer();};
             Combo("Device").SelectionChanged+=(sender,e)=>{if(loading)return;settings.Players[playerIndex].Device=Val(Combo("Device"));Changed();};
@@ -97,6 +107,7 @@ namespace RedBaron {
             Text("PlayerName").Text=settings.PlayerName;
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
+            Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);
             Select("Anisotropic",settings.Anisotropic);Select("KeyboardPlayer",settings.KeyboardPlayer);
             Label("HeaderStatus").Text=File.Exists(settings.Exe)?"Installation found":"Installation required";
             Label("InstallState").Text=File.Exists(settings.Exe)?"Current installation: "+settings.Root:"Select the source and destination folders to begin.";
@@ -138,6 +149,7 @@ namespace RedBaron {
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
             settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;settings.Vsync=Check("Vsync").IsChecked==true;
             settings.Resolution=Val(Combo("Resolution"));settings.Fullscreen=Number(Combo("DisplayMode"))==1;
+            settings.Scale=Number(Combo("RenderScale"));settings.Fps=Number(Combo("FrameRate"));settings.FsrSharpness=Number(Combo("FsrSharpness"));
             settings.Anisotropic=Number(Combo("Anisotropic"));settings.KeyboardPlayer=Number(Combo("KeyboardPlayer"));
             settings.Antialiasing=Val(Combo("Antialiasing"));settings.Upscaling=Val(Combo("Upscaling"));settings.Adapter=Number(Combo("Gpu"));
         }
@@ -160,9 +172,11 @@ namespace RedBaron {
                 bool previous=loading;loading=true;
                 var gpus=new List<Choice>{new Choice("Automatic (recommended)",-1)};gpus.AddRange(caps.gpus.Select(g=>new Choice(g.name,g.index)));Choices("Gpu",gpus,settings.Adapter);
                 var aa=new[]{new Choice("Off","none"),new Choice("FXAA","fxaa",caps.Supports("swap_post_effect","fxaa")),new Choice("FXAA extreme","fxaa_extreme",caps.Supports("swap_post_effect","fxaa_extreme"))};Choices("Antialiasing",aa,settings.Antialiasing);
-                var effects=new[]{new Choice("Default · bilinear","bilinear"),new Choice("FSR 1","fsr",caps.Supports("present_effect","fsr")),new Choice("FSR 2","fsr2",caps.Supports("present_effect","fsr2")),new Choice("FSR 3","fsr3",caps.Supports("present_effect","fsr3")),new Choice("DLSS · not integrated","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
+                var effects=new[]{new Choice("Default · bilinear","bilinear"),new Choice("AMD FSR 1 · spatial","fsr",caps.Supports("present_effect","fsr")),new Choice("AMD CAS · sharpen","cas",caps.Supports("present_effect","cas")),new Choice("DLSS · not integrated","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
+                Choices("FrameRate",new[]{new Choice("Game default",0),new Choice("30 FPS · experimental",30,false),new Choice("60 FPS · experimental",60,false),new Choice("90 FPS · experimental",90,false),new Choice("120 FPS · experimental",120,false)},settings.Fps);
+                Check("Vsync").IsEnabled=caps.flags.ContainsKey("present_vsync");
                 Label("GpuSummary").Text=caps.gpus.Count>0?String.Join(" · ",caps.gpus.Select(g=>g.name)):"No physical GPU detected.";
-                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr")?"FSR is available in this runtime. DLSS is not integrated yet.":"This runtime does not include FSR. DLSS is not integrated yet. Use FXAA to smooth edges.";
+                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr")?"FSR 1 reconstructs the final image, including the HUD. Choose a render scale below your output resolution. DLSS and temporal FSR are not integrated yet.":"Update the runtime to enable FSR 1, CAS and monitor VSync. DLSS is not integrated yet.";
                 ShowPlayer();loading=previous;
                 Status(dirty?"Unsaved changes.":"Ready. "+caps.devices.Count+" controller(s) detected.");
                 if(!String.IsNullOrEmpty(caps.inputError)) Status("Controller detection failed: "+caps.inputError,true);

@@ -11,7 +11,7 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 | Tab | Available features |
 |---|---|
 | Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut |
-| Video | GPU, 720p/1080p/1440p/4K resolution, fullscreen/windowed mode, VSync, anisotropic filtering and FXAA; options are checked against the installed runtime |
+| Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS and FSR sharpness; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
 | Online | Validated name saved for future integration; UPnP remains disabled while online play is postponed |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
@@ -20,7 +20,9 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 
 The game recognizes only player 1. Configuring four input profiles does not enable four-player matches. One keyboard/mouse can share player 1 or be reserved for one profile at a time. Other profiles remain saved for later use. Actions follow the **FlyingAce** preset; in-game prompts still use Xbox labels. Mouse motion does not control the camera.
 
-The installed runtime does not include FSR, and DLSS has not been integrated. These choices remain unavailable even if the GPU supports them in other games. Additional FPS limiting/unlocking is not implemented. Higher resolutions still need visual testing during gameplay. FXAA operates independently of upscaling.
+The updated runtime includes spatial FSR 1 and CAS. DLSS and temporal FSR are not integrated. High-FPS gameplay remains under investigation; its options are disabled. Higher resolutions still need mission testing. FXAA operates independently of upscaling. See [video behavior, SDK patch, measurements and remaining work](../docs/VIDEO.md).
+
+The launcher starts centered in the monitor's work area and fits smaller screens. Fullscreen/Restore (F11) and Close are available in its header; Esc exits fullscreen. These controls affect the launcher window. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
 
 Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name stays in launcher settings; it does not change the XAM profile or connect to Xbox Live. No router ports are opened. Sound and Achievements tabs remain planned.
 
@@ -29,6 +31,8 @@ Windows-owned folder dialogs and external tool diagnostics may follow the instal
 ## Installation
 
 Provide an **already extracted folder** containing `default.xex`, `Config` and `Packages`, a compatible experimental SDK, and CMake, Ninja and Clang on PATH. STFS extraction and automatic tool installation are not included.
+
+The Video tab requires the updated SDK patch. Build an isolated SDK installation with `scripts/build-video-sdk.ps1`, then select its output in Build tools. The local development SDK has already been updated. This launcher is not yet the completed official installer and has not been published in Releases.
 
 The launcher embeds authored port source/configuration files and the installer script. It does not embed the SDK, XEX, game assets, generated game C++ or saves. Code is generated locally, and runtime DLLs are copied from the SDK you provide. Installation rejects occupied destinations, linked source/destination paths and paths that overlap the source or SDK.
 
