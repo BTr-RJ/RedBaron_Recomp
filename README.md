@@ -19,12 +19,13 @@ O mapeamento atual é **referencial e personalizável**. O launcher planejado te
 |---|---|
 | `port/src` | Inicialização e ajustes específicos do jogo |
 | `port/config` | Configuração padrão, guia de controles e base SDL com licença |
-| `port/generated` | Código recompilado e integração CMake do checkpoint original |
+| `port/generated/rexglue.cmake` | Integração CMake do toolkit, sem código derivado do jogo |
 | `port/*.toml` | Manifesto e correções de agrupamento de funções |
 | `patches` | Patch do codegen do SDK para os saltos entre chunks |
 | `docs` | Estado validado, limitações e planejamento |
+| `scripts` | Preparação/build local e auditoria do conteúdo versionado |
 
-Dados do jogo, SDK instalado, builds, saves, caches, logs e backups permanecem locais. O histórico original foi preservado; novos commits deixam de rastrear cópias `.bak` e metadados transitórios do codegen.
+O GitHub não distribui o jogo: XEX, assets, ícones extraídos e C++ gerado a partir do XEX ficam apenas na máquina do usuário. SDK instalado, builds, saves, caches, logs e backups também são locais. O histórico publicado é filtrado para excluir fontes derivados, ícones e cópias antigas desses arquivos; o histórico original completo fica em backup local.
 
 ## Compilar
 
@@ -38,16 +39,15 @@ RedBaron_Recomp/
   build_cpp_release/    # gerado pelo CMake
 ```
 
-Na raiz do projeto, em PowerShell, com as ferramentas no PATH:
+Forneça seus dados extraídos em `game/` e instale o SDK em `sdk_experimental/`. Na raiz do projeto, em PowerShell, com as ferramentas no PATH:
 
 ```powershell
-cmake -S port -B build_cpp_release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -Drexglue_DIR="$PWD/sdk_experimental/lib/cmake/rexglue"
-cmake --build build_cpp_release --target snoopyflyingace --parallel 4
-Copy-Item sdk_experimental/bin/rexruntime.dll build_cpp_release/
-Copy-Item sdk_experimental/bin/rexgpu-xenos.dll build_cpp_release/
+.\scripts\build.ps1
 ```
 
-O build executa o codegen quando necessário. O SDK deve conter o patch experimental compatível com o manifesto e os agrupamentos deste projeto. Um SDK genérico sem esse ajuste pode voltar a produzir os erros de labels já corrigidos.
+O script valida os caminhos, preserva um backup do build existente, gera os fontes **localmente antes de configurar o CMake**, compila e copia as DLLs. Aceita `-SdkRoot`, `-BuildDirectory`, `-Parallel` e `-ConfigureOnly`. Ele usa dados já extraídos; extração de pacotes no instalador do launcher é uma etapa futura.
+
+O SDK deve conter o patch experimental compatível com o manifesto e os agrupamentos deste projeto. Um SDK genérico sem esse ajuste pode voltar a produzir erros de labels. Para compilações incrementais após a preparação, use `cmake --build build_cpp_release --target snoopyflyingace --parallel 4`.
 
 ## Executar e configurar
 
@@ -64,5 +64,7 @@ Multiplayer e funções online adicionais ainda dependem de implementação. Nã
 ## Histórico e componentes
 
 Cada alteração concluída deve receber um commit com descrição do comportamento e da validação, preservando o build funcional. As instruções de trabalho estão em [AGENTS.md](AGENTS.md).
+
+Antes de enviar commits, execute `python scripts/audit_repository.py`. A auditoria verifica os caminhos e tipos de arquivos de todos os commits alcançáveis pelas referências Git, não somente a pasta atual. Ela complementa a revisão humana da origem de arquivos novos.
 
 A base comunitária [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) tem sua [licença zlib](port/config/gamecontrollerdb.LICENSE.txt) e [origem/hash](port/config/gamecontrollerdb.SOURCE.txt) incluídos. Os demais componentes conservam seus avisos e licenças originais.

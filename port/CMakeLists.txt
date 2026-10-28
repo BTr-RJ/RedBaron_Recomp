@@ -8,6 +8,12 @@ project(snoopyflyingace LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/default/sources.cmake")
+    message(FATAL_ERROR
+        "Game-derived sources are local only. Place your game data in game/ "
+        "and run scripts/build.ps1 from the repository root before configuring CMake.")
+endif()
+
 include(generated/rexglue.cmake)
 
 # Sources

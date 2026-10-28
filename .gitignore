@@ -32,7 +32,17 @@ CMakeUserPresets.json
 *.pem
 *.key
 
-# Metadados locais do codegen; os fontes gerados sao preservados.
-/port/generated/default/codegen.d
-/port/generated/default/codegen.partition.json
-/port/generated/default/*.stamp
+# Conteudo derivado do jogo: gerar/importar somente na maquina do usuario.
+/port/generated/default/
+/port/metadata/
+/port/src/SnoopyFlyingAce.ico
+/port/src/SnoopyFlyingAce.rc
+*.xexp
+*.xpr
+*.pkg
+*.bnk
+*.wem
+*.wmv
+*.xwb
+*.xsb
+*.stfs
