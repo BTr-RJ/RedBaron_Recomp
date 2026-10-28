@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RedBaron_Recomp" Width="1060" Height="820" MinWidth="920" MinHeight="680"
         WindowStartupLocation="CenterScreen" Background="#15191F" Foreground="#F1F3F7"
-        FontFamily="Segoe UI" FontSize="14" UseLayoutRounding="True">
+        FontFamily="Segoe UI" FontSize="14" UseLayoutRounding="True" Language="en-US">
   <Window.Resources>
     <SolidColorBrush x:Key="InputBackground" Color="#252C36"/>
     <SolidColorBrush x:Key="InputBorder" Color="#455161"/>
@@ -88,27 +88,27 @@
     <Grid.RowDefinitions><RowDefinition Height="84"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Border Background="#1C2028" BorderBrush="#323A47" BorderThickness="0,0,0,1" Padding="28,0">
       <Grid><StackPanel VerticalAlignment="Center"><TextBlock Text="RedBaron_Recomp" FontSize="23" FontWeight="SemiBold"/><TextBlock Text="Snoopy Flying Ace · PC" Foreground="#ACB7C8" FontSize="12" Margin="0,4,0,0"/></StackPanel>
-        <TextBlock Name="HeaderStatus" Text="Verificando instalação…" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#B7C6BC"/>
+        <TextBlock Name="HeaderStatus" Text="Checking installation…" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#B7C6BC"/>
       </Grid>
     </Border>
     <TabControl Name="Tabs" Grid.Row="1" Background="#15191F" BorderThickness="0" Foreground="#F1F3F7" Padding="28,24,28,12">
       <TabItem Header="Install">
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
-          <TextBlock Text="Instalar o jogo" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Selecione os dados locais e uma pasta vazia. O launcher prepara e compila o port para essa instalação." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
-          <TextBlock Text="Arquivos do jogo" Margin="0,0,0,7"/>
-          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SourcePath" AutomationProperties.Name="Pasta dos arquivos do jogo"/><Button Name="BrowseSource" Content="Procurar…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
-          <TextBlock Text="Pasta já extraída, contendo default.xex, Config e Packages. Pacotes STFS ainda não são extraídos pelo launcher." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,20"/>
-          <TextBlock Text="Pasta de instalação" Margin="0,0,0,7"/>
-          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="DestinationPath" AutomationProperties.Name="Pasta de destino"/><Button Name="BrowseDestination" Content="Procurar…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
-          <CheckBox Name="DesktopShortcut" Content="Criar atalho do jogo na área de trabalho" Margin="0,16,0,20"/>
-          <Expander Foreground="#D5DDE9" Header="Ferramentas de compilação" IsExpanded="False">
-            <StackPanel Margin="0,12,0,0"><TextBlock Text="SDK ReXGlue instalado" Margin="0,0,0,7"/>
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SdkPath" AutomationProperties.Name="Pasta do SDK"/><Button Name="BrowseSdk" Content="Procurar…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
-              <TextBlock Text="Requer o SDK compatível com este port, CMake, Ninja e Clang no PC. Nenhum arquivo do jogo é baixado." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
+          <TextBlock Text="Install the game" Style="{StaticResource Heading}"/>
+          <TextBlock Text="Select your local game files and an empty folder. The launcher prepares and builds the port in that folder." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
+          <TextBlock Text="Game files" Margin="0,0,0,7"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SourcePath" AutomationProperties.Name="Game files folder"/><Button Name="BrowseSource" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
+          <TextBlock Text="Use an extracted folder containing default.xex, Config and Packages. The launcher cannot extract STFS packages yet." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,20"/>
+          <TextBlock Text="Installation folder" Margin="0,0,0,7"/>
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="DestinationPath" AutomationProperties.Name="Destination folder"/><Button Name="BrowseDestination" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
+          <CheckBox Name="DesktopShortcut" Content="Create a desktop shortcut" Margin="0,16,0,20"/>
+          <Expander Foreground="#D5DDE9" Header="Build tools" IsExpanded="False">
+            <StackPanel Margin="0,12,0,0"><TextBlock Text="Installed ReXGlue SDK" Margin="0,0,0,7"/>
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SdkPath" AutomationProperties.Name="SDK folder"/><Button Name="BrowseSdk" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
+              <TextBlock Text="Requires a compatible SDK, CMake, Ninja and Clang on this PC. No game files are downloaded." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
             </StackPanel>
           </Expander>
-          <StackPanel Orientation="Horizontal" Margin="0,8,0,14"><Button Name="InstallButton" Content="Instalar e compilar" Style="{StaticResource Primary}"/><Button Name="CancelInstall" Content="Cancelar instalação" Margin="10,0,0,0" Visibility="Collapsed"/><Button Name="UseExisting" Content="Usar instalação existente…" Margin="10,0,0,0"/></StackPanel>
+          <StackPanel Orientation="Horizontal" Margin="0,8,0,14"><Button Name="InstallButton" Content="Install and build" Style="{StaticResource Primary}"/><Button Name="CancelInstall" Content="Cancel installation" Margin="10,0,0,0" Visibility="Collapsed"/><Button Name="UseExisting" Content="Use existing installation…" Margin="10,0,0,0"/></StackPanel>
           <ProgressBar Name="InstallProgress" Height="5" Background="#2C3440" Foreground="#D65F68" IsIndeterminate="True" Visibility="Collapsed"/>
           <TextBlock Name="InstallState" Style="{StaticResource Muted}" Margin="0,10,0,8"/>
           <TextBox Name="InstallLog" IsReadOnly="True" Height="120" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="12" Visibility="Collapsed"/>
@@ -116,50 +116,50 @@
       </TabItem>
       <TabItem Header="Video">
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
-          <TextBlock Text="Imagem e desempenho" Style="{StaticResource Heading}"/>
-          <TextBlock Name="GpuSummary" Text="Detectando GPU e opções disponíveis…" Style="{StaticResource Muted}" Margin="0,0,0,24"/>
+          <TextBlock Text="Graphics and performance" Style="{StaticResource Heading}"/>
+          <TextBlock Name="GpuSummary" Text="Detecting GPUs and available settings…" Style="{StaticResource Muted}" Margin="0,0,0,24"/>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text="GPU" Margin="0,0,0,7"/><ComboBox Name="Gpu" AutomationProperties.Name="GPU"/><TextBlock Text="Resolução" Margin="0,20,0,7"/><ComboBox Name="Resolution" AutomationProperties.Name="Resolução"/><TextBlock Text="Modo de exibição" Margin="0,20,0,7"/><ComboBox Name="DisplayMode" AutomationProperties.Name="Modo de exibição"/><CheckBox Name="Vsync" Content="VSync · sincronização vertical" Margin="0,22,0,0"/></StackPanel>
-            <StackPanel Grid.Column="2"><TextBlock Text="Filtro anisotrópico" Margin="0,0,0,7"/><ComboBox Name="Anisotropic" AutomationProperties.Name="Filtro anisotrópico"/><TextBlock Text="Antialiasing" Margin="0,20,0,7"/><ComboBox Name="Antialiasing" AutomationProperties.Name="Antialiasing"/><TextBlock Text="Upscaling" Margin="0,20,0,7"/><ComboBox Name="Upscaling" AutomationProperties.Name="Upscaling"/><TextBlock Name="UpscalingInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/></StackPanel>
+            <StackPanel><TextBlock Text="GPU" Margin="0,0,0,7"/><ComboBox Name="Gpu" AutomationProperties.Name="GPU"/><TextBlock Text="Resolution" Margin="0,20,0,7"/><ComboBox Name="Resolution" AutomationProperties.Name="Resolution"/><TextBlock Text="Display mode" Margin="0,20,0,7"/><ComboBox Name="DisplayMode" AutomationProperties.Name="Display mode"/><CheckBox Name="Vsync" Content="VSync · vertical synchronization" Margin="0,22,0,0"/></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Text="Anisotropic filtering" Margin="0,0,0,7"/><ComboBox Name="Anisotropic" AutomationProperties.Name="Anisotropic filtering"/><TextBlock Text="Antialiasing" Margin="0,20,0,7"/><ComboBox Name="Antialiasing" AutomationProperties.Name="Antialiasing"/><TextBlock Text="Upscaling" Margin="0,20,0,7"/><ComboBox Name="Upscaling" AutomationProperties.Name="Upscaling"/><TextBlock Name="UpscalingInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/></StackPanel>
           </Grid>
           <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Margin="0,28,0,0" Padding="0,22,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text="FPS" FontWeight="SemiBold"/><TextBlock Text="Sem alteração da taxa de quadros do jogo. 90/120 FPS exigem implementação e testes; VSync não é um desbloqueio de FPS." Style="{StaticResource Muted}" Margin="0,6,24,0"/></StackPanel>
-            <ComboBox Grid.Column="1" IsEnabled="False" SelectedIndex="0" VerticalAlignment="Top" AutomationProperties.Name="FPS indisponível para alteração"><ComboBoxItem Content="Padrão do jogo · sem desbloqueio"/></ComboBox>
+            <StackPanel><TextBlock Text="FPS" FontWeight="SemiBold"/><TextBlock Text="The original game frame rate is unchanged. 90/120 FPS support requires further development and testing. VSync does not unlock FPS." Style="{StaticResource Muted}" Margin="0,6,24,0"/></StackPanel>
+            <ComboBox Grid.Column="1" IsEnabled="False" SelectedIndex="0" VerticalAlignment="Top" AutomationProperties.Name="Frame rate adjustment unavailable"><ComboBoxItem Content="Game default · no FPS unlock"/></ComboBox>
           </Grid></Border>
-          <TextBlock Text="As mudanças entram em vigor na próxima abertura do jogo. O modo gráfico compatível com o 3D desta versão é preservado." Style="{StaticResource Muted}" FontSize="12" Margin="0,24,0,0"/>
+          <TextBlock Text="Changes apply the next time you start the game. The graphics mode required for 3D rendering is preserved." Style="{StaticResource Muted}" FontSize="12" Margin="0,24,0,0"/>
         </StackPanel></ScrollViewer>
       </TabItem>
       <TabItem Header="Controls">
         <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <StackPanel><TextBlock Text="Controles e comandos" Style="{StaticResource Heading}"/><TextBlock Text="Funções do preset FlyingAce. Configure os quatro perfis; apenas o jogador 1 está funcional em partidas nesta versão." Style="{StaticResource Muted}" Margin="0,0,0,18"/></StackPanel>
+          <StackPanel><TextBlock Text="Controllers and bindings" Style="{StaticResource Heading}"/><TextBlock Text="Actions follow the FlyingAce preset. You can configure four profiles; only player 1 is playable in this version." Style="{StaticResource Muted}" Margin="0,0,0,18"/></StackPanel>
           <Grid Grid.Row="1" Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition Width="310"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
-            <StackPanel><TextBlock Text="Perfil" Margin="0,0,0,6"/><ComboBox Name="Player" AutomationProperties.Name="Perfil de jogador"/></StackPanel>
-            <StackPanel Grid.Column="2"><TextBlock Text="Controle deste jogador" Margin="0,0,0,6"/><ComboBox Name="Device" AutomationProperties.Name="Controle do jogador"/></StackPanel>
-            <StackPanel Grid.Column="4"><TextBlock Text="Teclado e mouse" Margin="0,0,0,6"/><ComboBox Name="KeyboardPlayer" AutomationProperties.Name="Jogador do teclado e mouse"/></StackPanel>
-            <Button Name="RefreshDevices" Grid.Column="5" Content="Atualizar" VerticalAlignment="Bottom" Margin="10,0,0,0" Padding="10,8"/>
+            <StackPanel><TextBlock Text="Profile" Margin="0,0,0,6"/><ComboBox Name="Player" AutomationProperties.Name="Player profile"/></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Text="Controller for this player" Margin="0,0,0,6"/><ComboBox Name="Device" AutomationProperties.Name="Player controller"/></StackPanel>
+            <StackPanel Grid.Column="4"><TextBlock Text="Keyboard and mouse" Margin="0,0,0,6"/><ComboBox Name="KeyboardPlayer" AutomationProperties.Name="Keyboard and mouse player"/></StackPanel>
+            <Button Name="RefreshDevices" Grid.Column="5" Content="Refresh" VerticalAlignment="Bottom" Margin="10,0,0,0" Padding="10,8"/>
           </Grid>
           <DataGrid Name="Bindings" Grid.Row="3" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" HeadersVisibility="Column" SelectionMode="Single" Background="#1B212A" Foreground="#F1F3F7" BorderBrush="#354051" BorderThickness="1" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#2A3340" RowHeaderWidth="0" VerticalScrollBarVisibility="Auto"/>
-          <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,12,0,0"><Button Name="RestoreBindings" Content="Restaurar este perfil" Padding="12,6"/><TextBlock Name="CaptureHint" Text="Capturar: teclado/mouse. Duplo clique na célula para editar o controle." Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0"/></StackPanel>
+          <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,12,0,0"><Button Name="RestoreBindings" Content="Reset this profile" Padding="12,6"/><TextBlock Name="CaptureHint" Text="Capture: keyboard/mouse. Double-click a cell to edit the controller binding." Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0"/></StackPanel>
         </Grid>
       </TabItem>
       <TabItem Header="Online">
         <StackPanel>
-          <TextBlock Text="Identidade do jogador" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Guarde seu nome para a futura integração online. A conexão multiplayer foi adiada." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
-          <TextBlock Text="Nome do jogador" Margin="0,0,0,7"/>
-          <TextBox Name="PlayerName" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="Nome do jogador online"/>
-          <TextBlock Name="NameValidation" Text="1–15 caracteres: A–Z, números, espaço interno, hífen ou sublinhado." Style="{StaticResource Muted}" Margin="0,8,0,26"/>
+          <TextBlock Text="Player identity" Style="{StaticResource Heading}"/>
+          <TextBlock Text="Save your name for future online support. Multiplayer connectivity has been postponed." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
+          <TextBlock Text="Player name" Margin="0,0,0,7"/>
+          <TextBox Name="PlayerName" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="Online player name"/>
+          <TextBlock Name="NameValidation" Text="1–15 characters: A–Z, numbers, internal spaces, hyphens or underscores." Style="{StaticResource Muted}" Margin="0,8,0,26"/>
           <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Padding="0,24,0,0"><StackPanel>
-            <TextBlock Text="Conexão" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
-            <CheckBox Content="Configurar portas automaticamente com UPnP" IsEnabled="False"/>
-            <TextBlock Text="Indisponível enquanto o modo online não estiver implementado. Nenhuma porta do roteador será aberta nesta versão." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="640" HorizontalAlignment="Left"/>
+            <TextBlock Text="Connection" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
+            <CheckBox Content="Configure ports automatically with UPnP" IsEnabled="False"/>
+            <TextBlock Text="Unavailable until online play is implemented. This version does not open any router ports." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="640" HorizontalAlignment="Left"/>
           </StackPanel></Border>
         </StackPanel>
       </TabItem>
     </TabControl>
     <Border Grid.Row="2" Background="#1C2028" BorderBrush="#343E4C" BorderThickness="0,1,0,0" Padding="28,16,28,20">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="110"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
-        <StackPanel Margin="0,0,18,0"><TextBlock Name="Status" Text="Carregando configurações…" Foreground="#B7C6BC" Margin="0,0,0,10"/><CheckBox Name="ShowLauncher" Content="Abrir o launcher na próxima vez"/><TextBlock Text="Para voltar às configurações, mantenha Shift ao abrir o atalho." Foreground="#AEB9CA" FontSize="11" Margin="0,6,0,0"/></StackPanel>
+        <StackPanel Margin="0,0,18,0"><TextBlock Name="Status" Text="Loading settings…" Foreground="#B7C6BC" Margin="0,0,0,10"/><CheckBox Name="ShowLauncher" Content="Show launcher next time"/><TextBlock Text="Hold Shift while opening the shortcut to return to settings." Foreground="#AEB9CA" FontSize="11" Margin="0,6,0,0"/></StackPanel>
         <Button Name="Save" Grid.Column="1" Content="Save" VerticalAlignment="Center" Margin="0,0,12,0" MinHeight="44"/>
         <Button Name="Play" Grid.Column="2" Content="Play" Style="{StaticResource Primary}" VerticalAlignment="Center" FontSize="17" MinHeight="44"/>
       </Grid>

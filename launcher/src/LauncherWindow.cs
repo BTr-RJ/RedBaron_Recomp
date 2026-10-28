@@ -49,17 +49,17 @@ namespace RedBaron {
             Label("Status").Text=message;
             Label("Status").Foreground=new SolidColorBrush((Color)ColorConverter.ConvertFromString(error?"#FF9A9F":"#B7C6BC"));
         }
-        void Changed() {if(!loading) {dirty=true;Status("Alterações não salvas.");}}
+        void Changed() {if(!loading) {dirty=true;Status("Unsaved changes.");}}
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attr,ref int value,int size);
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
             window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);};
             ConfigureGrid();
-            Choices("Player",Enumerable.Range(1,4).Select(i=>new Choice("Jogador "+i,i-1)),0);
-            Choices("KeyboardPlayer",new[]{new Choice("Compartilhar jogador 1",0),new Choice("Desativado",-1),new Choice("Exclusivo · jogador 1",1),new Choice("Exclusivo · jogador 2",2),new Choice("Exclusivo · jogador 3",3),new Choice("Exclusivo · jogador 4",4)},s.KeyboardPlayer);
+            Choices("Player",Enumerable.Range(1,4).Select(i=>new Choice("Player "+i,i-1)),0);
+            Choices("KeyboardPlayer",new[]{new Choice("Share with player 1",0),new Choice("Disabled",-1),new Choice("Exclusive · player 1",1),new Choice("Exclusive · player 2",2),new Choice("Exclusive · player 3",3),new Choice("Exclusive · player 4",4)},s.KeyboardPlayer);
             Choices("Resolution",new[]{new Choice("1280 × 720 · 720p","1280x720"),new Choice("1920 × 1080 · 1080p","1920x1080"),new Choice("2560 × 1440 · 1440p","2560x1440"),new Choice("3840 × 2160 · 4K","3840x2160")},s.Resolution);
-            Choices("DisplayMode",new[]{new Choice("Tela cheia",1),new Choice("Janela",0)},s.Fullscreen?1:0);
-            Choices("Anisotropic",new[]{new Choice("Padrão do jogo",-1),new Choice("Desligado",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
+            Choices("DisplayMode",new[]{new Choice("Fullscreen",1),new Choice("Windowed",0)},s.Fullscreen?1:0);
+            Choices("Anisotropic",new[]{new Choice("Game default",-1),new Choice("Off",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
             ApplySettings();
             foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
             foreach(var name in new[]{"Resolution","DisplayMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
@@ -79,9 +79,9 @@ namespace RedBaron {
             window.PreviewKeyDown+=CaptureKey;
             window.PreviewMouseDown+=CaptureMouse;
             window.Closing+=(sender,e)=>{
-                if(installation!=null) {e.Cancel=true;Status("Cancele a instalação e aguarde o encerramento antes de fechar.",true);return;}
+                if(installation!=null) {e.Cancel=true;Status("Cancel the installation and wait for it to stop before closing.",true);return;}
                 if(dirty && !args.Contains("--capture")) {
-                    var result=MessageBox.Show(window,"Salvar as alterações antes de sair?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
+                    var result=MessageBox.Show(window,"Save changes before exiting?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
                     if(result==MessageBoxResult.Cancel || (result==MessageBoxResult.Yes && !Save())) e.Cancel=true;
                 }
             };
@@ -98,8 +98,8 @@ namespace RedBaron {
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
             Select("Anisotropic",settings.Anisotropic);Select("KeyboardPlayer",settings.KeyboardPlayer);
-            Label("HeaderStatus").Text=File.Exists(settings.Exe)?"Instalação encontrada":"Instalação necessária";
-            Label("InstallState").Text=File.Exists(settings.Exe)?"Instalação em uso: "+settings.Root:"Selecione a origem e o destino para começar.";
+            Label("HeaderStatus").Text=File.Exists(settings.Exe)?"Installation found":"Installation required";
+            Label("InstallState").Text=File.Exists(settings.Exe)?"Current installation: "+settings.Root:"Select the source and destination folders to begin.";
             ShowPlayer();loading=false;
         }
         void Select(string name,object value) {
@@ -108,15 +108,15 @@ namespace RedBaron {
         void CommitGrid() {var grid=Get<DataGrid>("Bindings");grid.CommitEdit(DataGridEditingUnit.Cell,true);grid.CommitEdit(DataGridEditingUnit.Row,true);}
         void ConfigureGrid() {
             var grid=Get<DataGrid>("Bindings");
-            grid.Columns.Add(new DataGridTextColumn{Header="Função no jogo",Binding=new System.Windows.Data.Binding("Action"),IsReadOnly=true,Width=new DataGridLength(1.3,DataGridLengthUnitType.Star)});
-            grid.Columns.Add(new DataGridTextColumn{Header="Teclado / mouse",Binding=new System.Windows.Data.Binding("Keyboard"){UpdateSourceTrigger=UpdateSourceTrigger.PropertyChanged},Width=new DataGridLength(1,DataGridLengthUnitType.Star)});
-            var padOptions=new List<Choice>{new Choice("Sem comando",-1)};
+            grid.Columns.Add(new DataGridTextColumn{Header="Game action",Binding=new System.Windows.Data.Binding("Action"),IsReadOnly=true,Width=new DataGridLength(1.3,DataGridLengthUnitType.Star)});
+            grid.Columns.Add(new DataGridTextColumn{Header="Keyboard / mouse",Binding=new System.Windows.Data.Binding("Keyboard"){UpdateSourceTrigger=UpdateSourceTrigger.PropertyChanged},Width=new DataGridLength(1,DataGridLengthUnitType.Star)});
+            var padOptions=new List<Choice>{new Choice("Unassigned",-1)};
             padOptions.AddRange(Actions.PadNames.Select((n,i)=>new Choice(n,i)));
-            grid.Columns.Add(new DataGridComboBoxColumn{Header="Entrada do controle",ItemsSource=padOptions,DisplayMemberPath="Label",SelectedValuePath="Value",SelectedValueBinding=new System.Windows.Data.Binding("Pad"){UpdateSourceTrigger=UpdateSourceTrigger.PropertyChanged},Width=new DataGridLength(1.2,DataGridLengthUnitType.Star)});
-            var factory=new FrameworkElementFactory(typeof(Button));factory.SetValue(ContentControl.ContentProperty,"Capturar");factory.SetValue(Control.PaddingProperty,new Thickness(8,3,8,3));factory.SetValue(FrameworkElement.MinHeightProperty,28.0);
+            grid.Columns.Add(new DataGridComboBoxColumn{Header="Controller input",ItemsSource=padOptions,DisplayMemberPath="Label",SelectedValuePath="Value",SelectedValueBinding=new System.Windows.Data.Binding("Pad"){UpdateSourceTrigger=UpdateSourceTrigger.PropertyChanged},Width=new DataGridLength(1.2,DataGridLengthUnitType.Star)});
+            var factory=new FrameworkElementFactory(typeof(Button));factory.SetValue(ContentControl.ContentProperty,"Capture");factory.SetValue(Control.PaddingProperty,new Thickness(8,3,8,3));factory.SetValue(FrameworkElement.MinHeightProperty,28.0);
             factory.AddHandler(System.Windows.Controls.Button.ClickEvent,new RoutedEventHandler((sender,e)=>{
                 CommitGrid();capture=((FrameworkElement)sender).DataContext as Binding;
-                Label("CaptureHint").Text="Pressione uma tecla ou clique do mouse. Esc cancela; Delete limpa.";
+                Label("CaptureHint").Text="Press a key or mouse button. Esc cancels; Delete clears the binding.";
                 window.Focus();
             }));
             grid.Columns.Add(new DataGridTemplateColumn{Header="",CellTemplate=new DataTemplate{VisualTree=factory},Width=94});
@@ -124,10 +124,10 @@ namespace RedBaron {
         }
         void ShowPlayer() {
             bool previous=loading;loading=true;
-            var options=new List<Choice>{new Choice("Automático · ordem de conexão","auto"),new Choice("Nenhum controle","none")};
+            var options=new List<Choice>{new Choice("Automatic · connection order","auto"),new Choice("No controller","none")};
             options.AddRange(caps.devices.Select((d,i)=>new Choice(d.name+" · "+(i+1),d.key)));
             string selected=settings.Players[playerIndex].Device;
-            if(!options.Any(o=>Convert.ToString(o.Value)==selected)) options.Add(new Choice("Desconectado · "+selected,selected));
+            if(!options.Any(o=>Convert.ToString(o.Value)==selected)) options.Add(new Choice("Disconnected · "+selected,selected));
             Choices("Device",options,selected);
             Get<DataGrid>("Bindings").ItemsSource=settings.Players[playerIndex].Bindings;
             loading=previous;
@@ -142,7 +142,7 @@ namespace RedBaron {
             settings.Antialiasing=Val(Combo("Antialiasing"));settings.Upscaling=Val(Combo("Upscaling"));settings.Adapter=Number(Combo("Gpu"));
         }
         bool Save() {
-            try {ReadSettings();Services.Save(settings,caps);dirty=false;Status("Configurações salvas. Prontas para a próxima abertura.");return true;}
+            try {ReadSettings();Services.Save(settings,caps);dirty=false;Status("Settings saved. They will apply the next time you start the game.");return true;}
             catch(Exception error) {Status(error.Message,true);return false;}
         }
         void Play() {
@@ -158,27 +158,27 @@ namespace RedBaron {
             try {
                 caps=await Services.Probe(settings);
                 bool previous=loading;loading=true;
-                var gpus=new List<Choice>{new Choice("Automática (recomendado)",-1)};gpus.AddRange(caps.gpus.Select(g=>new Choice(g.name,g.index)));Choices("Gpu",gpus,settings.Adapter);
-                var aa=new[]{new Choice("Desligado","none"),new Choice("FXAA","fxaa",caps.Supports("swap_post_effect","fxaa")),new Choice("FXAA intenso","fxaa_extreme",caps.Supports("swap_post_effect","fxaa_extreme"))};Choices("Antialiasing",aa,settings.Antialiasing);
-                var effects=new[]{new Choice("Padrão · bilinear","bilinear"),new Choice("FSR 1","fsr",caps.Supports("present_effect","fsr")),new Choice("FSR 2","fsr2",caps.Supports("present_effect","fsr2")),new Choice("FSR 3","fsr3",caps.Supports("present_effect","fsr3")),new Choice("DLSS · não integrado","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
-                Label("GpuSummary").Text=caps.gpus.Count>0?String.Join(" · ",caps.gpus.Select(g=>g.name)):"Nenhuma GPU física identificada.";
-                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr")?"FSR disponível no runtime. DLSS ainda não integrado.":"FSR ausente deste runtime. DLSS ainda não integrado. Use FXAA para suavizar bordas.";
+                var gpus=new List<Choice>{new Choice("Automatic (recommended)",-1)};gpus.AddRange(caps.gpus.Select(g=>new Choice(g.name,g.index)));Choices("Gpu",gpus,settings.Adapter);
+                var aa=new[]{new Choice("Off","none"),new Choice("FXAA","fxaa",caps.Supports("swap_post_effect","fxaa")),new Choice("FXAA extreme","fxaa_extreme",caps.Supports("swap_post_effect","fxaa_extreme"))};Choices("Antialiasing",aa,settings.Antialiasing);
+                var effects=new[]{new Choice("Default · bilinear","bilinear"),new Choice("FSR 1","fsr",caps.Supports("present_effect","fsr")),new Choice("FSR 2","fsr2",caps.Supports("present_effect","fsr2")),new Choice("FSR 3","fsr3",caps.Supports("present_effect","fsr3")),new Choice("DLSS · not integrated","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
+                Label("GpuSummary").Text=caps.gpus.Count>0?String.Join(" · ",caps.gpus.Select(g=>g.name)):"No physical GPU detected.";
+                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr")?"FSR is available in this runtime. DLSS is not integrated yet.":"This runtime does not include FSR. DLSS is not integrated yet. Use FXAA to smooth edges.";
                 ShowPlayer();loading=previous;
-                Status(dirty?"Alterações não salvas.":"Pronto. "+caps.devices.Count+" controle(s) detectado(s).");
-                if(!String.IsNullOrEmpty(caps.inputError)) Status("Falha ao detectar controles: "+caps.inputError,true);
+                Status(dirty?"Unsaved changes.":"Ready. "+caps.devices.Count+" controller(s) detected.");
+                if(!String.IsNullOrEmpty(caps.inputError)) Status("Controller detection failed: "+caps.inputError,true);
                 Button("Save").IsEnabled=true;Button("Play").IsEnabled=File.Exists(settings.Exe);
             } catch(Exception error) {
-                Status(error.Message,true); Label("GpuSummary").Text="Conclua a instalação para detectar as opções de vídeo.";
+                Status(error.Message,true); Label("GpuSummary").Text="Complete installation to detect available graphics settings.";
                 // First-time installation still works; Save/Play wait for its runtime.
             } finally {probing=false;Button("RefreshDevices").IsEnabled=true;}
         }
         void Browse(string name) {
-            using(var dialog=new System.Windows.Forms.FolderBrowserDialog{Description="Selecione a pasta",SelectedPath=Text(name).Text,ShowNewFolderButton=true})
+            using(var dialog=new System.Windows.Forms.FolderBrowserDialog{Description="Select a folder",SelectedPath=Text(name).Text,ShowNewFolderButton=true})
                 if(dialog.ShowDialog()==System.Windows.Forms.DialogResult.OK) Text(name).Text=dialog.SelectedPath;
         }
         void ValidateName() {
             string n=Text("PlayerName").Text;
-            Label("NameValidation").Text=n.Length+"/15 · Letras A–Z, números, espaço interno, hífen ou sublinhado.";
+            Label("NameValidation").Text=n.Length+"/15 · Letters A–Z, numbers, internal spaces, hyphens or underscores.";
         }
         void CaptureKey(object sender,KeyEventArgs e) {
             if(capture==null) return;e.Handled=true;
@@ -192,7 +192,7 @@ namespace RedBaron {
             if(k==Key.PageUp) name="PageUp";if(k==Key.PageDown) name="PageDown";
             name=KeyboardNames.FromKey(k,name);
             string mods="";if((Keyboard.Modifiers&ModifierKeys.Control)!=0) mods+="Ctrl+";if((Keyboard.Modifiers&ModifierKeys.Shift)!=0) mods+="Shift+";if((Keyboard.Modifiers&ModifierKeys.Alt)!=0) mods+="Alt+";
-            try {Actions.ValidateKeyboard(mods+name);EndCapture(mods+name);} catch {Label("CaptureHint").Text="Tecla não suportada. Tente outra; Esc cancela.";}
+            try {Actions.ValidateKeyboard(mods+name);EndCapture(mods+name);} catch {Label("CaptureHint").Text="Unsupported key. Try another key; Esc cancels.";}
         }
         void CaptureMouse(object sender,MouseButtonEventArgs e) {
             if(capture==null)return;
@@ -201,7 +201,7 @@ namespace RedBaron {
         }
         void EndCapture(string value) {
             if(value!=null) {capture.Keyboard=value;Get<DataGrid>("Bindings").Items.Refresh();Changed();}
-            capture=null;Label("CaptureHint").Text="Capturar: teclado/mouse. Duplo clique na célula para editar o controle.";
+            capture=null;Label("CaptureHint").Text="Capture: keyboard/mouse. Double-click a cell to edit the controller binding.";
         }
         async Task Install() {
             if(installation!=null)return;
@@ -209,7 +209,7 @@ namespace RedBaron {
             installation=new CancellationTokenSource();
             foreach(string name in new[]{"InstallButton","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=false;
             Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
-            Status("Instalação em andamento…");
+            Status("Installation in progress…");
             try {
                 await Services.Install(settings,line=>window.Dispatcher.BeginInvoke(new Action(()=>{
                     Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;
@@ -219,8 +219,8 @@ namespace RedBaron {
                 settings=Settings.Load(target);settings.Sdk=sdk;settings.DesktopShortcut=shortcut;
                 Json.Write(settings.FileName,settings);
                 if(shortcut) Services.CreateShortcut(settings,Path.Combine(target,"RedBaron_Launcher.exe"));
-                dirty=false;ApplySettings();await Refresh(false);Status("Instalação concluída. Clique em Play para jogar.");
-            } catch(OperationCanceledException) {Status("Instalação cancelada. Os dados de origem foram preservados; use uma pasta vazia para tentar novamente.",true);}
+                dirty=false;ApplySettings();await Refresh(false);Status("Installation complete. Click Play to start the game.");
+            } catch(OperationCanceledException) {Status("Installation cancelled. Your source files were preserved; choose an empty folder to try again.",true);}
             catch(Exception error) {Status(error.Message,true);}
             finally {
                 installation.Dispose();installation=null;
@@ -230,12 +230,12 @@ namespace RedBaron {
             }
         }
         async Task UseExisting() {
-            if(dirty && MessageBox.Show(window,"Descartar as alterações não salvas e trocar de instalação?","RedBaron_Recomp",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
-            using(var dialog=new System.Windows.Forms.FolderBrowserDialog{Description="Pasta que contém game e build_cpp_release",SelectedPath=settings.Root}) {
+            if(dirty && MessageBox.Show(window,"Discard unsaved changes and switch installations?","RedBaron_Recomp",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
+            using(var dialog=new System.Windows.Forms.FolderBrowserDialog{Description="Select the folder containing game and build_cpp_release",SelectedPath=settings.Root}) {
                 if(dialog.ShowDialog()!=System.Windows.Forms.DialogResult.OK)return;
                 try {
                     var candidate=Settings.Load(dialog.SelectedPath);
-                    if(!File.Exists(candidate.Exe) || !File.Exists(Path.Combine(candidate.Root,"game","default.xex")))throw new IOException("Esta pasta não contém uma instalação completa.");
+                    if(!File.Exists(candidate.Exe) || !File.Exists(Path.Combine(candidate.Root,"game","default.xex")))throw new IOException("This folder does not contain a complete installation.");
                     settings=candidate;dirty=false;ApplySettings();await Refresh(false);
                 } catch(Exception error) {Status(error.Message,true);}
             }

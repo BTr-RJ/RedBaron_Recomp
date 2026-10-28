@@ -24,7 +24,7 @@ foreach ($required in @(
     (Join-Path $SdkRoot 'bin/rexgpu-xenos.dll')
 )) {
     if (!(Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "Arquivo necessario ausente: $required. Forneca os dados locais e instale o SDK."
+        throw "Required file missing: $required. Provide your local game files and install the SDK."
     }
 }
 Get-Command cmake -ErrorAction Stop | Out-Null
@@ -39,7 +39,7 @@ function Invoke-CheckedNative {
         & $Program @Arguments 2>&1 | ForEach-Object { $_.ToString() }
         $nativeExit = $LASTEXITCODE
     } finally { $ErrorActionPreference = $previousPreference }
-    if ($nativeExit -ne 0) { throw "$Program falhou: $nativeExit" }
+    if ($nativeExit -ne 0) { throw "$Program failed: $nativeExit" }
 }
 
 if (!$ConfigureOnly -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'snoopyflyingace.exe'))) {
@@ -49,7 +49,7 @@ if (!$ConfigureOnly -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'sno
         $source = Join-Path $BuildDirectory $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backupDir }
     }
-    Write-Output "Backup do build: $backupDir"
+    Write-Output "Build backup: $backupDir"
 }
 
 Push-Location $portDir
@@ -61,7 +61,7 @@ $cmakeArgs = @('-S', $portDir, '-B', $BuildDirectory, '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=clang++',
     ('-Drexglue_DIR=' + (Join-Path $SdkRoot 'lib/cmake/rexglue')))
 Invoke-CheckedNative 'cmake' $cmakeArgs
-if ($ConfigureOnly) { Write-Output 'Codegen e configuracao concluidos.'; return }
+if ($ConfigureOnly) { Write-Output 'Code generation and configuration complete.'; return }
 
 Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyflyingace', 'redbaron_probe', '--parallel', "$Parallel")
 foreach ($name in @('rexruntime.dll', 'rexgpu-xenos.dll')) {

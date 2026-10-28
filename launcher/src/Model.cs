@@ -52,7 +52,17 @@ namespace RedBaron {
             string file = Path.Combine(root, "launcher-settings.json");
             Settings s = File.Exists(file) ? Json.Read<Settings>(file) : new Settings();
             if (s.Version != 1 || s.Players == null || s.Players.Count != 4)
-                throw new InvalidDataException("Configuração do launcher incompatível. Preserve o arquivo e restaure um backup.");
+                throw new InvalidDataException("Incompatible launcher settings. Keep the file and restore a backup.");
+            // Display labels come from this version, not from an older saved language.
+            // Keep stable binding keys, keyboard choices and controller mappings intact.
+            foreach (var player in s.Players) {
+                if (player == null || player.Bindings == null) throw new InvalidDataException("The binding list is incomplete.");
+                foreach (var binding in player.Bindings) {
+                    if (binding == null) throw new InvalidDataException("The binding list is incomplete.");
+                    int action = Array.IndexOf(Actions.Keys, binding.Key);
+                    if (action >= 0) binding.Action = Actions.Labels[action];
+                }
+            }
             s.Root = Path.GetFullPath(root);
             s.Source = s.Source ?? Path.Combine(root, "game");
             s.Sdk = s.Sdk ?? Path.Combine(root, "sdk_experimental");
@@ -73,13 +83,13 @@ namespace RedBaron {
                 int keyboardIndex = Math.Max(0, s.KeyboardPlayer - 1);
                 foreach (var b in s.Players[keyboardIndex].Bindings) b.Keyboard = t.String(b.Key, b.Keyboard);
                 var slots = t.String("redbaron_pad_slots", "auto;auto;auto;auto").Split(';');
-                if (slots.Length != 4) throw new InvalidDataException("redbaron_pad_slots precisa de quatro entradas.");
+                if (slots.Length != 4) throw new InvalidDataException("redbaron_pad_slots must contain four entries.");
                 for (int i = 0; i < 4; i++) {
                     s.Players[i].Device = slots[i];
                     string raw = t.String("redbaron_pad_map_p" + (i + 1), "");
                     if (raw.Length == 0) continue;
                     var values = raw.Split(',');
-                    if (values.Length != Actions.Keys.Length) throw new InvalidDataException("Mapa de controle inválido no TOML.");
+                    if (values.Length != Actions.Keys.Length) throw new InvalidDataException("Invalid controller mapping in the TOML file.");
                     for (int b = 0; b < values.Length; b++) s.Players[i].Bindings[b].Pad = Int32.Parse(values[b]);
                 }
             }
@@ -87,26 +97,26 @@ namespace RedBaron {
         }
         public void Validate() {
             if (!Regex.IsMatch(PlayerName ?? "", @"^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,13}[A-Za-z0-9_-])?$"))
-                throw new InvalidDataException("Nome: 1 a 15 caracteres; letras A–Z, números, espaço interno, hífen e sublinhado.");
+                throw new InvalidDataException("Name: use 1–15 characters; letters A–Z, numbers, internal spaces, hyphens or underscores.");
             if (!new[]{"1280x720","1920x1080","2560x1440","3840x2160"}.Contains(Resolution))
-                throw new InvalidDataException("Escolha uma resolução da lista.");
+                throw new InvalidDataException("Choose a resolution from the list.");
             if (KeyboardPlayer < -1 || KeyboardPlayer > 4 || Anisotropic < -1 || Anisotropic > 5 || Scale < 1 || Scale > 3)
-                throw new InvalidDataException("Configuração de vídeo ou entrada fora do intervalo permitido.");
+                throw new InvalidDataException("A graphics or input setting is outside the allowed range.");
             var devices = new HashSet<string>();
             for (int p = 0; p < 4; p++) {
                 var player = Players[p];
                 if (player.Device != "auto" && player.Device != "none") {
-                    if (!Regex.IsMatch(player.Device ?? "", @"^[a-f0-9]{32}#[0-9]+$")) throw new InvalidDataException("Controle inválido.");
-                    if (!devices.Add(player.Device)) throw new InvalidDataException("O mesmo controle foi escolhido para mais de um jogador.");
+                    if (!Regex.IsMatch(player.Device ?? "", @"^[a-f0-9]{32}#[0-9]+$")) throw new InvalidDataException("Invalid controller.");
+                    if (!devices.Add(player.Device)) throw new InvalidDataException("The same controller is assigned to more than one player.");
                 }
                 if (KeyboardPlayer == p + 1 && player.Device != "none" && player.Device != "auto")
-                    throw new InvalidDataException("O jogador reservado ao teclado não pode receber um controle. Selecione Nenhum ou Automático.");
+                    throw new InvalidDataException("A player reserved for the keyboard cannot use a controller. Select No controller or Automatic.");
                 if (player.Bindings == null || player.Bindings.Count != Actions.Keys.Length)
-                    throw new InvalidDataException("Lista de comandos incompleta.");
+                    throw new InvalidDataException("The binding list is incomplete.");
                 for (int b = 0; b < player.Bindings.Count; b++) {
                     var binding = player.Bindings[b];
                     if (binding.Key != Actions.Keys[b] || binding.Pad < -1 || binding.Pad >= Actions.Keys.Length)
-                        throw new InvalidDataException("Mapeamento inválido no jogador " + (p + 1));
+                        throw new InvalidDataException("Invalid mapping for player " + (p + 1));
                     Actions.ValidateKeyboard(binding.Keyboard);
                 }
             }
@@ -134,15 +144,15 @@ namespace RedBaron {
     public static class Actions {
         // Order is shared with port/src/pad_mapping.h. Xbox output semantics.
         public static readonly string[] Keys = {"keybind_a","keybind_b","keybind_x","keybind_y","keybind_left_shoulder","keybind_right_shoulder","keybind_back","keybind_start","keybind_lstick_press","keybind_rstick_press","keybind_dpad_up","keybind_dpad_down","keybind_dpad_left","keybind_dpad_right","keybind_left_trigger","keybind_right_trigger","keybind_lstick_up","keybind_lstick_down","keybind_lstick_left","keybind_lstick_right","keybind_rstick_up","keybind_rstick_down","keybind_rstick_left","keybind_rstick_right"};
-        public static readonly string[] Labels = {"Turbo / confirmar","Voltar / trocar arma","Freio / opção","Ação / sair do avião","Trocar arma","Olhar para trás","Estatísticas","Pausar / iniciar","Clique do analógico esquerdo","Cancelar zoom","Direcional ↑","Direcional ↓","Direcional ←","Direcional →","Arma secundária","Arma principal","Voo ↑","Voo ↓","Voo ←","Voo →","Acrobacia ↑","Acrobacia ↓","Acrobacia ←","Acrobacia →"};
-        public static readonly string[] PadNames = {"A / botão inferior","B / botão direito","X / botão esquerdo","Y / botão superior","LB / ombro esquerdo","RB / ombro direito","View / Back","Menu / Start","LS / clique esquerdo","RS / clique direito","D-pad ↑","D-pad ↓","D-pad ←","D-pad →","LT / gatilho esquerdo","RT / gatilho direito","Analógico esquerdo ↑","Analógico esquerdo ↓","Analógico esquerdo ←","Analógico esquerdo →","Analógico direito ↑","Analógico direito ↓","Analógico direito ←","Analógico direito →"};
+        public static readonly string[] Labels = {"Boost / confirm","Back / switch weapon","Brake / option","Action / exit aircraft","Switch weapon","Look back","Statistics","Pause / start","Left stick click","Cancel zoom","D-pad ↑","D-pad ↓","D-pad ←","D-pad →","Secondary weapon","Primary weapon","Flight ↑","Flight ↓","Flight ←","Flight →","Stunt ↑","Stunt ↓","Stunt ←","Stunt →"};
+        public static readonly string[] PadNames = {"A / bottom button","B / right button","X / left button","Y / top button","LB / left shoulder","RB / right shoulder","View / Back","Menu / Start","LS / left stick click","RS / right stick click","D-pad ↑","D-pad ↓","D-pad ←","D-pad →","LT / left trigger","RT / right trigger","Left stick ↑","Left stick ↓","Left stick ←","Left stick →","Right stick ↑","Right stick ↓","Right stick ←","Right stick →"};
         static readonly string[] DefaultKeys = {"Space","Backspace","C","E","Q,MMB","R","Tab","Return,Escape","F","V","Numpad8","Numpad2","Numpad4","Numpad6","RMB,K","LMB,J","W","S","A","D","Up","Down","Left","Right"};
         public static List<Binding> Defaults() { return Keys.Select((key,i)=>new Binding{Key=key,Action=Labels[i],Keyboard=DefaultKeys[i],Pad=i}).ToList(); }
         public static void ValidateKeyboard(string value) {
             if (String.IsNullOrEmpty(value)) return;
             foreach (string key in value.Split(',')) {
                 if (!Regex.IsMatch(key.Trim(), @"^(?:(?:Shift|Ctrl|Alt)\+)*(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Numpad[0-9]|Space|Return|Escape|Tab|Backspace|Up|Down|Left|Right|LMB|RMB|MMB|Insert|Delete|Home|End|PageUp|PageDown|Semicolon|Quote|Comma|Period|Slash|Backslash|Minus|Plus|LBracket|RBracket|Backtick)$"))
-                    throw new InvalidDataException("Tecla não reconhecida: " + key + ". Use Capturar ou nomes como W, Space e LMB.");
+                    throw new InvalidDataException("Unrecognized key: " + key + ". Use Capture or key names such as W, Space and LMB.");
             }
         }
     }
@@ -175,7 +185,7 @@ namespace RedBaron {
                 var match = Entry.Match(line);
                 if (!match.Success) continue;
                 string key = match.Groups[1].Value;
-                if (root.ContainsKey(key)) throw new InvalidDataException("Chave duplicada no TOML: " + key);
+                if (root.ContainsKey(key)) throw new InvalidDataException("Duplicate TOML key: " + key);
                 root[key] = match.Groups[2].Value.Trim();
             }
         }
@@ -186,7 +196,7 @@ namespace RedBaron {
             if (basic.Success) return Json.Serializer.Deserialize<string>(basic.Value);
             var literal = Regex.Match(raw, "^'([^']*)'");
             if (literal.Success) return literal.Groups[1].Value;
-            throw new InvalidDataException("Texto TOML inválido em " + key);
+            throw new InvalidDataException("Invalid TOML string for " + key);
         }
         public int Int(string key,int fallback) { string raw; return root.TryGetValue(key,out raw) ? Int32.Parse(raw.Split('#')[0].Trim()) : fallback; }
         public bool Bool(string key,bool fallback) { string raw; return root.TryGetValue(key,out raw) ? Boolean.Parse(raw.Split('#')[0].Trim()) : fallback; }

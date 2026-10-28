@@ -62,6 +62,27 @@ namespace RedBaron {
                 Assert(loaded.ShowLauncher,"Show launcher preference lost");
                 loaded.ShowLauncher=false;Services.Save(loaded,caps);Assert(!Settings.Load(s.Root).ShowLauncher,"Direct-launch preference lost");
                 results.Add("Save/load, backup, unsupported feature rejection and direct launch preference");
+                var legacy=new Settings {Root=Path.Combine(directory,"legacy profiles"),PlayerName="ExistingPlayer",ShowLauncher=false};
+                for(int p=0;p<4;p++) for(int b=0;b<Actions.Keys.Length;b++) {
+                    var binding=legacy.Players[p].Bindings[b];
+                    binding.Action="Funcao antiga";
+                    binding.Keyboard="Ctrl+G";
+                    binding.Pad=(b+p+1)%Actions.Keys.Length;
+                }
+                legacy.Players[0].Bindings[0].Action="Turbo / confirmar";
+                legacy.Players[0].Device=device;
+                Json.Write(legacy.FileName,legacy);
+                string legacyJson=File.ReadAllText(legacy.FileName);
+                var english=Settings.Load(legacy.Root);
+                Assert(File.ReadAllText(legacy.FileName)==legacyJson,"Loading translated labels wrote to user settings");
+                Assert(english.PlayerName==legacy.PlayerName && !english.ShowLauncher && english.Players[0].Device==device,"Translation changed user preferences");
+                for(int p=0;p<4;p++) for(int b=0;b<Actions.Keys.Length;b++) {
+                    var binding=english.Players[p].Bindings[b];
+                    Assert(binding.Action==Actions.Labels[b],"Old display language survived loading");
+                    Assert(binding.Key==Actions.Keys[b] && binding.Keyboard=="Ctrl+G" && binding.Pad==(b+p+1)%Actions.Keys.Length,"Translation changed a saved binding");
+                }
+                Assert(System.Globalization.CultureInfo.CurrentUICulture.Name=="en-US","Launcher UI culture is not English");
+                results.Add("English labels replace old saved labels across four profiles without changing bindings or writing files");
                 string[] paths={"plain","C:\\a path\\","C:\\game & files\\a.ps1","value\"quoted",""};
                 string line="launcher.exe "+String.Join(" ",paths.Select(Services.QuoteArgument));
                 int count;IntPtr argv=CommandLineToArgvW(line,out count);

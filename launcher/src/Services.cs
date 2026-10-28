@@ -25,7 +25,7 @@ namespace RedBaron {
         public static string FindRoot(string[] args) {
             int option=Array.IndexOf(args,"--root");
             if(option>=0) {
-                if(option+1==args.Length) throw new ArgumentException("--root requer uma pasta.");
+                if(option+1==args.Length) throw new ArgumentException("--root requires a folder path.");
                 return Path.GetFullPath(args[option+1]);
             }
             var dir=new DirectoryInfo(Path.GetDirectoryName(LauncherExe));
@@ -77,14 +77,14 @@ namespace RedBaron {
         }
         public static async Task<Capabilities> Probe(Settings s) {
             string exe=Path.Combine(s.Build,"redbaron_probe.exe");
-            if(!File.Exists(exe)) throw new FileNotFoundException("Detector ausente. Compile redbaron_probe ou conclua a instalação.");
+            if(!File.Exists(exe)) throw new FileNotFoundException("Hardware detector missing. Build redbaron_probe or complete installation.");
             string directory=Path.Combine(s.Root,"launcher-data"); Directory.CreateDirectory(directory);
             string output=Path.Combine(directory,"capabilities-"+Guid.NewGuid().ToString("N")+".json");
             var errors=new StringBuilder();
             try {
                 using(var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(25))) {
                     int code=await RunAsync(exe,new[]{output},s.Build,line=>{lock(errors) errors.AppendLine(line);},timeout.Token);
-                    if(code!=0) throw new IOException("Falha no detector de hardware ("+code+"). "+errors);
+                    if(code!=0) throw new IOException("Hardware detection failed ("+code+"). "+errors);
                 }
                 return Json.Read<Capabilities>(output);
             } finally {if(File.Exists(output)) File.Delete(output);}
@@ -99,9 +99,9 @@ namespace RedBaron {
         }
         public static void Save(Settings s,Capabilities caps) {
             s.Validate();
-            if(IsGameRunning(s)) throw new InvalidOperationException("Feche o jogo antes de salvar as configurações.");
+            if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before saving settings.");
             if(!caps.Supports("present_effect",s.Upscaling) || !caps.Supports("swap_post_effect",s.Antialiasing))
-                throw new InvalidDataException("A opção de upscaling ou antialiasing não está disponível neste runtime. Atualize a detecção.");
+                throw new InvalidDataException("The selected upscaling or antialiasing option is unavailable in this runtime. Refresh hardware detection.");
             if(!File.Exists(s.Exe)) { Json.Write(s.FileName,s); return; }
             string original=File.Exists(s.Toml)?File.ReadAllText(s.Toml):"";
             string updated=s.RuntimeText(original);
@@ -111,20 +111,20 @@ namespace RedBaron {
             catch {AtomicFile.Write(s.Toml,original);throw;}
         }
         public static Process Play(Settings s) {
-            if(!File.Exists(s.Exe)) throw new FileNotFoundException("Jogo não instalado. Abra Install e selecione os dados locais.");
-            if(!File.Exists(Path.Combine(s.Root,"game","default.xex"))) throw new FileNotFoundException("Dados do jogo ausentes nesta instalação.");
-            if(IsGameRunning(s)) throw new InvalidOperationException("O jogo já está aberto.");
+            if(!File.Exists(s.Exe)) throw new FileNotFoundException("Game not installed. Open Install and select your local game files.");
+            if(!File.Exists(Path.Combine(s.Root,"game","default.xex"))) throw new FileNotFoundException("Game files are missing from this installation.");
+            if(IsGameRunning(s)) throw new InvalidOperationException("The game is already running.");
             var info=new ProcessStartInfo(s.Exe,"--game_data_root="+QuoteArgument(Path.Combine(s.Root,"game"))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);
         }
         static void ExtractResource(string name,string path) {
             using(var source=Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) {
-                if(source==null) throw new InvalidDataException("Recurso de instalação ausente: "+name);
+                if(source==null) throw new InvalidDataException("Missing installation resource: "+name);
                 using(var output=File.Create(path)) source.CopyTo(output);
             }
         }
         public static async Task Install(Settings s,Action<string> log,CancellationToken token) {
-            if(String.IsNullOrWhiteSpace(s.Destination)) throw new InvalidDataException("Escolha a pasta de destino.");
+            if(String.IsNullOrWhiteSpace(s.Destination)) throw new InvalidDataException("Choose a destination folder.");
             string job=Path.Combine(s.Root,"launcher-data","install-"+DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
             Directory.CreateDirectory(job);
             string archive=Path.Combine(job,"source.zip"), script=Path.Combine(job,"install.ps1");
@@ -135,7 +135,7 @@ namespace RedBaron {
             Action<string> record=line=>{lock(gate) File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
             record("Log: "+logfile);
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe},s.Root,record,token);
-            if(code!=0) throw new IOException("A instalação falhou. Os detalhes estão no log; os dados de origem foram preservados.");
+            if(code!=0) throw new IOException("Installation failed. See the log for details; your source files were preserved.");
         }
         public static void CreateShortcut(Settings s,string launcher) {
             string desktop=Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -148,7 +148,7 @@ namespace RedBaron {
             dynamic shortcut=shell.CreateShortcut(path);
             shortcut.TargetPath=launcher; shortcut.WorkingDirectory=s.Root;
             shortcut.Arguments="--root "+QuoteArgument(s.Root);
-            shortcut.Description="RedBaron_Recomp — configurações e jogo";
+            shortcut.Description="RedBaron_Recomp — settings and game";
             shortcut.IconLocation=launcher+",0"; shortcut.Save();
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut);
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);

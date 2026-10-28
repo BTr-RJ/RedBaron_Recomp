@@ -3,7 +3,7 @@ param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'out'))
 $ErrorActionPreference = 'Stop'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $wpf = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/WPF'
-if (!(Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x compiler ausente.' }
+if (!(Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x compiler not found.' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $archive = Join-Path $OutputDirectory 'source.zip'
@@ -54,6 +54,6 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'))
 $arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 & $compiler @arguments
-if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar launcher.' }
+if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'App.config') -Destination ($exe + '.config')
 Write-Output $exe
