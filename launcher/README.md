@@ -20,7 +20,7 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 
 The game recognizes only player 1. Configuring four input profiles does not enable four-player matches. One keyboard/mouse can share player 1 or be reserved for one profile at a time. Other profiles remain saved for later use. Actions follow the **FlyingAce** preset; in-game prompts still use Xbox labels. Mouse motion does not control the camera.
 
-The updated runtime includes spatial FSR 1 and CAS. DLSS and temporal FSR are not integrated. High-FPS gameplay remains under investigation; its options are disabled. Higher resolutions still need mission testing. FXAA operates independently of upscaling. See [video behavior, SDK patch, measurements and remaining work](../docs/VIDEO.md).
+The updated runtime includes spatial FSR 1 and CAS. DLSS and temporal FSR are not integrated. Engine FPS targets are available through 240 FPS, with values above 120 marked experimental. The tutorial reached about 119–120 FPS at a 120 target and 218–234 FPS at a 240 target on the test machine, while engine time followed wall time. Broader mission and higher-resolution testing is still needed. FXAA operates independently of upscaling. See [video behavior, SDK patch, measurements and remaining work](../docs/VIDEO.md).
 
 The launcher starts centered in the monitor's work area and fits smaller screens. Fullscreen/Restore (F11) and Close are available in its header; Esc exits fullscreen. These controls affect the launcher window. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
 

@@ -69,7 +69,16 @@ namespace RedBaron {
                 s.Upscaling="bilinear";Services.Save(s,caps);
                 var loaded=Settings.Load(s.Root);
                 Assert(loaded.Scale==2 && loaded.Resolution=="7680x4320" && !loaded.Vsync && loaded.FsrSharpness==50,"Video settings did not roundtrip");
-                loaded.Fps=120;Reject(()=>Services.Save(loaded,caps),"Unvalidated FPS override accepted");loaded.Fps=0;
+                loaded.Fps=120;Reject(()=>Services.Save(loaded,caps),"Old game build accepted an unsupported FPS target");
+                caps.flags["redbaron_fps"]=new Flag{allowed=Settings.FrameRates.Select(fps=>fps.ToString()).ToArray()};
+                Services.Save(loaded,caps);
+                var timed=new Toml(File.ReadAllText(s.Toml));
+                Assert(timed.Int("redbaron_fps",0)==120 && timed.Int("video_mode_refresh_rate",0)==120,"Engine and virtual display timing diverged");
+                Assert(!timed.Bool("present_vsync",true),"FPS target changed monitor VSync");
+                Assert(Settings.Load(s.Root).Fps==120,"FPS target did not roundtrip");
+                loaded.Fps=0;Services.Save(loaded,caps);
+                Assert(new Toml(File.ReadAllText(s.Toml)).Int("video_mode_refresh_rate",0)==60,"Original virtual refresh not restored");
+                results.Add("FPS: capability gating, persistence, virtual display timing and default restoration");
                 Assert(loaded.Players[0].Bindings[0].Keyboard=="J,LMB","Load did not roundtrip mappings");
                 Assert(Directory.GetFiles(s.Build,"*.backup-*").Length>0,"No backup created");
                 Assert(loaded.ShowLauncher,"Show launcher preference lost");

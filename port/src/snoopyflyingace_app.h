@@ -14,6 +14,8 @@
 namespace redbaron {
 void ConfigureLocalInput(rex::input::InputSystem& input);
 void ConfigureLauncherInput(rex::RuntimeConfig& config);
+void ConfigureVideoTiming();
+void InstallVideoHooks(rex::Runtime& runtime);
 }
 
 class SnoopyflyingaceApp : public rex::ReXApp {
@@ -42,6 +44,7 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    redbaron::ConfigureVideoTiming();
     redbaron::ConfigureLauncherInput(config);
     // Resolve mappings beside the EXE, independent of shortcut/terminal cwd.
     // An empty setting intentionally disables the external controller DB.
@@ -71,6 +74,10 @@ class SnoopyflyingaceApp : public rex::ReXApp {
     if (input) {
       redbaron::ConfigureLocalInput(*input);
     }
+  }
+
+  void OnPreLaunchModule() override {
+    redbaron::InstallVideoHooks(*runtime());
   }
 
   // Override virtual hooks for customization:

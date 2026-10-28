@@ -2,7 +2,7 @@
 
 The launcher and the local runtime now expose spatial FSR 1/CAS, monitor VSync,
 internal render scaling, FXAA and anisotropic filtering. This is a development
-build, not the completed installer release. High-FPS gameplay and DLSS remain
+build, not the completed installer release. Temporal upscaling and DLSS remain
 unfinished. Four-player multiplayer and online remain deferred.
 
 ## Available settings
@@ -58,22 +58,31 @@ DXGI synchronization follows Microsoft's `Present` requirements, including no
 tearing flag with a nonzero sync interval:
 [Microsoft DXGI Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present).
 
-## FPS and DLSS: outstanding work
+## Engine FPS targets
 
-Local investigation located the frame-interval configuration reader at
-`0x8294BB20`, called from `0x8294DC8C`; it reads the locked/unlocked target from
-`ENGINE.DISPLAY`. The local configuration uses 31 FPS. A developer experiment
-overrode the returned interval and tested virtual refresh rates of 60/120 Hz.
-Measured guest swaps reached 60/120 FPS during opening screens, but settled near
-34 FPS in the menu. The unmodified path measured approximately 30–31 FPS.
+`port/src/video.cpp` overrides the native display interval getter at
+`0x8294BB20`, called from `0x8294DC8C`. `redbaron_fps=0` preserves the original
+configuration (31 FPS in this game). The launcher offers 30, 60, 90, 120, 144,
+165 and 240 FPS; targets above 120 are marked experimental. Save checks the
+installed game probe before accepting a target. Virtual refresh follows the
+target, with a minimum of 60 Hz. Monitor VSync remains independent.
 
-These measurements do not establish correct gameplay speed or a general FPS
-unlock. The experiment is retained only in the ignored local investigation
-folder; it is not installed in the final executable. FPS options stay disabled
-and Save rejects non-default FPS targets. Next work must trace the simulation
-delta, frame waits and render workload, then compare mission timers, flight,
-weapons, animations and audio against real elapsed time at each target.
-Do not compensate by changing the system clock scalar.
+The engine continues calculating elapsed time using its original clock.
+No system clock scalar, audio clock or fixed physics constant is multiplied.
+In the tutorial on an RTX 5070 Ti, at internal scale 1 and host VSync off:
+
+| Target | Measured guest frames in flight | Observed simulation timing |
+|---|---|---|
+| 120 | about 119–120 FPS | approximately 8.33 ms delta; engine seconds follow wall time |
+| 240 (experimental) | about 218–234 FPS | delta follows actual frame time; engine seconds follow wall time |
+
+The earlier approximately 34 FPS result was measured during loading, before
+the scene became playable. Longer runs and window captures resolved this.
+These are local tutorial results, not a guarantee across all missions, GPUs,
+render scales, weapons, cutscenes or physics interactions. Keep Game default
+available for comparison. The personal TOML is preserved until Save is used.
+
+## Temporal FSR and DLSS: outstanding work
 
 The SDK's experimental temporal upscaler currently supplies color resources in
 place of depth and motion. It must not be advertised as FSR 2/3 support. DLSS has

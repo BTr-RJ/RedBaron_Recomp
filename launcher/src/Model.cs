@@ -106,7 +106,7 @@ namespace RedBaron {
                 throw new InvalidDataException("Name: use 1–15 characters; letters A–Z, numbers, internal spaces, hyphens or underscores.");
             if (!Resolutions.Contains(Resolution))
                 throw new InvalidDataException("Choose a resolution from the list.");
-            if (KeyboardPlayer < -1 || KeyboardPlayer > 4 || Anisotropic < -1 || Anisotropic > 5 || Scale < 1 || Scale > 6 || FsrSharpness < 0 || FsrSharpness > 100 || !new[]{0,30,60,90,120}.Contains(Fps))
+            if (KeyboardPlayer < -1 || KeyboardPlayer > 4 || Anisotropic < -1 || Anisotropic > 5 || Scale < 1 || Scale > 6 || FsrSharpness < 0 || FsrSharpness > 100 || !FrameRates.Contains(Fps))
                 throw new InvalidDataException("A graphics or input setting is outside the allowed range.");
             var devices = new HashSet<string>();
             for (int p = 0; p < 4; p++) {
@@ -134,6 +134,7 @@ namespace RedBaron {
                 {"resolution",Json.Quote(Resolution)}, {"fullscreen", Bool(Fullscreen)},
                 // The guest vblank timer and host monitor synchronization are independent.
                 {"vsync", "true"}, {"present_vsync", Bool(Vsync)}, {"anisotropic_override", Anisotropic.ToString()},
+                {"redbaron_fps", Fps.ToString()}, {"video_mode_refresh_rate", Math.Max(60,Fps).ToString()},
                 {"resolution_scale", Scale.ToString()}, {"draw_resolution_scale_x",Scale.ToString()}, {"draw_resolution_scale_y",Scale.ToString()},
                 {"window_width", Resolution.Split('x')[0]}, {"window_height", Resolution.Split('x')[1]},
                 {"window_size_in_physical_pixels", "true"},
@@ -153,6 +154,7 @@ namespace RedBaron {
         }
         static string Bool(bool value) { return value ? "true" : "false"; }
         public static readonly string[] Resolutions = {"1280x720","1600x900","1920x1080","2560x1440","3440x1440","3840x2160","5120x1440","5120x2880","7680x4320"};
+        public static readonly int[] FrameRates = {0,30,60,90,120,144,165,240};
     }
 
     public static class Actions {

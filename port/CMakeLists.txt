@@ -20,6 +20,7 @@ include(generated/rexglue.cmake)
 set(SNOOPYFLYINGACE_SOURCES
     src/main.cpp
     src/local_input.cpp
+    src/video.cpp
 )
 
 if(WIN32)
@@ -41,7 +42,7 @@ endif()
 rexglue_setup_target(snoopyflyingace)
 
 if(WIN32)
-    add_executable(redbaron_probe src/launcher_probe.cpp)
+    add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
     target_link_libraries(redbaron_probe PRIVATE rex::runtime)
 endif()
 

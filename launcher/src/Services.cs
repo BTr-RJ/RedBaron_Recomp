@@ -104,7 +104,8 @@ namespace RedBaron {
                 throw new InvalidDataException("The selected upscaling or antialiasing option is unavailable in this runtime. Refresh hardware detection.");
             if(!caps.flags.ContainsKey("present_vsync") || !caps.flags.ContainsKey("window_size_in_physical_pixels"))
                 throw new InvalidDataException("This Video tab requires the updated RedBaron GPU runtime. Install the video SDK patch and rebuild the game first.");
-            if(s.Fps!=0) throw new InvalidDataException("Higher frame rates are still under engine timing validation. Choose Game default.");
+            if(s.Fps!=0 && !caps.Supports("redbaron_fps",s.Fps.ToString()))
+                throw new InvalidDataException("This game build does not support the selected FPS target. Rebuild the game and refresh hardware detection.");
             if(!File.Exists(s.Exe)) { Json.Write(s.FileName,s); return; }
             string original=File.Exists(s.Toml)?File.ReadAllText(s.Toml):"";
             string updated=s.RuntimeText(original);
