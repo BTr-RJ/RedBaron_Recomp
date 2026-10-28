@@ -40,6 +40,11 @@ endif()
 
 rexglue_setup_target(snoopyflyingace)
 
+if(WIN32)
+    add_executable(redbaron_probe src/launcher_probe.cpp)
+    target_link_libraries(redbaron_probe PRIVATE rex::runtime)
+endif()
+
 # Stage controller mappings and a starter configuration beside the executable.
 # Existing user settings must survive rebuilds.
 if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/snoopyflyingace.toml")

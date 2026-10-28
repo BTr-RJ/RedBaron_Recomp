@@ -63,7 +63,7 @@ $cmakeArgs = @('-S', $portDir, '-B', $BuildDirectory, '-G', 'Ninja',
 Invoke-CheckedNative 'cmake' $cmakeArgs
 if ($ConfigureOnly) { Write-Output 'Codegen e configuracao concluidos.'; return }
 
-Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyflyingace', '--parallel', "$Parallel")
+Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyflyingace', 'redbaron_probe', '--parallel', "$Parallel")
 foreach ($name in @('rexruntime.dll', 'rexgpu-xenos.dll')) {
     Copy-Item -LiteralPath (Join-Path $SdkRoot ('bin/' + $name)) -Destination $BuildDirectory
 }

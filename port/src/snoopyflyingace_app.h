@@ -13,6 +13,7 @@
 
 namespace redbaron {
 void ConfigureLocalInput(rex::input::InputSystem& input);
+void ConfigureLauncherInput(rex::RuntimeConfig& config);
 }
 
 class SnoopyflyingaceApp : public rex::ReXApp {
@@ -40,7 +41,8 @@ class SnoopyflyingaceApp : public rex::ReXApp {
     }
   }
 
-  void OnPreSetup(rex::RuntimeConfig& /*config*/) override {
+  void OnPreSetup(rex::RuntimeConfig& config) override {
+    redbaron::ConfigureLauncherInput(config);
     // Resolve mappings beside the EXE, independent of shortcut/terminal cwd.
     // An empty setting intentionally disables the external controller DB.
     std::filesystem::path mappings_file = REXCVAR_GET(hid_mappings_file);

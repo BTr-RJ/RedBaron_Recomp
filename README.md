@@ -12,7 +12,7 @@ Port nativo experimental de **Snoopy Flying Ace** para Windows x64, usando ReXGl
 - Backend SDL e base adicional de controles incluídos. O controle Microsoft foi reconhecido; outros modelos ainda exigem teste físico.
 - Roteamento opcional para separar teclado/mouse de controles por jogador. Perfis adicionais e partidas locais ainda dependem de implementação; veja [o diagnóstico de multiplayer](docs/MULTIPLAYER.md).
 
-O mapeamento atual é **referencial e personalizável**. O launcher planejado terá abas de vídeo/GPU, controles e mapeamento, som, conquistas e online/perfil. A interface ainda não foi implementada. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
+O [launcher Windows](launcher/README.md) oferece **Install, Video, Controls e Online**, Save/Play e abertura direta opcional. Execute `launcher/out/RedBaron_Launcher.exe` após compilar com `launcher/build.ps1`. O instalador usa dados locais já extraídos e requer ferramentas/SDK instalados. Quatro jogadores e online foram adiados; Som e Conquistas permanecem planejados. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
 
 ## Conteúdo do repositório
 
@@ -25,6 +25,7 @@ O mapeamento atual é **referencial e personalizável**. O launcher planejado te
 | `patches` | Patch do codegen do SDK para os saltos entre chunks |
 | `docs` | Estado validado, limitações e planejamento |
 | `scripts` | Preparação/build local e auditoria do conteúdo versionado |
+| `launcher` | Interface WPF, instalador, preferências, captura de teclas e testes |
 
 O GitHub não distribui o jogo: XEX, assets, ícones extraídos e C++ gerado a partir do XEX ficam apenas na máquina do usuário. SDK instalado, builds, saves, caches, logs e backups também são locais. O histórico publicado é filtrado para excluir fontes derivados, ícones e cópias antigas desses arquivos; o histórico original completo fica em backup local.
 
@@ -44,6 +45,7 @@ Forneça seus dados extraídos em `game/` e instale o SDK em `sdk_experimental/`
 
 ```powershell
 .\scripts\build.ps1
+.\launcher\build.ps1
 ```
 
 O script valida os caminhos, preserva um backup do build existente, gera os fontes **localmente antes de configurar o CMake**, compila e copia as DLLs. Aceita `-SdkRoot`, `-BuildDirectory`, `-Parallel` e `-ConfigureOnly`. Ele usa dados já extraídos; extração de pacotes no instalador do launcher é uma etapa futura.
@@ -52,7 +54,7 @@ O SDK deve conter o patch experimental compatível com o manifesto e os agrupame
 
 ## Executar e configurar
 
-Abra `build_cpp_release/snoopyflyingace.exe`. Mantenha ao lado dele as DLLs, `snoopyflyingace.toml` e `gamecontrollerdb.txt`.
+Abra `launcher/out/RedBaron_Launcher.exe` para configurar e jogar. A abertura de `build_cpp_release/snoopyflyingace.exe` continua disponível. Mantenha ao lado do jogo as DLLs, `redbaron_probe.exe`, `snoopyflyingace.toml` e `gamecontrollerdb.txt`.
 
 - Edite `build_cpp_release/snoopyflyingace.toml` para ajustes pessoais.
 - `port/config/snoopyflyingace.toml` é o padrão versionado, instalado somente quando o build ainda não tem configuração.

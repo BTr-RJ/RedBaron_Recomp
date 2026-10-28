@@ -1,4 +1,5 @@
 #include "local_input.h"
+#include "pad_mapping.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -81,6 +82,28 @@ int main() {
     redbaron::LocalDeviceAssignment invalid_option(99);
     invalid_option.OnDevicesChanged({keyboard, pad1, Pad(70, UINT32_MAX)});
     Expect(invalid_option, 0, {10, 20});
+    auto first=pad1, second=pad2;
+    first.guid="same-guid"; second.guid="same-guid";
+    redbaron::LocalDeviceAssignment selected(0);
+    selected.SetSelections({"same-guid#1","same-guid#0","none","none"});
+    selected.OnDevicesChanged({first,second,keyboard});
+    Expect(selected,0,{30,10}); Expect(selected,1,{20});
+    selected.OnDevicesChanged({second,keyboard});
+    Expect(selected,0,{30,10}); Expect(selected,1,{});
+    first.id=static_cast<DeviceId>(80);
+    selected.OnDevicesChanged({first,second,keyboard});
+    Expect(selected,0,{30,10}); Expect(selected,1,{80});
+
+    auto mapping=redbaron::IdentityPadMap();
+    redbaron::PadValues values{};
+    for(size_t i=0;i<values.size();++i) values[i]=static_cast<int>(i)*1300;
+    if(redbaron::RemapPad(values,mapping)!=values) throw std::runtime_error("Identity mapping changed input");
+    mapping[0]=15; mapping[15]=0; mapping[1]=-1;
+    auto mapped=redbaron::RemapPad(values,mapping);
+    if(mapped[0]!=values[15] || mapped[15]!=values[0] || mapped[1]!=0) throw std::runtime_error("Button/trigger mapping failed");
+    const auto before=mapping;
+    if(redbaron::ParsePadMap("0,1",mapping) || mapping!=before) throw std::runtime_error("Invalid mapping was accepted");
+    if(!redbaron::ParsePadMap("",mapping) || mapping!=redbaron::IdentityPadMap()) throw std::runtime_error("Default mapping failed");
     std::cout << "OK: shared/reserved slots, overflow, ordering, disconnect, reconnect\n";
     return 0;
   } catch (const std::exception& error) {

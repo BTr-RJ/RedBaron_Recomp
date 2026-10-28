@@ -2,7 +2,9 @@
 
 ## Decisões atuais
 
-Preservar o gameplay original: o movimento do mouse não deve controlar câmera ou voo neste momento. Teclado, cliques e controles físicos devem coexistir. O layout atual serve como referência; os comandos serão configuráveis no launcher.
+**Prioridade atual: launcher.** Em 28/10/2026, o usuário adiou multiplayer para quatro jogadores e online. O launcher simples em tema escuro foi implementado com Install, Video, Controls e Online, Save/Play e abertura direta. Ver [funções, testes e limites](../launcher/README.md).
+
+Preservar o gameplay original: o movimento do mouse não deve controlar câmera ou voo neste momento. Teclado, cliques e controles físicos devem coexistir. O layout atual serve como referência; os comandos são configuráveis no launcher.
 
 O Xbox Series do usuário é o controle de referência. A compatibilidade é ampliada pelo SDL e pela base de mapeamentos, com confirmação por modelo conforme os testes.
 
@@ -10,12 +12,12 @@ O Xbox Series do usuário é o controle de referência. A compatibilidade é amp
 
 1. **Licença e execução:** desbloqueio confirmado no menu e renderização normal com ROV. Continuar a validação de conteúdo e estabilidade da campanha.
 2. **Entrada:** validar o layout no voo, uso simultâneo com controle, vibração, reconexão e outros modelos. Manter câmera pelo mouse desligada.
-3. **Multiplayer:** roteamento separado de teclado e controles implementado, mantendo o padrão compartilhado. O SDK só reconhece um perfil e compartilha sua identidade nas operações de saves; implementar perfis e armazenamento por usuário antes de validar o co-op de dois jogadores identificado nos textos locais. Quatro jogadores e online continuam em investigação. Ver [diagnóstico e validação](MULTIPLAYER.md).
+3. **Multiplayer (adiado):** roteamento separado de teclado e controles implementado, mantendo o padrão compartilhado. O SDK só reconhece um perfil e compartilha sua identidade nas operações de saves; implementar perfis e armazenamento por usuário antes de validar o co-op de dois jogadores identificado nos textos locais. Quatro jogadores e online dependem da retomada desta etapa. Ver [diagnóstico e validação](MULTIPLAYER.md).
 4. **Vídeo:** resoluções, proporções, filtros e limite de FPS. Avaliar viabilidade de FSR/DLSS antes de oferecer opções.
-5. **Launcher com instalador embutido:** preparar os arquivos fornecidos pelo usuário e criar a interface abaixo sobre funções efetivamente suportadas pelo port.
+5. **Launcher com instalador embutido (prioridade promovida):** versão inicial implementada. Próximos passos: validação do usuário, extração de pacotes locais, preparação de dependências e futuras abas Som/Conquistas.
 6. **Splash screens:** corrigir o pipeline 2D de apresentação das imagens de abertura.
 
-## Launcher planejado
+## Launcher: estado e evolução
 
 | Aba | Escopo previsto |
 |---|---|
@@ -27,8 +29,8 @@ O Xbox Series do usuário é o controle de referência. A compatibilidade é amp
 | Geral | Caminho dos dados, iniciar jogo, restaurar padrões e acesso aos logs |
 | Instalação | Selecionar cópia local do jogo, verificar arquivos, extrair/importar os dados e preparar os componentes necessários localmente |
 
-O launcher deverá preservar preferências entre versões, permitir restaurar padrões e usar o TOML atual como ponto de partida. Nome online será uma configuração de perfil; não deve ser apresentado como conexão aos serviços originais do Xbox Live.
+O launcher preserva preferências, oferece restauração do mapa e usa o TOML atual como ponto de partida. Nome online fica reservado no JSON, sem conexão aos serviços originais do Xbox Live. UPnP está desabilitado. FSR ausente deste runtime, DLSS e desbloqueio de FPS pendentes.
 
-O repositório poderá tornar-se público posteriormente, mas não deve conter arquivos do jogo nem código gerado a partir deles. O instalador terá de trabalhar com a cópia fornecida pelo usuário. O script de build atual já gera os fontes localmente; a interface e a extração de pacotes ainda não foram implementadas.
+O repositório poderá tornar-se público posteriormente, sem arquivos do jogo nem código gerado. O instalador já usa uma pasta extraída fornecida pelo usuário e compila em destino separado. Extração de pacotes e instalação das ferramentas ainda não foram implementadas.
 
-O desenho e a tecnologia serão definidos quando essa etapa começar. Este planejamento não inicia a implementação da interface nem muda a ordem das prioridades.
+Interface nativa Windows em WPF/.NET Framework 4.8. Os quatro mapas de entrada não criam perfis adicionais no jogo. O estado jogável atual continua sendo um jogador.

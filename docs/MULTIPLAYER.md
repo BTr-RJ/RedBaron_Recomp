@@ -2,6 +2,8 @@
 
 O roteamento independente de teclado/mouse e controles foi implementado. **Uma partida com dois jogadores ainda não está habilitada nem validada.** A próxima dependência são os perfis locais do runtime.
 
+O usuário adiou quatro jogadores e online para priorizar o launcher. A aba Controls prepara quatro mapas e escolhe controles por identidade SDL, sem ativar novos perfis do jogo. O padrão `auto` mantém a distribuição abaixo; seletores explícitos podem alterá-la. Veja [o launcher](../launcher/README.md).
+
 ## Roteamento disponível
 
 `redbaron_keyboard_player` é uma opção do TOML ao lado do EXE e aceita valores de 0 a 4. Precisa reiniciar o jogo. Se a configuração existente não contiver a opção, o valor padrão é 0.
