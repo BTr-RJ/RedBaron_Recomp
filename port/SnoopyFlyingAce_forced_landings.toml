@@ -1,0 +1,4 @@
+# Jump-table landings the heuristic detectJumpTable under-recovered -- forced to
+# be recovered as in-function blocks so build_bctr's `goto loc_T` resolves and the
+# enclosing routine stays whole. Auto-written by rexauto's undeclared-label heal.
+forced_landings = []
