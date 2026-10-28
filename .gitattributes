@@ -1,0 +1,5 @@
+# Preserve the downloaded database/license bytes and the documented SHA256.
+port/config/gamecontrollerdb.txt -text
+port/config/gamecontrollerdb.LICENSE.txt -text
+# Keep SDK patches usable independently of Windows checkout line endings.
+*.patch text eol=lf

@@ -23,6 +23,17 @@ endif()
 
 rexglue_setup_target(snoopyflyingace)
 
+# Stage controller mappings and a starter configuration beside the executable.
+# Existing user settings must survive rebuilds.
+if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/snoopyflyingace.toml")
+    configure_file(config/snoopyflyingace.toml
+        "${CMAKE_CURRENT_BINARY_DIR}/snoopyflyingace.toml" COPYONLY)
+endif()
+foreach(input_asset gamecontrollerdb.txt gamecontrollerdb.LICENSE.txt CONTROLES.txt)
+    configure_file("config/${input_asset}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${input_asset}" COPYONLY)
+endforeach()
+
 # rexauto-pch: parse the SnoopyFlyingAce_init.h monolith once, not once per TU
 # (build perf; output-neutral -- a PCH caches the AST, not emitted code).
 target_precompile_headers(snoopyflyingace PRIVATE
