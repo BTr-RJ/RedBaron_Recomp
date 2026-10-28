@@ -53,8 +53,19 @@ Um modelo generico sem mapeamento pode exigir entrada SDL personalizada em
 outro arquivo, escolhido pela opcao hid_mappings_file no TOML.
 Caminhos relativos de hid_mappings_file sao resolvidos a partir da pasta do EXE.
 
-Teclado/mouse compartilham o jogador 1 com o primeiro controle fisico.
-Outros controles mantem seus slots. Isto nao implementa multiplayer novo.
+Por padrao, teclado/mouse compartilham o jogador 1 com o primeiro controle.
+redbaron_keyboard_player=0 preserva esse comportamento (inclusive se omitido).
+Para reservar uma entrada separada, use 1, 2, 3 ou 4 e reinicie o jogo:
+- 1: teclado/mouse no jogador 1; primeiro controle no jogador 2.
+- 2: primeiro controle no jogador 1; teclado/mouse no jogador 2.
+- 3 ou 4: reserva esse jogador e distribui controles nos outros tres slots.
+Com uma entrada reservada, cabem ate tres controles fisicos; o excedente e
+ignorado. Os slots dos demais controles nao mudam quando um e desconectado.
+Se mnk_mode=false, a reserva e ignorada e os controles usam os quatro slots.
+Esta opcao prepara o roteamento. O SDK ainda reconhece somente o perfil do
+jogador 1: ela NAO habilita sozinha uma partida com dois jogadores.
+Enquanto os perfis locais estiverem em desenvolvimento, mantenha 0 para
+jogar normalmente. A distribuicao de dispositivos fica registrada nos logs.
 Se houver entradas duplicadas, use apenas uma camada de emulacao por controle
 (por exemplo, nao exponha simultaneamente o controle real e sua copia virtual).
 

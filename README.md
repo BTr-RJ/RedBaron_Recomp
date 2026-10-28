@@ -10,6 +10,7 @@ Port nativo experimental de **Snoopy Flying Ace** para Windows x64, usando ReXGl
 - Direct3D 12 em ROV, configuração necessária para o 3D funcionar nesta máquina.
 - Mapeamento inicial de teclado e cliques do mouse, sem movimento de câmera pelo mouse.
 - Backend SDL e base adicional de controles incluídos. O controle Microsoft foi reconhecido; outros modelos ainda exigem teste físico.
+- Roteamento opcional para separar teclado/mouse de controles por jogador. Perfis adicionais e partidas locais ainda dependem de implementação; veja [o diagnóstico de multiplayer](docs/MULTIPLAYER.md).
 
 O mapeamento atual é **referencial e personalizável**. O launcher planejado terá abas de vídeo/GPU, controles e mapeamento, som, conquistas e online/perfil. A interface ainda não foi implementada. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
 

@@ -19,12 +19,23 @@ include(generated/rexglue.cmake)
 # Sources
 set(SNOOPYFLYINGACE_SOURCES
     src/main.cpp
+    src/local_input.cpp
 )
 
 if(WIN32)
     add_executable(snoopyflyingace WIN32 ${SNOOPYFLYINGACE_SOURCES})
 else()
     add_executable(snoopyflyingace ${SNOOPYFLYINGACE_SOURCES})
+endif()
+
+# Routing tests need SDK headers only, without loading game assets or the GPU.
+option(REDBARON_BUILD_INPUT_TESTS "Build local device routing tests" OFF)
+if(REDBARON_BUILD_INPUT_TESTS)
+    enable_testing()
+    add_executable(redbaron_input_tests tests/local_input_test.cpp)
+    target_include_directories(redbaron_input_tests PRIVATE src
+        $<TARGET_PROPERTY:rex::runtime,INTERFACE_INCLUDE_DIRECTORIES>)
+    add_test(NAME redbaron_input_routing COMMAND redbaron_input_tests)
 endif()
 
 rexglue_setup_target(snoopyflyingace)

@@ -6,9 +6,14 @@
 
 #include <rex/filesystem.h>
 #include <rex/input/flags.h>
+#include <rex/input/input_system.h>
 #include <rex/logging.h>
 #include <rex/rex_app.h>
 #include <rex/system/flags.h>
+
+namespace redbaron {
+void ConfigureLocalInput(rex::input::InputSystem& input);
+}
 
 class SnoopyflyingaceApp : public rex::ReXApp {
  public:
@@ -57,11 +62,19 @@ class SnoopyflyingaceApp : public rex::ReXApp {
                 previous_mask, REXCVAR_GET(license_mask));
   }
 
+  void OnPostSetup() override {
+    // ReXApp constructs InputSystem for both SDL and XInput. Install the policy
+    // before the guest starts polling, preserving the SDK drivers and merging.
+    auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system());
+    if (input) {
+      redbaron::ConfigureLocalInput(*input);
+    }
+  }
+
   // Override virtual hooks for customization:
   // void OnPostInitLogging() override {}
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
-  // void OnPostSetup() override {}
   // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // std::unique_ptr<rex::ui::AchievementNotificationDialog>

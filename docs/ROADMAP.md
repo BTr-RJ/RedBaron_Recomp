@@ -10,7 +10,7 @@ O Xbox Series do usuário é o controle de referência. A compatibilidade é amp
 
 1. **Licença e execução:** desbloqueio confirmado no menu e renderização normal com ROV. Continuar a validação de conteúdo e estabilidade da campanha.
 2. **Entrada:** validar o layout no voo, uso simultâneo com controle, vibração, reconexão e outros modelos. Manter câmera pelo mouse desligada.
-3. **Multiplayer:** investigar até quatro jogadores locais e substituir stubs de rede. Quantidade de jogadores e funcionalidade online ainda precisam ser demonstradas.
+3. **Multiplayer:** roteamento separado de teclado e controles implementado, mantendo o padrão compartilhado. O SDK só reconhece um perfil e compartilha sua identidade nas operações de saves; implementar perfis e armazenamento por usuário antes de validar o co-op de dois jogadores identificado nos textos locais. Quatro jogadores e online continuam em investigação. Ver [diagnóstico e validação](MULTIPLAYER.md).
 4. **Vídeo:** resoluções, proporções, filtros e limite de FPS. Avaliar viabilidade de FSR/DLSS antes de oferecer opções.
 5. **Launcher com instalador embutido:** preparar os arquivos fornecidos pelo usuário e criar a interface abaixo sobre funções efetivamente suportadas pelo port.
 6. **Splash screens:** corrigir o pipeline 2D de apresentação das imagens de abertura.

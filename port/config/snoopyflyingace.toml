@@ -3,6 +3,9 @@
 render_target_path_d3d12 = "rov"
 
 # Controle fisico e teclado/mouse compartilham o jogador 1.
+redbaron_keyboard_player = 0
+# 1..4 reserva esse jogador para teclado/mouse e desloca os controles.
+# Apenas roteamento: perfis adicionais/multiplayer ainda em implementacao.
 input_backend = "sdl"
 hid_mappings_file = "gamecontrollerdb.txt"
 mnk_mode = true
