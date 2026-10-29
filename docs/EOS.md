@@ -73,6 +73,11 @@ seletor do jogo à entrada e estabelecer o P2P antes de usar isso em partidas.
 `directory_mapping.*` preserva endereços enquanto as salas permanecem na lista,
 rejeita identificadores de sessão duplicados e resolve o endereço para o lobby;
 ele ainda não detecta a seleção do jogo nem inicia a entrada.
+`lobby_join.*` implementa o ciclo assíncrono de entrada e saída, mantendo o
+resultado da busca até a conclusão; `JoinSelected` resolve o endereço selecionado
+para o resultado correspondente. Os estados foram exercitados com uma API
+simulada, mas ainda não há evento do jogo conectado a esse código nem teste de
+entrada com outra identidade EOS.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,

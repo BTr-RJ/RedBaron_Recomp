@@ -18,6 +18,8 @@ class LobbyDirectory {
   LobbyDirectory(const LobbyDirectory&)=delete;
   LobbyDirectory& operator=(const LobbyDirectory&)=delete;
   bool Refresh(EOS_HLobbySearch search);
+  // Transfers one result handle to a pending join; caller must release it.
+  EOS_HLobbyDetails TakeDetails(const std::string& lobby_id);
   const std::vector<LobbyEntry>& entries() const {return entries_;}
  private:
   std::vector<LobbyEntry> entries_;

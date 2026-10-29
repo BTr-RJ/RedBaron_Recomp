@@ -11,6 +11,11 @@ void Release(std::vector<LobbyEntry>& entries) {
 }
 }
 LobbyDirectory::~LobbyDirectory(){Release(entries_);}
+EOS_HLobbyDetails LobbyDirectory::TakeDetails(const std::string& id) {
+  auto it=std::find_if(entries_.begin(),entries_.end(),[&](const auto& e){return e.id==id;});
+  if(it==entries_.end())return nullptr;
+  auto handle=it->details;it->details=nullptr;entries_.erase(it);return handle;
+}
 bool LobbyDirectory::Refresh(EOS_HLobbySearch search) {
   if(!search)return false;
   EOS_LobbySearch_GetSearchResultCountOptions count_options{};

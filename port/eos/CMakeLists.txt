@@ -24,7 +24,7 @@ target_include_directories(redbaron_eos_fragment_tests PRIVATE "${REDBARON_EOS_S
 add_test(NAME redbaron_eos_fragmentation COMMAND redbaron_eos_fragment_tests)
 add_library(redbaron_eos_wire STATIC eos_wire.cpp fragmentation.cpp)
 target_include_directories(redbaron_eos_wire PRIVATE "${REDBARON_EOS_SDK}/Include")
-add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp lobby_publisher.cpp lobby_directory.cpp directory_mapping.cpp ../network/session_record.cpp)
+add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp lobby_publisher.cpp lobby_directory.cpp lobby_join.cpp join_selected.cpp directory_mapping.cpp ../network/session_record.cpp)
 target_include_directories(redbaron_eos_lobby PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_probe PRIVATE redbaron_eos_wire redbaron_eos_lobby)
 add_executable(redbaron_eos_wire_tests eos_wire_test.cpp)
@@ -40,3 +40,10 @@ add_executable(redbaron_eos_directory_tests directory_mapping_test.cpp directory
 target_include_directories(redbaron_eos_directory_tests PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_directory_tests PRIVATE ws2_32)
 add_test(NAME redbaron_eos_directory_mapping COMMAND redbaron_eos_directory_tests)
+add_executable(redbaron_eos_join_tests lobby_join.cpp lobby_join_test.cpp)
+target_include_directories(redbaron_eos_join_tests PRIVATE "${REDBARON_EOS_SDK}/Include")
+target_link_libraries(redbaron_eos_join_tests PRIVATE "${REDBARON_EOS_SDK}/Lib/EOSSDK-Win64-Shipping.lib")
+add_custom_command(TARGET redbaron_eos_join_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${REDBARON_EOS_SDK}/Bin/EOSSDK-Win64-Shipping.dll" "$<TARGET_FILE_DIR:redbaron_eos_join_tests>")
+add_test(NAME redbaron_eos_lobby_join COMMAND redbaron_eos_join_tests)
