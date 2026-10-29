@@ -226,4 +226,4 @@
    void* GetNativeWindowHandle() const override;
 +  void ShowAfterShaderPreparation();
    bool SetRelativeMouseMode(bool enable) override;
-  bool WarpMouseToCenter(int32_t& x_out, int32_t& y_out) override;
+   bool WarpMouseToCenter(int32_t& x_out, int32_t& y_out) override;
