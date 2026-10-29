@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include "socket_bridge.h"
 #include "directory.h"
+#include "session_publisher.h"
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -22,6 +23,9 @@ int main(int argc,char** argv) {
     rtc::InitLogger(rtc::LogLevel::Warning,[](rtc::LogLevel level,std::string message){std::cerr<<message<<'\n';});
     Transport transport(options);
     SocketBridge bridge(transport,uint8_t(ns),options.value("diagnostics",false));
+    std::unique_ptr<SessionPublisher> publisher;
+    if(options.value("public",false) && options.value("room","").empty())
+      publisher=std::make_unique<SessionPublisher>(transport,uint8_t(ns));
     transport.status=[&](const Json& message){
       Json output=message;
       if(message.at("op")=="welcome") {
@@ -48,6 +52,7 @@ int main(int argc,char** argv) {
     while(!transport.stopped()) {
       transport.Poll();
       if(transport.admitted())bridge.Poll();
+      if(publisher)publisher->Poll();
       if(parent && WaitForSingleObject(parent,0)==WAIT_OBJECT_0)break;
       if(piped) {
         DWORD available=0;

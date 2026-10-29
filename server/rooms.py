@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import secrets
+import struct
 import time
 
 from websockets.asyncio.server import serve, ServerConnection
@@ -58,6 +59,7 @@ class Room:
     code: str
     mode: str
     public: bool = False
+    session: bytes = b""
     members: dict[int, Member] = field(default_factory=dict)
     locked: bool = False
     # IDs aren't reused: delayed ICE messages cannot target a replacement member.
@@ -99,14 +101,50 @@ class Rooms:
         entries = []
         for room in sorted(self.rooms.values(), key=lambda item: item.code):
             players = sum(member.players for member in room.members.values())
-            if (not room.public or room.locked or not room.members.get(0) or players >= room.capacity
+            if (not room.public or not room.session or room.locked or not room.members.get(0) or players >= room.capacity
                     or (mode != "all" and room.mode != mode)):
                 continue
             entries.append({"room": room.code, "host": room.members[0].name,
-                            "mode": room.mode, "players": players, "capacity": room.capacity})
-        page = entries[offset:offset + 50]
+                            "mode": room.mode, "players": players, "capacity": room.capacity,
+                            "session": room.session.hex()})
+        page, size = [], 0
+        for entry in entries[offset:]:
+            entry_size = len(json.dumps(entry, separators=(",", ":"))) + 1
+            if len(page) >= 50 or size + entry_size > 32000:
+                break
+            page.append(entry)
+            size += entry_size
         return {"op": "rooms", "rooms": page, "next_offset": offset + len(page)
                 if offset + len(page) < len(entries) else None}
+
+    @staticmethod
+    def validate_session(value):
+        require(isinstance(value, str) and len(value) <= 16384 and len(value) % 2 == 0
+                and re.fullmatch(r"[0-9a-f]*", value) is not None, "Invalid session record")
+        data = bytes.fromhex(value)
+        require(len(data) >= 104 and data[:8] == b"RBLAN01\x02" and
+                struct.unpack_from(">I", data, 16)[0] == 0x584109B5, "Invalid session record")
+        slots = struct.unpack_from(">4I", data, 80)
+        contexts, properties = struct.unpack_from(">2I", data, 96)
+        require(0 < slots[0] <= 32 and sum(slots) <= 32 and contexts <= 32 and properties <= 32,
+                "Invalid session record")
+        position, context_keys, property_keys = 104, set(), set()
+        for _ in range(contexts):
+            require(position + 8 <= len(data), "Invalid session record")
+            key, _ = struct.unpack_from(">2I", data, position)
+            require(key not in context_keys, "Invalid session record")
+            context_keys.add(key)
+            position += 8
+        for _ in range(properties):
+            require(position + 8 <= len(data), "Invalid session record")
+            key, length = struct.unpack_from(">2I", data, position)
+            require(key not in property_keys, "Invalid session record")
+            property_keys.add(key)
+            position += 8
+            require(length <= 1024 and position + length <= len(data), "Invalid session record")
+            position += length
+        require(position == len(data), "Invalid session record")
+        return data
 
     def admit(self, socket, request):
         require(isinstance(request, dict), "Expected a JSON object")
@@ -199,6 +237,10 @@ class Rooms:
                 self.deliver(peer, {"op": "locked", "locked": room.locked})
         elif op == "ice":
             member.send({"op": "ice", "ice": self.ice(room, member)})
+        elif op == "publish_session":
+            require(member.id == 0 and room.public, "Only a public room host can publish a session")
+            session = data.get("session")
+            room.session = b"" if session is None else self.validate_session(session)
         elif op == "ping":
             member.send({"op": "pong"})
         else:

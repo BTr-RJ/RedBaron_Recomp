@@ -10,10 +10,12 @@ The service is prepared for future hosting. No public endpoint is operated by th
 project yet. Local signaling tests are not evidence of Internet gameplay.
 
 The development protocol distinguishes private rooms (the default) from rooms
-explicitly marked public. A paginated directory lists only public rooms with an
-available slot; locked and private rooms are never included. This is a backend
-building block: the game's room browser and automatic connection are not yet
-integrated, and the current launcher still creates private rooms.
+explicitly marked public. The host companion queries the native game's local
+discovery endpoint and publishes its session record only while the game has an
+open public session. A paginated directory lists only these sessions with an
+available slot; locked, private and closed sessions are never included. This
+is a backend building block: the game's room browser and automatic connection
+are not yet integrated, and the current launcher still creates private rooms.
 
 For integration work, `redbaron_net --list directory.json` accepts a JSON file
 containing `server`, optional `mode` (`all`, `multiplayer`, or `coop`) and

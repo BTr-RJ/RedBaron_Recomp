@@ -3,6 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 import socket
+import struct
 import sys
 import tempfile
 import time
@@ -69,12 +70,25 @@ async def main(executable):
                 return client
 
             try:
+                class GameDiscovery(asyncio.DatagramProtocol):
+                    def connection_made(self, transport):
+                        self.transport = transport
+                    def datagram_received(self, data, addr):
+                        if len(data) == 20 and data[:8] == b"RBLAN01\x01":
+                            self.transport.sendto(data[:7] + b"\x02" + data[8:20] + bytes(60) +
+                                struct.pack(">6I", 8, 0, 0, 0, 0, 0), addr)
+                fake_game, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+                    GameDiscovery, local_addr=("127.140.0.0", 43821))
                 host = await launch(0, public=True)
                 welcome = await host.wait("welcome")
-                async with connect(url, proxy=None) as directory:
-                    await directory.send(json.dumps(dict(op="list", protocol=1, build="redbaron-wire-1")))
-                    listing = json.loads(await directory.recv())
-                    assert [item["room"] for item in listing["rooms"]] == [welcome["room"]], listing
+                async with asyncio.timeout(10):
+                    while True:
+                        async with connect(url, proxy=None) as directory:
+                            await directory.send(json.dumps(dict(op="list", protocol=1, build="redbaron-wire-1")))
+                            listing = json.loads(await directory.recv())
+                        if listing["rooms"]: break
+                        await asyncio.sleep(.1)
+                assert [item["room"] for item in listing["rooms"]] == [welcome["room"]], listing
                 config = Path(folder) / "directory.json"
                 config.write_text(json.dumps(dict(server=url, mode="multiplayer")))
                 directory = await asyncio.create_subprocess_exec(str(executable), "--list", str(config),
@@ -82,6 +96,11 @@ async def main(executable):
                 output, errors = await asyncio.wait_for(directory.communicate(), 30)
                 assert directory.returncode == 0, (output, errors)
                 assert [item["room"] for item in json.loads(output)["rooms"]] == [welcome["room"]], output
+                fake_game.close()
+                async with asyncio.timeout(8):
+                    while rooms.rooms[welcome["room"]].session:
+                        await asyncio.sleep(.1)
+                assert not rooms.directory(dict(protocol=1, build="redbaron-wire-1"))["rooms"]
                 print("PASS: public native host appears in room directory", flush=True)
                 for i in range(1, 8):
                     client = await launch(i, welcome["room"])

@@ -72,6 +72,12 @@ void Transport::Poll() {
 }
 void Transport::Emit(const Json& message) { if (status) status(message); }
 void Transport::Stop() { stopped_ = true; }
+void Transport::PublishSession(const std::string& record) {
+  if (!admitted_ || id_ != 0 || !options_.value("public", false)) return;
+  Json message{{"op", "publish_session"}};
+  message["session"] = record.empty() ? Json(nullptr) : Json(record);
+  socket_->Send(message.dump());
+}
 void Transport::Signal(const Json& data) {
   const auto op = data.at("op").get<std::string>();
   if (op == "welcome") {

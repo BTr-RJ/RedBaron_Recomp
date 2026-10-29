@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import struct
 import unittest
 
 from websockets.asyncio.client import connect
@@ -14,6 +15,8 @@ from rooms import Rooms, BUILD, PROTOCOL
 
 
 class RoomTests(unittest.IsolatedAsyncioTestCase):
+    SESSION = (b"RBLAN01\x02" + bytes(8) + struct.pack(">I", 0x584109B5) + bytes(60) +
+               struct.pack(">6I", 8, 0, 0, 0, 0, 0)).hex()
     async def asyncSetUp(self):
         self.rooms = Rooms(turn_urls=["turn:relay.example:3478"], turn_secret="test-only-secret")
         self.server = await serve(self.rooms.handler, "127.0.0.1", 0,
@@ -145,10 +148,18 @@ class RoomTests(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(3):
             return json.loads(await socket.recv())
 
+    async def publish(self, socket, session=SESSION):
+        await socket.send(json.dumps({"op": "publish_session", "session": session}))
+        await socket.send(json.dumps({"op": "ping"}))
+        await self.message(socket, "pong")
+
     async def test_directory_public_only_capacity_and_lock(self):
         private_host, private = await self.open(name="Private")
         public_host, public = await self.open(name="Public", public=True)
         coop_host, coop = await self.open(name="Coop", mode="coop", public=True)
+        self.assertEqual((await self.directory())["rooms"], [])
+        await self.publish(public_host)
+        await self.publish(coop_host)
         listed = await self.directory()
         self.assertEqual({item["room"] for item in listed["rooms"]}, {public["room"], coop["room"]})
         self.assertNotIn(private["room"], json.dumps(listed))
@@ -172,8 +183,9 @@ class RoomTests(unittest.IsolatedAsyncioTestCase):
         for options in ({"mode": "invalid"}, {"offset": True}, {"offset": -1}):
             self.assertEqual((await self.directory(**options))["op"], "error")
         for index in range(51):
-            _, welcome = await self.open(name=f"Host{index}", public=True)
+            host, welcome = await self.open(name=f"Host{index}", public=True)
             self.assertEqual(welcome["op"], "welcome")
+            await self.publish(host)
         first = await self.directory()
         self.assertEqual(len(first["rooms"]), 50)
         second = await self.directory(offset=first["next_offset"])
@@ -187,6 +199,18 @@ class RoomTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid["op"], "error")
         _, private = await self.open()
         self.assertNotIn(private["room"], json.dumps(await self.directory()))
+
+    async def test_session_publication_is_host_only_and_validated(self):
+        host, welcome = await self.open(public=True)
+        client, _ = await self.open(op="join", room=welcome["room"])
+        await client.send(json.dumps({"op": "publish_session", "session": self.SESSION}))
+        self.assertIn("Only a public room host", (await self.message(client, "error"))["message"])
+        await self.publish(host)
+        self.assertEqual((await self.directory())["rooms"][0]["session"], self.SESSION)
+        await self.publish(host, None)
+        self.assertEqual((await self.directory())["rooms"], [])
+        await host.send(json.dumps({"op": "publish_session", "session": "00"}))
+        self.assertEqual((await self.message(host, "error"))["message"], "Invalid session record")
 
 
 if __name__ == "__main__":

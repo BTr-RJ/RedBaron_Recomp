@@ -22,6 +22,7 @@ class Transport {
   bool Send(uint16_t to, const Bytes& bytes, bool reliable);
   bool Ready(uint16_t to) const;
   size_t Buffered(uint16_t to) const;
+  void PublishSession(const std::string& record);
   void Stop();
   uint16_t id() const { return id_; }
   bool admitted() const { return admitted_; }
