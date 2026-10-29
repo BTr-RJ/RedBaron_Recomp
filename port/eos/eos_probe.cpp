@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -53,12 +54,47 @@ struct DeviceFlow {
 struct LobbyFlow {
   EOS_HLobby lobby{};
   EOS_ProductUserId user{};
+  EOS_HLobbySearch search{};
   std::string id;
+  std::string bucket;
   EOS_EResult result=EOS_EResult::EOS_UnexpectedError;
+  EOS_EResult search_result=EOS_EResult::EOS_Success;
+  bool search_requested=false;
+  uint32_t search_count=0;
+  unsigned search_attempts=0;
+  bool retry_search=false;
+  std::chrono::steady_clock::time_point retry_at{};
   bool done=false;
   static void EOS_CALL Destroyed(const EOS_Lobby_DestroyLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
     self.result=data->ResultCode;self.done=true;
+  }
+  void Destroy() {
+    EOS_Lobby_DestroyLobbyOptions options{};
+    options.ApiVersion=EOS_LOBBY_DESTROYLOBBY_API_LATEST;
+    options.LocalUserId=user;options.LobbyId=id.c_str();
+    EOS_Lobby_DestroyLobby(lobby,&options,this,Destroyed);
+  }
+  static void EOS_CALL Found(const EOS_LobbySearch_FindCallbackInfo* data) {
+    auto& self=*static_cast<LobbyFlow*>(data->ClientData);
+    self.search_result=data->ResultCode;
+    if (data->ResultCode==EOS_EResult::EOS_Success) {
+      EOS_LobbySearch_GetSearchResultCountOptions options{};
+      options.ApiVersion=EOS_LOBBYSEARCH_GETSEARCHRESULTCOUNT_API_LATEST;
+      self.search_count=EOS_LobbySearch_GetSearchResultCount(self.search,&options);
+    }
+    if (self.search_result==EOS_EResult::EOS_Success && self.search_count==0 && self.search_attempts<5) {
+      self.retry_search=true;self.retry_at=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+    } else {
+      EOS_LobbySearch_Release(self.search);self.search=nullptr;
+      self.Destroy();
+    }
+  }
+  void Find() {
+    retry_search=false;++search_attempts;
+    EOS_LobbySearch_FindOptions find{};
+    find.ApiVersion=EOS_LOBBYSEARCH_FIND_API_LATEST;find.LocalUserId=user;
+    EOS_LobbySearch_Find(search,&find,this,Found);
   }
   static void EOS_CALL Created(const EOS_Lobby_CreateLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
@@ -66,11 +102,26 @@ struct LobbyFlow {
       self.result=data->ResultCode;self.done=true;return;
     }
     self.id=data->LobbyId;
-    std::cout << "EOS test lobby created; destroying it\n";
-    EOS_Lobby_DestroyLobbyOptions options{};
-    options.ApiVersion=EOS_LOBBY_DESTROYLOBBY_API_LATEST;
-    options.LocalUserId=self.user;options.LobbyId=self.id.c_str();
-    EOS_Lobby_DestroyLobby(self.lobby,&options,&self,Destroyed);
+    std::cout << "EOS test lobby created\n";
+    if (!self.search_requested) {self.Destroy();return;}
+    EOS_Lobby_CreateLobbySearchOptions create{};
+    create.ApiVersion=EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
+    create.MaxResults=1;
+    self.search_result=EOS_Lobby_CreateLobbySearch(self.lobby,&create,&self.search);
+    if (self.search_result!=EOS_EResult::EOS_Success) {self.Destroy();return;}
+    EOS_Lobby_AttributeData attribute{};
+    attribute.ApiVersion=EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;
+    attribute.Key=EOS_LOBBY_SEARCH_BUCKET_ID;
+    attribute.ValueType=EOS_ELobbyAttributeType::EOS_AT_STRING;
+    attribute.Value.AsUtf8=self.bucket.c_str();
+    EOS_LobbySearch_SetParameterOptions set{};
+    set.ApiVersion=EOS_LOBBYSEARCH_SETPARAMETER_API_LATEST;
+    set.Parameter=&attribute;set.ComparisonOp=EOS_EComparisonOp::EOS_CO_EQUAL;
+    self.search_result=EOS_LobbySearch_SetParameter(self.search,&set);
+    if (self.search_result!=EOS_EResult::EOS_Success) {
+      EOS_LobbySearch_Release(self.search);self.search=nullptr;self.Destroy();return;
+    }
+    self.Find();
   }
 };
 
@@ -110,12 +161,13 @@ int main(int argc, char** argv) {
   const bool platform_check=argc==3 && std::string_view(argv[1])=="--platform-check";
   const bool device_login=argc==3 && std::string_view(argv[1])=="--device-login";
   const bool lobby_check=argc==3 && std::string_view(argv[1])=="--lobby-check";
-  if (!sdk_check && !platform_check && !device_login && !lobby_check) {
-    std::cerr << "Usage: redbaron_eos_probe --sdk-check | --platform-check <config> | --device-login <config> | --lobby-check <config>\n";
+  const bool search_check=argc==3 && std::string_view(argv[1])=="--search-check";
+  if (!sdk_check && !platform_check && !device_login && !lobby_check && !search_check) {
+    std::cerr << "Usage: redbaron_eos_probe --sdk-check | --platform-check <config> | --device-login <config> | --lobby-check <config> | --search-check <config>\n";
     return 2;
   }
   std::map<std::string,std::string> config;
-  if (platform_check || device_login || lobby_check) {
+  if (platform_check || device_login || lobby_check || search_check) {
     try { config=ReadConfig(argv[2]); }
     catch(const std::exception& error) { std::cerr << error.what() << '\n'; return 2; }
   }
@@ -131,7 +183,7 @@ int main(int argc, char** argv) {
   const char* version = EOS_GetVersion();
   std::cout << "EOS SDK initialized: " << (version ? version : "unknown version") << '\n';
   int status=0;
-  if (platform_check || device_login || lobby_check) {
+  if (platform_check || device_login || lobby_check || search_check) {
     EOS_Platform_Options platform{};
     platform.ApiVersion=EOS_PLATFORM_OPTIONS_API_LATEST;
     platform.ProductId=config.at("product_id").c_str();
@@ -146,7 +198,7 @@ int main(int argc, char** argv) {
     else {
       DeviceFlow flow;
       LobbyFlow lobby_flow;
-      if (device_login || lobby_check) {
+      if (device_login || lobby_check || search_check) {
         flow.connect=EOS_Platform_GetConnectInterface(handle);
         if (!flow.connect) {std::cerr << "EOS Connect interface unavailable\n";status=1;}
         else {
@@ -162,33 +214,43 @@ int main(int argc, char** argv) {
             std::cerr << "EOS device login failed: " << (flow.done ? int(flow.result) : -1) << '\n';status=1;
           } else {
             std::cout << "EOS device login succeeded\n";
-            if (lobby_check) {
+            if (lobby_check || search_check) {
               lobby_flow.lobby=EOS_Platform_GetLobbyInterface(handle);
               lobby_flow.user=flow.user;
+              lobby_flow.search_requested=search_check;
+              std::random_device random;
+              lobby_flow.bucket="redbaron-test-"+std::to_string(random())+"-"+std::to_string(random());
               if (!lobby_flow.lobby) {std::cerr << "EOS Lobby interface unavailable\n";status=1;}
               else {
                 EOS_Lobby_CreateLobbyOptions create_lobby{};
                 create_lobby.ApiVersion=EOS_LOBBY_CREATELOBBY_API_LATEST;
                 create_lobby.LocalUserId=flow.user;
                 create_lobby.MaxLobbyMembers=2;
-                create_lobby.PermissionLevel=EOS_ELobbyPermissionLevel::EOS_LPL_INVITEONLY;
-                create_lobby.BucketId="redbaron-diagnostic-v1";
+                create_lobby.PermissionLevel=search_check ? EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED : EOS_ELobbyPermissionLevel::EOS_LPL_INVITEONLY;
+                create_lobby.BucketId=lobby_flow.bucket.c_str();
                 create_lobby.bDisableHostMigration=EOS_TRUE;
                 EOS_Lobby_CreateLobby(lobby_flow.lobby,&create_lobby,&lobby_flow,LobbyFlow::Created);
                 const auto lobby_deadline=std::chrono::steady_clock::now()+std::chrono::seconds(60);
                 while (!lobby_flow.done && std::chrono::steady_clock::now()<lobby_deadline) {
                   EOS_Platform_Tick(handle);std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                  if (lobby_flow.retry_search && std::chrono::steady_clock::now()>=lobby_flow.retry_at) lobby_flow.Find();
                 }
                 if (!lobby_flow.done || lobby_flow.result!=EOS_EResult::EOS_Success) {
                   std::cerr << "EOS lobby test failed: " << (lobby_flow.done ? int(lobby_flow.result) : -1) << '\n';status=1;
-                } else std::cout << "EOS test lobby destroyed successfully\n";
+                } else {
+                  std::cout << "EOS test lobby destroyed successfully\n";
+                  if (search_check) {
+                    std::cout << "EOS search result: " << int(lobby_flow.search_result) << ", matches: " << lobby_flow.search_count << '\n';
+                    if (lobby_flow.search_result!=EOS_EResult::EOS_Success || lobby_flow.search_count!=1) status=1;
+                  }
+                }
               }
             }
           }
         }
       } else for (int i=0;i<10;++i) {EOS_Platform_Tick(handle);std::this_thread::sleep_for(std::chrono::milliseconds(10));}
       EOS_Platform_Release(handle);
-      if (!device_login && !lobby_check) std::cout << "EOS platform created and released (no login was attempted)\n";
+      if (!device_login && !lobby_check && !search_check) std::cout << "EOS platform created and released (no login was attempted)\n";
     }
   }
   const EOS_EResult shutdown = EOS_Shutdown();

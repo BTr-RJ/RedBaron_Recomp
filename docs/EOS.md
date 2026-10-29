@@ -52,6 +52,10 @@ da remoção de uma sala privada temporária. Não coloque esse arquivo ou seus
 valores em logs, mensagens ou commits. No ambiente de desenvolvimento, os dois
 testes foram concluídos usando o produto configurado pelo usuário. O login por
 dispositivo não é autenticação de conta Epic e não fornece lista de amigos.
+O comando `--search-check <config>` cria uma sala pública temporária em uma
+categoria aleatória de diagnóstico, busca essa categoria pela mesma identidade
+e remove a sala. A busca repetida foi necessária até a sala aparecer no índice.
+Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
 não cria uma conta e não verifica conectividade com os serviços da Epic. Um
