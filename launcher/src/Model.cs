@@ -31,6 +31,8 @@ namespace RedBaron {
         public string Resolution { get; set; }
         public bool Fullscreen { get; set; }
         public bool Vsync { get; set; }
+        public bool ShowFps { get; set; }
+        public bool Hdr { get; set; }
         public int Anisotropic { get; set; }
         public int Adapter { get; set; }
         public int Scale { get; set; }
@@ -78,6 +80,8 @@ namespace RedBaron {
                 if (String.IsNullOrEmpty(s.Resolution)) s.Resolution = "1280x720";
                 s.Fullscreen = t.Bool("fullscreen", s.Fullscreen);
                 s.Vsync = t.Bool("present_vsync", s.Vsync);
+                s.ShowFps = t.Bool("redbaron_show_fps", s.ShowFps);
+                s.Hdr = t.Bool("present_hdr", s.Hdr);
                 s.Anisotropic = t.Int("anisotropic_override", s.Anisotropic);
                 s.Adapter = t.Int("d3d12_adapter", s.Adapter);
                 s.Scale = t.Int("resolution_scale", s.Scale);
@@ -134,6 +138,7 @@ namespace RedBaron {
                 {"resolution",Json.Quote(Resolution)}, {"fullscreen", Bool(Fullscreen)},
                 // The guest vblank timer and host monitor synchronization are independent.
                 {"vsync", "true"}, {"present_vsync", Bool(Vsync)}, {"anisotropic_override", Anisotropic.ToString()},
+                {"redbaron_show_fps", Bool(ShowFps)}, {"present_hdr", Bool(Hdr)},
                 {"redbaron_fps", Fps.ToString()}, {"video_mode_refresh_rate", Math.Max(60,Fps).ToString()},
                 {"resolution_scale", Scale.ToString()}, {"draw_resolution_scale_x",Scale.ToString()}, {"draw_resolution_scale_y",Scale.ToString()},
                 {"window_width", Resolution.Split('x')[0]}, {"window_height", Resolution.Split('x')[1]},

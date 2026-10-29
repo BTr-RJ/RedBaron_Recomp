@@ -45,7 +45,7 @@ function Invoke-CheckedNative {
 if (!$ConfigureOnly -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'snoopyflyingace.exe'))) {
     $backupDir = Join-Path $BuildDirectory ('backups/build_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
     New-Item -ItemType Directory -Path $backupDir | Out-Null
-    foreach ($name in @('snoopyflyingace.exe', 'rexruntime.dll', 'rexgpu-xenos.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'snoopyflyingace.toml')) {
+    foreach ($name in @('snoopyflyingace.exe', 'rexruntime.dll', 'rexgpu-xenos.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt', 'snoopyflyingace.toml')) {
         $source = Join-Path $BuildDirectory $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backupDir }
     }
@@ -67,7 +67,7 @@ Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyfl
 foreach ($name in @('rexruntime.dll', 'rexgpu-xenos.dll')) {
     Copy-Item -LiteralPath (Join-Path $SdkRoot ('bin/' + $name)) -Destination $BuildDirectory
 }
-foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt')) {
+foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt')) {
     $dependency = Join-Path $SdkRoot ('bin/' + $name)
     if (Test-Path -LiteralPath $dependency) { Copy-Item -LiteralPath $dependency -Destination $BuildDirectory }
 }

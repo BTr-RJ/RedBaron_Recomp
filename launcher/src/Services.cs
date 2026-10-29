@@ -11,12 +11,15 @@ using System.Threading.Tasks;
 namespace RedBaron {
     public sealed class Flag { public string @default {get;set;} public string[] allowed {get;set;} }
     public sealed class Device { public string key {get;set;} public string name {get;set;} }
-    public sealed class Gpu { public int index {get;set;} public string name {get;set;} }
+    public sealed class Gpu { public int index {get;set;} public string name {get;set;} public bool dlss {get;set;} }
     public sealed class Capabilities {
         public Dictionary<string,Flag> flags {get;set;}
         public List<Device> devices {get;set;}
         public List<Gpu> gpus {get;set;}
         public string inputError {get;set;}
+        public bool hdrActive {get;set;}
+        public int refreshHz {get;set;}
+        public bool DlssAvailable(int adapter) { return gpus.Any(g=>g.dlss && (adapter<0 || g.index==adapter)); }
         public Capabilities() { flags=new Dictionary<string,Flag>(); devices=new List<Device>(); gpus=new List<Gpu>(); }
         public bool Supports(string key,string value) { Flag flag; return flags.TryGetValue(key,out flag) && (flag.allowed==null || flag.allowed.Length==0 || flag.allowed.Contains(value)); }
     }
@@ -106,6 +109,10 @@ namespace RedBaron {
                 throw new InvalidDataException("This Video tab requires the updated RedBaron GPU runtime. Install the video SDK patch and rebuild the game first.");
             if(s.Fps!=0 && !caps.Supports("redbaron_fps",s.Fps.ToString()))
                 throw new InvalidDataException("This game build does not support the selected FPS target. Rebuild the game and refresh hardware detection.");
+            if(s.Upscaling=="dlss" && !caps.DlssAvailable(s.Adapter))
+                throw new InvalidDataException("DLSS is unavailable on the selected GPU or driver. Choose another upscaler or refresh hardware detection.");
+            if((s.ShowFps && !caps.flags.ContainsKey("redbaron_show_fps")) || (s.Hdr && !caps.flags.ContainsKey("present_hdr")))
+                throw new InvalidDataException("Update the game runtime to use the FPS counter and HDR output.");
             if(!File.Exists(s.Exe)) { Json.Write(s.FileName,s); return; }
             string original=File.Exists(s.Toml)?File.ReadAllText(s.Toml):"";
             string updated=s.RuntimeText(original);

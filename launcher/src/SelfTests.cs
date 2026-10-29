@@ -91,6 +91,27 @@ namespace RedBaron {
                 Assert(Settings.Load(s.Root).Upscaling=="fsr3","FSR 3.1.5 did not roundtrip");
                 loaded.Upscaling="bilinear";Services.Save(loaded,caps);
                 results.Add("FSR 3.1.5: runtime gating, rejected-save preservation, render scale selection and settings roundtrip");
+                string beforeVideo=File.ReadAllText(s.Toml);
+                loaded.ShowFps=true;loaded.Hdr=true;
+                Reject(()=>Services.Save(loaded,caps),"Old runtime accepted FPS overlay/HDR");
+                Assert(File.ReadAllText(s.Toml)==beforeVideo,"Unsupported display feature changed the TOML");
+                caps.flags["redbaron_show_fps"]=new Flag();caps.flags["present_hdr"]=new Flag();
+                Services.Save(loaded,caps);
+                var display=Settings.Load(s.Root);
+                Assert(display.ShowFps && display.Hdr,"FPS counter and HDR did not roundtrip");
+                // HDR preference may be saved on SDR hardware; runtime must fall back safely.
+                Assert(!caps.hdrActive,"Test must exercise an inactive HDR display");
+                caps.flags["present_effect"].allowed=new[]{"bilinear","fsr","fsr3","dlss"};
+                caps.gpus.Add(new Gpu{index=0,name="Unsupported test GPU",dlss=false});
+                caps.gpus.Add(new Gpu{index=1,name="Supported test GPU",dlss=true});
+                loaded.Upscaling="dlss";loaded.Adapter=0;
+                string beforeDlss=File.ReadAllText(s.Toml);
+                Reject(()=>Services.Save(loaded,caps),"Unsupported GPU accepted DLSS");
+                Assert(File.ReadAllText(s.Toml)==beforeDlss,"Rejected DLSS save modified settings");
+                loaded.Adapter=1;Services.Save(loaded,caps);
+                Assert(Settings.Load(s.Root).Upscaling=="dlss","DLSS selection did not roundtrip");
+                loaded.Upscaling="bilinear";loaded.Adapter=-1;Services.Save(loaded,caps);
+                results.Add("FPS overlay/HDR: capability gating and persistence; DLSS: actual GPU capability selection and rejected-save preservation");
                 Assert(loaded.Players[0].Bindings[0].Keyboard=="J,LMB","Load did not roundtrip mappings");
                 Assert(Directory.GetFiles(s.Build,"*.backup-*").Length>0,"No backup created");
                 Assert(loaded.ShowLauncher,"Show launcher preference lost");

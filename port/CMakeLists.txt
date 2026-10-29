@@ -44,16 +44,17 @@ rexglue_setup_target(snoopyflyingace)
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
     target_link_libraries(redbaron_probe PRIVATE rex::runtime)
-    # The opt-in FSR 3.1.5 SDK imports AMD's signed provider. Stage it for both
-    # the game and the capability probe, including direct CMake builds.
+    # GPU plugins are loaded dynamically, so TARGET_RUNTIME_DLLS misses them.
+    # Keep the runtime/plugin pair and optional upscalers together for both
+    # hosts, including direct CMake builds (not just scripts/build.ps1).
     get_filename_component(REDBARON_SDK_ROOT "${rexglue_DIR}/../../.." ABSOLUTE)
-    foreach(fsr_asset amd_fidelityfx_upscaler_dx12.dll FidelityFX-LICENSE.txt)
-        set(fsr_source "${REDBARON_SDK_ROOT}/bin/${fsr_asset}")
-        if(EXISTS "${fsr_source}")
+    foreach(runtime_asset rexruntime.dll rexgpu-xenos.dll amd_fidelityfx_upscaler_dx12.dll FidelityFX-LICENSE.txt nvngx_dlss.dll NVIDIA-DLSS-LICENSE.txt)
+        set(runtime_source "${REDBARON_SDK_ROOT}/bin/${runtime_asset}")
+        if(EXISTS "${runtime_source}")
             foreach(host snoopyflyingace redbaron_probe)
                 add_custom_command(TARGET ${host} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${fsr_source}" "$<TARGET_FILE_DIR:${host}>" VERBATIM)
+                        "${runtime_source}" "$<TARGET_FILE_DIR:${host}>" VERBATIM)
             endforeach()
         endif()
     endforeach()

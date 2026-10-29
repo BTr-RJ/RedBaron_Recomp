@@ -1,0 +1,792 @@
+--- a/include/rex/ui/d3d12/d3d12_presenter.h
++++ b/include/rex/ui/d3d12/d3d12_presenter.h
+@@ -24,6 +24,7 @@
+ 
+ namespace rex::ui::d3d12 {
+ class Fsr315;
++class HdrOutput;
+ 
+ class D3D12UIDrawContext final : public UIDrawContext {
+  public:
+@@ -254,6 +255,7 @@
+     uint32_t swap_chain_width = 0;
+     uint32_t swap_chain_height = 0;
+     bool swap_chain_allows_tearing = false;
++    HANDLE frame_latency_waitable = nullptr;
+     Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
+     std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kSwapChainBufferCount> swap_chain_buffers;
+   };
+@@ -280,6 +282,9 @@
+   std::shared_ptr<TemporalFrame> temporal_last_frame_;
+   std::shared_ptr<Fsr315> fsr315_;
+   uint64_t temporal_last_submission_ = 0;
++  std::shared_ptr<HdrOutput> hdr_output_;
++  bool hdr_blocked_ = false;
++  double display_refresh_ = 60;
+ 
+   // Whether DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING is supported by DXGI (depends in
+   // particular on the Windows 10 version and hardware support), primarily for
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -2362,7 +2362,8 @@
+   reg::RB_DEPTHCONTROL normalized_depth_control = draw_util::GetNormalizedDepthControl(regs);
+   // RedBaron-specific scene convention: VS c14-c17 contain the main camera VP.
+   // Capture D24FS8 before post-processing reuses EDRAM; never capture shadows.
+-  static const bool temporal_enabled = rex::cvar::GetFlagByName("present_effect") == "fsr3";
++  static const bool temporal_enabled = rex::cvar::GetFlagByName("present_effect") == "fsr3" ||
++                                       rex::cvar::GetFlagByName("present_effect") == "dlss";
+   temporal_capture_.jitter_draw = false;
+   if (temporal_enabled && !temporal_capture_.disabled->load() &&
+       render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
+--- a/src/ui/CMakeLists.txt
++++ b/src/ui/CMakeLists.txt
+@@ -130,6 +130,15 @@
+ endif()
+ 
+ set(REXUI_HAS_FIDELITYFX_RUNTIME OFF)
++set(REDBARON_DLSS_ROOT "" CACHE PATH "Optional NVIDIA DLSS SDK path")
++if(REDBARON_DLSS_ROOT)
++    if(NOT WIN32 OR NOT REDBARON_FFX315_ROOT)
++        message(FATAL_ERROR "RedBaron DLSS requires Windows and the temporal input backend (-Fsr315)")
++    endif()
++    target_compile_definitions(rexui PRIVATE REDBARON_HAS_DLSS=1)
++    target_include_directories(rexui PRIVATE "${REDBARON_DLSS_ROOT}/include")
++    target_link_libraries(rexui PUBLIC "${REDBARON_DLSS_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib")
++endif()
+ set(REDBARON_FFX315_ROOT "" CACHE PATH "Optional FidelityFX SDK 2.0 Kits/FidelityFX path for RedBaron FSR 3.1.5 preview")
+ if(REDBARON_FFX315_ROOT)
+     if(NOT WIN32 OR NOT EXISTS "${REDBARON_FFX315_ROOT}/signedbin/amd_fidelityfx_upscaler_dx12.lib")
+@@ -180,7 +189,7 @@
+ endif()
+ 
+ if(WIN32)
+-    target_link_libraries(rexui PUBLIC dxgi dxguid)
++    target_link_libraries(rexui PUBLIC dxgi dxguid d3dcompiler d3d12)
+ endif()
+ 
+ # D3D12 backend dependencies
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -46,7 +46,9 @@
+ REXCVAR_DEFINE_STRING(
+     present_effect, "bilinear", "UI/Presenter",
+     "Guest output effect: bilinear, cas, fsr (spatial), fsr3 (experimental temporal)")
+-#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
++#if defined(REDBARON_HAS_DLSS)
++    .allowed({"bilinear", "cas", "fsr", "fsr3", "dlss"})
++#elif defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+     .allowed({"bilinear", "cas", "fsr", "fsr3"})
+ #else
+     .allowed({"bilinear", "cas", "fsr"})
+@@ -109,7 +111,7 @@
+   if (lowered == "fsr2") {
+     return GuestOutputPaintConfig::Effect::kFsr2;
+   }
+-  if (lowered == "fsr3") {
++  if (lowered == "fsr3" || lowered == "dlss") {
+     return GuestOutputPaintConfig::Effect::kFsr3;
+   }
+ #endif
+@@ -243,7 +245,7 @@
+   static std::atomic<bool> temporal_fsr_compatibility_logged = false;
+   if (!temporal_fsr_compatibility_logged.exchange(true)) {
+     REXLOG_WARN(
+-        "present_effect=fsr3 uses an experimental temporal upscaler path "
++        "Temporal upscaling uses an experimental path "
+         "with captured ROV depth and camera motion; object velocity/HUD handling remain "
+         "experimental");
+   }
+--- a/src/ui/d3d12/d3d12_presenter.cpp
++++ b/src/ui/d3d12/d3d12_presenter.cpp
+@@ -23,9 +23,45 @@
+ #include <rex/ui/d3d12/d3d12_provider.h>
+ #include <rex/ui/d3d12/d3d12_util.h>
+ #include <rex/ui/surface_win.h>
++#include "hdr_output.h"
++
++REXCVAR_DEFINE_BOOL(present_hdr, false, "UI/D3D12",
++                    "HDR10 output when Windows HDR is active; maps SDR content to 200 nit white")
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ 
+ #if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+ #include "fsr315.h"
++#endif
++
++#if defined(REDBARON_HAS_DLSS)
++extern "C" __declspec(dllexport) bool RedBaronDlssAvailable(IDXGIAdapter1* adapter) {
++  DXGI_ADAPTER_DESC1 desc{};
++  if (!adapter || FAILED(adapter->GetDesc1(&desc)) || desc.VendorId != 0x10DE)
++    return false;
++  Microsoft::WRL::ComPtr<ID3D12Device> device;
++  if (FAILED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device))))
++    return false;
++  // The capability probe has an ANSI main; the SDK's _get_wpgmptr helper
++  // requires a Unicode CRT entry point and aborts in that process.
++  wchar_t executable[32768]{};
++  const DWORD length = GetModuleFileNameW(nullptr, executable, DWORD(std::size(executable)));
++  if (!length || length == std::size(executable))
++    return false;
++  const auto folder = std::filesystem::path(executable).parent_path();
++  auto result = NVSDK_NGX_D3D12_Init_with_ProjectID("0cc9a072-1cc4-46ab-a942-4619cd94f89a",
++                                                    NVSDK_NGX_ENGINE_TYPE_CUSTOM, "RedBaron_Recomp",
++                                                    folder.c_str(), device.Get());
++  if (NVSDK_NGX_FAILED(result))
++    return false;
++  NVSDK_NGX_Parameter* caps = nullptr;
++  int available = 0;
++  if (NVSDK_NGX_SUCCEED(NVSDK_NGX_D3D12_GetCapabilityParameters(&caps)) && caps) {
++    NVSDK_NGX_Parameter_GetI(caps, NVSDK_NGX_Parameter_SuperSampling_Available, &available);
++    NVSDK_NGX_D3D12_DestroyParameters(caps);
++  }
++  NVSDK_NGX_D3D12_Shutdown1(device.Get());
++  return available != 0;
++}
+ #endif
+ 
+ REXCVAR_DEFINE_BOOL(present_vsync, false, "UI/D3D12",
+@@ -83,7 +119,7 @@
+     paint_context_.paint_submission_tracker.AwaitSubmissionCompletion(temporal_last_submission_);
+   temporal_last_frame_ = temporal_paint_frame_;
+   if (!fsr315_)
+-    fsr315_ = std::make_shared<Fsr315>();
++    fsr315_ = std::make_shared<Fsr315>(rex::cvar::GetFlagByName("present_effect") == "dlss");
+   const bool result = fsr315_->Run(
+       provider_.GetDevice(), command_list, input_resource, output_resource, *temporal_paint_frame_,
+       std::clamp(1.0f - config.GetFsrSharpnessReduction() * .5f, 0.0f, 1.0f));
+@@ -242,6 +278,15 @@
+       std::min(new_surface_width, uint32_t(D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION));
+   uint32_t new_swap_chain_height =
+       std::min(new_surface_height, uint32_t(D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION));
++  const bool display_hdr =
++      new_surface.GetType() == Surface::kTypeIndex_Win32Hwnd &&
++      HdrOutput::DisplayInfo(static_cast<const Win32HwndSurface&>(new_surface).hwnd(),
++                             display_refresh_);
++  const bool want_hdr = REXCVAR_GET(present_hdr) && display_hdr && !hdr_blocked_;
++  if (paint_context_.swap_chain && want_hdr != bool(hdr_output_)) {
++    paint_context_.DestroySwapChain();
++    hdr_output_.reset();
++  }
+ 
+   // ConnectOrReconnectPaintingToSurfaceFromUIThread may be called only for the
+   // surface of the current swap chain or when the old swap chain has already
+@@ -249,7 +294,7 @@
+   if (paint_context_.swap_chain) {
+     if (was_paintable && paint_context_.swap_chain_width == new_swap_chain_width &&
+         paint_context_.swap_chain_height == new_swap_chain_height) {
+-      is_vsync_implicit_out = false;
++      is_vsync_implicit_out = REXCVAR_GET(present_vsync);
+       return SurfacePaintConnectResult::kSuccessUnchanged;
+     }
+     paint_context_.AwaitSwapChainUsageCompletion();
+@@ -262,7 +307,8 @@
+     }
+     bool swap_chain_resized = SUCCEEDED(paint_context_.swap_chain->ResizeBuffers(
+         0, UINT(new_swap_chain_width), UINT(new_swap_chain_height), DXGI_FORMAT_UNKNOWN,
+-        paint_context_.swap_chain_allows_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0));
++        DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT |
++            (paint_context_.swap_chain_allows_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0)));
+     if (swap_chain_resized) {
+       for (uint32_t i = 0; i < PaintContext::kSwapChainBufferCount; ++i) {
+         if (FAILED(paint_context_.swap_chain->GetBuffer(
+@@ -289,7 +335,7 @@
+     DXGI_SWAP_CHAIN_DESC1 swap_chain_desc;
+     swap_chain_desc.Width = UINT(new_swap_chain_width);
+     swap_chain_desc.Height = UINT(new_swap_chain_height);
+-    swap_chain_desc.Format = kSwapChainFormat;
++    swap_chain_desc.Format = want_hdr ? DXGI_FORMAT_R10G10B10A2_UNORM : kSwapChainFormat;
+     swap_chain_desc.Stereo = FALSE;
+     swap_chain_desc.SampleDesc.Count = 1;
+     swap_chain_desc.SampleDesc.Quality = 0;
+@@ -306,7 +352,7 @@
+             : DXGI_SCALING_STRETCH;
+     swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+     swap_chain_desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+-    swap_chain_desc.Flags = 0;
++    swap_chain_desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+     if (REXCVAR_GET(d3d12_allow_variable_refresh_rate_and_tearing) && dxgi_supports_tearing_) {
+       // Allow tearing in borderless fullscreen to support variable refresh
+       // rate.
+@@ -349,6 +395,11 @@
+     paint_context_.swap_chain_height = new_swap_chain_height;
+     paint_context_.swap_chain_allows_tearing =
+         (swap_chain_desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0;
++    paint_context_.swap_chain->SetMaximumFrameLatency(1);
++    paint_context_.frame_latency_waitable =
++        paint_context_.swap_chain->GetFrameLatencyWaitableObject();
++    REXLOG_INFO("RedBaron display: {:.2f} Hz, VSync={}, HDR output={}, maximum frame latency=1",
++                display_refresh_, REXCVAR_GET(present_vsync), want_hdr);
+     for (uint32_t i = 0; i < PaintContext::kSwapChainBufferCount; ++i) {
+       if (FAILED(paint_context_.swap_chain->GetBuffer(
+               i, IID_PPV_ARGS(&paint_context_.swap_chain_buffers[i])))) {
+@@ -371,18 +422,38 @@
+   rtv_desc.Texture2D.PlaneSlice = 0;
+   for (uint32_t i = 0; i < PaintContext::kSwapChainBufferCount; ++i) {
+     ID3D12Resource* swap_chain_buffer = paint_context_.swap_chain_buffers[i].Get();
+-    rtv_desc.Format = kSwapChainFormat;
++    rtv_desc.Format = want_hdr ? DXGI_FORMAT_R10G10B10A2_UNORM : kSwapChainFormat;
+     device->CreateRenderTargetView(
+         swap_chain_buffer, &rtv_desc,
+         provider_.OffsetRTVDescriptor(rtv_heap_start, PaintContext::kRTVIndexSwapChainBuffer0 + i));
+   }
+ 
+-  is_vsync_implicit_out = false;
++  if (want_hdr) {
++    UINT support = 0;
++    auto hdr = std::make_shared<HdrOutput>();
++    if (FAILED(paint_context_.swap_chain->CheckColorSpaceSupport(
++            DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, &support)) ||
++        !(support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) ||
++        FAILED(paint_context_.swap_chain->SetColorSpace1(
++            DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)) ||
++        !hdr->Initialize(device, new_swap_chain_width, new_swap_chain_height)) {
++      REXLOG_WARN("HDR output unavailable; recreating the swap chain in SDR");
++      hdr_blocked_ = true;
++      paint_context_.DestroySwapChain();
++      hdr_output_.reset();
++      return ConnectOrReconnectPaintingToSurfaceFromUIThread(
++          new_surface, new_surface_width, new_surface_height, false, is_vsync_implicit_out);
++    }
++    hdr_output_ = std::move(hdr);
++    REXLOG_INFO("HDR10 active: Rec.2020/PQ, SDR content mapped to 200 nit white");
++  }
++  is_vsync_implicit_out = REXCVAR_GET(present_vsync);
+   return SurfacePaintConnectResult::kSuccess;
+ }
+ 
+ void D3D12Presenter::DisconnectPaintingFromSurfaceFromUIThreadImpl() {
+   paint_context_.DestroySwapChain();
++  hdr_output_.reset();
+ }
+ 
+ bool D3D12Presenter::RefreshGuestOutputImpl(
+@@ -449,12 +520,20 @@
+     swap_chain_buffer_ref.Reset();
+   }
+   swap_chain.Reset();
++  if (frame_latency_waitable)
++    CloseHandle(frame_latency_waitable);
++  frame_latency_waitable = nullptr;
+   swap_chain_allows_tearing = false;
+   swap_chain_height = 0;
+   swap_chain_width = 0;
+ }
+ 
+ Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawers) {
++  // Wait before acquiring the mailbox image so we present the newest frame.
++  // A bounded wait also lets the UI handle minimization and monitor changes.
++  if (paint_context_.frame_latency_waitable &&
++      WaitForSingleObjectEx(paint_context_.frame_latency_waitable, 100, FALSE) == WAIT_TIMEOUT)
++    return PaintResult::kNotPresented;
+   // Begin the command list with the command allocator not currently potentially
+   // used on the GPU.
+   UINT64 current_paint_submission = paint_context_.paint_submission_tracker.GetCurrentSubmission();
+@@ -478,6 +557,12 @@
+   D3D12_CPU_DESCRIPTOR_HANDLE back_buffer_rtv = provider_.OffsetRTVDescriptor(
+       rtv_heap_start, PaintContext::kRTVIndexSwapChainBuffer0 + back_buffer_index);
+   ID3D12Resource* back_buffer = paint_context_.swap_chain_buffers[back_buffer_index].Get();
++  const auto output_rtv = back_buffer_rtv;
++  auto* output_buffer = back_buffer;
++  if (hdr_output_) {
++    back_buffer = hdr_output_->texture();
++    back_buffer_rtv = hdr_output_->rtv();
++  }
+   bool back_buffer_acquired = false;
+   bool back_buffer_bound = false;
+   bool back_buffer_clear_needed = true;
+@@ -727,7 +812,9 @@
+             barrier_present_to_rtv.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+             barrier_present_to_rtv.Transition.pResource = back_buffer;
+             barrier_present_to_rtv.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+-            barrier_present_to_rtv.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
++            barrier_present_to_rtv.Transition.StateBefore =
++                hdr_output_ ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
++                            : D3D12_RESOURCE_STATE_PRESENT;
+             barrier_present_to_rtv.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+             command_list->ResourceBarrier(1, &barrier_present_to_rtv);
+             back_buffer_acquired = true;
+@@ -977,7 +1064,9 @@
+               barrier_present_to_rtv.Transition.pResource = back_buffer;
+               barrier_present_to_rtv.Transition.Subresource =
+                   D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+-              barrier_present_to_rtv.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
++              barrier_present_to_rtv.Transition.StateBefore =
++                  hdr_output_ ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
++                              : D3D12_RESOURCE_STATE_PRESENT;
+               barrier_present_to_rtv.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+               back_buffer_acquired = true;
+             }
+@@ -1016,7 +1105,8 @@
+     barrier_present_to_rtv.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+     barrier_present_to_rtv.Transition.pResource = back_buffer;
+     barrier_present_to_rtv.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+-    barrier_present_to_rtv.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
++    barrier_present_to_rtv.Transition.StateBefore =
++        hdr_output_ ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_PRESENT;
+     barrier_present_to_rtv.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+     command_list->ResourceBarrier(1, &barrier_present_to_rtv);
+     back_buffer_acquired = true;
+@@ -1047,8 +1137,11 @@
+   barrier_rtv_to_present.Transition.pResource = back_buffer;
+   barrier_rtv_to_present.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+   barrier_rtv_to_present.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+-  barrier_rtv_to_present.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
++  barrier_rtv_to_present.Transition.StateAfter =
++      hdr_output_ ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_PRESENT;
+   command_list->ResourceBarrier(1, &barrier_rtv_to_present);
++  if (hdr_output_)
++    hdr_output_->Draw(command_list, output_buffer, output_rtv);
+ 
+   // Execute and present.
+   command_list->Close();
+@@ -1063,10 +1156,18 @@
+   // where supported by the borderless flip-model swap chain.
+   const bool host_vsync = REXCVAR_GET(present_vsync);
+   // DXGI forbids ALLOW_TEARING with a non-zero sync interval.
+-  const UINT sync_interval = host_vsync ? 1 : 0;
+-  const UINT present_flags = host_vsync ? 0 :
+-      (DXGI_PRESENT_RESTART |
+-       (paint_context_.swap_chain_allows_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0));
++  UINT sync_interval = host_vsync ? 1 : 0;
++  if (host_vsync) {
++    const auto target_text = rex::cvar::GetFlagByName("redbaron_fps");
++    const double target = target_text.empty() ? 0 : std::atof(target_text.c_str());
++    if (target > 0 && display_refresh_ >= target) {
++      const auto divisor = UINT(std::clamp(std::round(display_refresh_ / target), 1.0, 4.0));
++      if (std::abs(display_refresh_ / divisor - target) <= target * .02)
++        sync_interval = divisor;
++    }
++  }
++  const UINT present_flags =
++      host_vsync ? 0 : (paint_context_.swap_chain_allows_tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
+   HRESULT present_result = paint_context_.swap_chain->Present(sync_interval, present_flags);
+   // Even if presentation has failed, work might have been enqueued anyway
+   // internally before the failure according to Jesse Natalie from the DirectX
+--- a/src/ui/d3d12/fsr315.h
++++ b/src/ui/d3d12/fsr315.h
+@@ -12,12 +12,16 @@
+ #include <rex/ui/d3d12/temporal_frame.h>
+ #include <rex/ui/d3d12/d3d12_util.h>
+ #include <rex/logging.h>
++#if defined(REDBARON_HAS_DLSS)
++#include "dlss.h"
++#endif
+ 
+ namespace rex::ui::d3d12 {
+ // Local development integration. Camera reprojection is available; per-object
+ // velocity and exact HUD composition remain necessary before production use.
+ class Fsr315 {
+  public:
++  explicit Fsr315(bool dlss = false) : use_dlss_(dlss) {}
+   ~Fsr315() {
+     if (context_)
+       ffxDestroyContext(&context_, nullptr);
+@@ -30,12 +34,15 @@
+       return false;
+     const auto in = color->GetDesc(), out = output->GetDesc();
+     const uint32_t width = uint32_t(in.Width), height = in.Height;
+-    if (!context_ || width != width_ || height != height_ || out.Width != out_width_ ||
++    if (!width_ || width != width_ || height != height_ || out.Width != out_width_ ||
+         out.Height != out_height_) {
+       if (context_) {
+         ffxDestroyContext(&context_, nullptr);
+         context_ = nullptr;
+       }
++#if defined(REDBARON_HAS_DLSS)
++      dlss_.reset();
++#endif
+       if (!Initialize(device, width, height, uint32_t(out.Width), out.Height))
+         return Fail(frame, "initialization");
+     }
+@@ -77,6 +84,26 @@
+     for (auto& texture : aux_)
+       Barrier(cmd, texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+               D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
++    const float milliseconds = reset ? 16.666f : float((frame.seconds - last_seconds_) * 1000.0);
++#if defined(REDBARON_HAS_DLSS)
++    if (use_dlss_) {
++      if (!dlss_)
++        dlss_ = std::make_unique<Dlss>();
++      Barrier(cmd, color, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
++              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
++      const bool ok = dlss_->Run(device, cmd, color, output, aux_[0].Get(), aux_[1].Get(),
++                                 aux_[2].Get(), frame.jitter_x * width / frame.width,
++                                 frame.jitter_y * height / frame.height, reset, milliseconds);
++      Barrier(cmd, color, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
++              D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
++      if (!ok)
++        return Fail(frame, "DLSS");
++      previous_ = frame.view_projection;
++      last_id_ = frame.id;
++      last_seconds_ = frame.seconds;
++      return true;
++    }
++#endif
+     ffxDispatchDescUpscale dispatch{};
+     dispatch.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
+     dispatch.commandList = cmd;
+@@ -131,7 +158,8 @@
+     if (frame.disabled)
+       frame.disabled->store(true);
+     REXLOG_ERROR(
+-        "FSR 3.1.5 {} failed; disabling temporal jitter and using spatial FSR until restart",
++        "Temporal upscaler {} failed; disabling temporal jitter and using spatial FSR until "
++        "restart",
+         operation);
+     return false;
+   }
+@@ -182,42 +210,44 @@
+     cmd->ResourceBarrier(1, &b);
+   }
+   bool Initialize(ID3D12Device* device, uint32_t w, uint32_t h, uint32_t ow, uint32_t oh) {
+-    uint64_t count = 0;
+-    ffxQueryDescGetVersions query{};
+-    query.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
+-    query.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+-    query.device = device;
+-    query.outputCount = &count;
+-    if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK || !count)
+-      return false;
+-    std::vector<uint64_t> ids(count);
+-    std::vector<const char*> names(count);
+-    query.versionIds = ids.data();
+-    query.versionNames = names.data();
+-    if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK)
+-      return false;
+-    uint64_t selected = 0;
+-    for (size_t i = 0; i < count; i++)
+-      if (names[i] && std::strcmp(names[i], "3.1.5") == 0)
+-        selected = ids[i];
+-    if (!selected)
+-      return false;
+-    ffxCreateBackendDX12Desc backend{};
+-    backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
+-    backend.device = device;
+-    ffxOverrideVersion version{};
+-    version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
+-    version.versionId = selected;
+-    version.header.pNext = &backend.header;
+-    ffxCreateContextDescUpscale desc{};
+-    desc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+-    desc.header.pNext = &version.header;
+-    desc.flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE | FFX_UPSCALE_ENABLE_DEPTH_INVERTED |
+-                 FFX_UPSCALE_ENABLE_DEPTH_INFINITE | FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;
+-    desc.maxRenderSize = {w, h};
+-    desc.maxUpscaleSize = {ow, oh};
+-    if (ffxCreateContext(&context_, &desc.header, nullptr) != FFX_API_RETURN_OK)
+-      return false;
++    if (!use_dlss_) {
++      uint64_t count = 0;
++      ffxQueryDescGetVersions query{};
++      query.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
++      query.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
++      query.device = device;
++      query.outputCount = &count;
++      if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK || !count)
++        return false;
++      std::vector<uint64_t> ids(count);
++      std::vector<const char*> names(count);
++      query.versionIds = ids.data();
++      query.versionNames = names.data();
++      if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK)
++        return false;
++      uint64_t selected = 0;
++      for (size_t i = 0; i < count; i++)
++        if (names[i] && std::strcmp(names[i], "3.1.5") == 0)
++          selected = ids[i];
++      if (!selected)
++        return false;
++      ffxCreateBackendDX12Desc backend{};
++      backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
++      backend.device = device;
++      ffxOverrideVersion version{};
++      version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
++      version.versionId = selected;
++      version.header.pNext = &backend.header;
++      ffxCreateContextDescUpscale desc{};
++      desc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
++      desc.header.pNext = &version.header;
++      desc.flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE | FFX_UPSCALE_ENABLE_DEPTH_INVERTED |
++                   FFX_UPSCALE_ENABLE_DEPTH_INFINITE | FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;
++      desc.maxRenderSize = {w, h};
++      desc.maxUpscaleSize = {ow, oh};
++      if (ffxCreateContext(&context_, &desc.header, nullptr) != FFX_API_RETURN_OK)
++        return false;
++    }
+     D3D12_DESCRIPTOR_HEAP_DESC heap{};
+     heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+     heap.NumDescriptors = 4;
+@@ -310,10 +340,15 @@
+     out_width_ = ow;
+     out_height_ = oh;
+     last_id_ = 0;
+-    REXLOG_INFO("FSR provider 3.1.5 initialized with ROV depth and camera motion");
++    REXLOG_INFO("{} inputs initialized with ROV depth and camera motion",
++                use_dlss_ ? "DLSS" : "FSR 3.1.5");
+     return true;
+   }
+   bool failed_ = false;
++  bool use_dlss_ = false;
++#if defined(REDBARON_HAS_DLSS)
++  std::unique_ptr<Dlss> dlss_;
++#endif
+   ffxContext context_{};
+   uint32_t width_ = 0, height_ = 0, out_width_ = 0, out_height_ = 0;
+   uint64_t last_id_ = 0, dispatches_ = 0;
+--- /dev/null
++++ b/src/ui/d3d12/dlss.h
+@@ -0,0 +1,100 @@
++#pragma once
++#include <nvsdk_ngx.h>
++#include <nvsdk_ngx_helpers.h>
++#include <rex/filesystem.h>
++#include <rex/logging.h>
++
++namespace rex::ui::d3d12 {
++// NGX Super Resolution using the same captured depth/camera motion as FSR.
++// API flow studied in Estacado-ReXGlue; all title-specific inputs are RedBaron's.
++// NVIDIA SDK components retain their separate NVIDIA RTX SDKs license.
++class Dlss {
++ public:
++  ~Dlss() {
++    if (feature_)
++      NVSDK_NGX_D3D12_ReleaseFeature(feature_);
++    if (parameters_)
++      NVSDK_NGX_D3D12_DestroyParameters(parameters_);
++    if (device_)
++      NVSDK_NGX_D3D12_Shutdown1(device_.Get());
++  }
++  bool Run(ID3D12Device* device, ID3D12GraphicsCommandList* cmd, ID3D12Resource* color,
++           ID3D12Resource* output, ID3D12Resource* depth, ID3D12Resource* motion,
++           ID3D12Resource* reactive, float jitter_x, float jitter_y, bool reset,
++           float milliseconds) {
++    const auto in = color->GetDesc(), out = output->GetDesc();
++    if (!feature_) {
++      auto folder = rex::filesystem::GetExecutableFolder();
++      auto result = NVSDK_NGX_D3D12_Init_with_ProjectID("0cc9a072-1cc4-46ab-a942-4619cd94f89a",
++                                                        NVSDK_NGX_ENGINE_TYPE_CUSTOM,
++                                                        "RedBaron_Recomp", folder.c_str(), device);
++      if (NVSDK_NGX_FAILED(result))
++        return Error("initialize", result);
++      device_ = device;
++      NVSDK_NGX_Parameter* capabilities = nullptr;
++      result = NVSDK_NGX_D3D12_GetCapabilityParameters(&capabilities);
++      int available = 0;
++      if (NVSDK_NGX_SUCCEED(result) && capabilities) {
++        NVSDK_NGX_Parameter_GetI(capabilities, NVSDK_NGX_Parameter_SuperSampling_Available,
++                                 &available);
++        NVSDK_NGX_D3D12_DestroyParameters(capabilities);
++      }
++      if (!available)
++        return Error("GPU/driver capability", result);
++      result = NVSDK_NGX_D3D12_AllocateParameters(&parameters_);
++      if (NVSDK_NGX_FAILED(result))
++        return Error("parameters", result);
++      NVSDK_NGX_DLSS_Create_Params create{};
++      create.Feature.InWidth = unsigned(in.Width);
++      create.Feature.InHeight = in.Height;
++      create.Feature.InTargetWidth = unsigned(out.Width);
++      create.Feature.InTargetHeight = out.Height;
++      const double ratio = double(out.Height) / in.Height;
++      create.Feature.InPerfQualityValue = ratio < 1.05   ? NVSDK_NGX_PerfQuality_Value_DLAA
++                                          : ratio < 1.6  ? NVSDK_NGX_PerfQuality_Value_MaxQuality
++                                          : ratio < 1.85 ? NVSDK_NGX_PerfQuality_Value_Balanced
++                                          : ratio < 2.4
++                                              ? NVSDK_NGX_PerfQuality_Value_MaxPerf
++                                              : NVSDK_NGX_PerfQuality_Value_UltraPerformance;
++      create.InFeatureCreateFlags = NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
++                                    NVSDK_NGX_DLSS_Feature_Flags_DepthInverted |
++                                    NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
++      result = NGX_D3D12_CREATE_DLSS_EXT(cmd, 1, 1, &feature_, parameters_, &create);
++      if (NVSDK_NGX_FAILED(result) || !feature_)
++        return Error("create", result);
++      REXLOG_INFO("DLSS NGX initialized: {}x{} -> {}x{} (camera-motion preview)", in.Width,
++                  in.Height, out.Width, out.Height);
++    }
++    NVSDK_NGX_D3D12_DLSS_Eval_Params eval{};
++    eval.Feature.pInColor = color;
++    eval.Feature.pInOutput = output;
++    eval.pInDepth = depth;
++    eval.pInMotionVectors = motion;
++    eval.pInBiasCurrentColorMask = reactive;
++    eval.InJitterOffsetX = jitter_x;
++    eval.InJitterOffsetY = jitter_y;
++    eval.InMVScaleX = float(in.Width);
++    eval.InMVScaleY = float(in.Height);
++    eval.InRenderSubrectDimensions = {unsigned(in.Width), in.Height};
++    eval.InReset = reset;
++    eval.InPreExposure = eval.InExposureScale = 1.f;
++    eval.InFrameTimeDeltaInMsec = milliseconds;
++    const auto result = NGX_D3D12_EVALUATE_DLSS_EXT(cmd, feature_, parameters_, &eval);
++    if (NVSDK_NGX_FAILED(result))
++      return Error("evaluate", result);
++    if (++dispatches_ % 300 == 1)
++      REXLOG_INFO("DLSS NGX evaluated {} frames", dispatches_);
++    return true;
++  }
++
++ private:
++  static bool Error(const char* stage, NVSDK_NGX_Result result) {
++    REXLOG_ERROR("DLSS {} failed: 0x{:08X}", stage, unsigned(result));
++    return false;
++  }
++  Microsoft::WRL::ComPtr<ID3D12Device> device_;
++  NVSDK_NGX_Parameter* parameters_ = nullptr;
++  NVSDK_NGX_Handle* feature_ = nullptr;
++  uint64_t dispatches_ = 0;
++};
++}  // namespace rex::ui::d3d12
+--- /dev/null
++++ b/src/ui/d3d12/hdr_output.h
+@@ -0,0 +1,152 @@
++#pragma once
++#include <d3dcompiler.h>
++#include <dxgi1_6.h>
++#include <rex/ui/d3d12/d3d12_util.h>
++#include <rex/logging.h>
++
++namespace rex::ui::d3d12 {
++// The title's final image is SDR. Map it faithfully into HDR10 (200 nit white)
++// after all overlays, rather than treating gamma-encoded SDR as native HDR.
++class HdrOutput {
++ public:
++  static bool DisplayInfo(HWND window, double& refresh) {
++    const auto monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
++    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
++    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
++      return false;
++    for (UINT a = 0;; ++a) {
++      Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
++      if (factory->EnumAdapters1(a, &adapter) == DXGI_ERROR_NOT_FOUND)
++        break;
++      for (UINT o = 0;; ++o) {
++        Microsoft::WRL::ComPtr<IDXGIOutput> output;
++        if (adapter->EnumOutputs(o, &output) == DXGI_ERROR_NOT_FOUND)
++          break;
++        DXGI_OUTPUT_DESC desc{};
++        if (FAILED(output->GetDesc(&desc)) || desc.Monitor != monitor)
++          continue;
++        DEVMODEW mode{};
++        mode.dmSize = sizeof(mode);
++        if (EnumDisplaySettingsW(desc.DeviceName, ENUM_CURRENT_SETTINGS, &mode))
++          refresh = mode.dmDisplayFrequency;
++        Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
++        DXGI_OUTPUT_DESC1 advanced{};
++        return SUCCEEDED(output.As(&output6)) && SUCCEEDED(output6->GetDesc1(&advanced)) &&
++               advanced.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
++      }
++    }
++    return false;
++  }
++  bool Initialize(ID3D12Device* device, uint32_t width, uint32_t height) {
++    width_ = width;
++    height_ = height;
++    D3D12_RESOURCE_DESC texture{};
++    texture.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
++    texture.Width = width;
++    texture.Height = height;
++    texture.DepthOrArraySize = texture.MipLevels = 1;
++    texture.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
++    texture.SampleDesc.Count = 1;
++    texture.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
++    if (FAILED(device->CreateCommittedResource(&util::kHeapPropertiesDefault, D3D12_HEAP_FLAG_NONE,
++                                               &texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
++                                               nullptr, IID_PPV_ARGS(&sdr_))))
++      return false;
++    D3D12_DESCRIPTOR_HEAP_DESC heap{};
++    heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
++    heap.NumDescriptors = 1;
++    if (FAILED(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&rtv_))))
++      return false;
++    device->CreateRenderTargetView(sdr_.Get(), nullptr, rtv_->GetCPUDescriptorHandleForHeapStart());
++    heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
++    heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
++    if (FAILED(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&srv_))))
++      return false;
++    device->CreateShaderResourceView(sdr_.Get(), nullptr,
++                                     srv_->GetCPUDescriptorHandleForHeapStart());
++    D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 0};
++    D3D12_ROOT_PARAMETER parameter{};
++    parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
++    parameter.DescriptorTable = {1, &range};
++    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
++    D3D12_ROOT_SIGNATURE_DESC root{};
++    root.NumParameters = 1;
++    root.pParameters = &parameter;
++    Microsoft::WRL::ComPtr<ID3DBlob> blob, error, vs, ps;
++    if (FAILED(D3D12SerializeRootSignature(&root, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)) ||
++        FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
++                                           IID_PPV_ARGS(&root_))))
++      return false;
++    constexpr char source[] = R"hlsl(
++Texture2D<float4> inputColor : register(t0);
++float4 vs(uint id : SV_VertexID) : SV_Position {
++  return float4(id == 1 ? 3 : -1, id == 2 ? -3 : 1, 0, 1);
++}
++float3 linearize(float3 c) {
++  return float3(c.r <= .04045 ? c.r/12.92 : pow((c.r+.055)/1.055,2.4),
++                c.g <= .04045 ? c.g/12.92 : pow((c.g+.055)/1.055,2.4),
++                c.b <= .04045 ? c.b/12.92 : pow((c.b+.055)/1.055,2.4));
++}
++float4 ps(float4 p : SV_Position) : SV_Target {
++  float3 rgb = linearize(saturate(inputColor.Load(int3(p.xy,0)).rgb));
++  float3 rec2020 = mul(float3x3(.627404,.329283,.043313,
++                               .069097,.919540,.011362,
++                               .016391,.088013,.895595),rgb);
++  float3 y = pow(max(rec2020,0) * (200.0/10000.0),2610.0/16384.0);
++  return float4(pow((3424.0/4096.0+(2413.0/128.0)*y)/
++                   (1+(2392.0/128.0)*y),2523.0/32.0),1);
++}
++)hlsl";
++    if (FAILED(D3DCompile(source, sizeof(source) - 1, "redbaron_hdr", nullptr, nullptr, "vs",
++                          "vs_5_1", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &vs, &error)) ||
++        FAILED(D3DCompile(source, sizeof(source) - 1, "redbaron_hdr", nullptr, nullptr, "ps",
++                          "ps_5_1", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &ps, &error)))
++      return false;
++    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
++    pso.pRootSignature = root_.Get();
++    pso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
++    pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
++    pso.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
++    pso.SampleMask = UINT_MAX;
++    pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
++    pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
++    pso.RasterizerState.DepthClipEnable = TRUE;
++    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
++    pso.NumRenderTargets = 1;
++    pso.RTVFormats[0] = DXGI_FORMAT_R10G10B10A2_UNORM;
++    pso.SampleDesc.Count = 1;
++    return SUCCEEDED(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&pipeline_)));
++  }
++  ID3D12Resource* texture() const { return sdr_.Get(); }
++  D3D12_CPU_DESCRIPTOR_HANDLE rtv() const { return rtv_->GetCPUDescriptorHandleForHeapStart(); }
++  void Draw(ID3D12GraphicsCommandList* cmd, ID3D12Resource* backbuffer,
++            D3D12_CPU_DESCRIPTOR_HANDLE target) {
++    D3D12_RESOURCE_BARRIER barrier{};
++    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++    barrier.Transition = {backbuffer, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
++                          D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET};
++    cmd->ResourceBarrier(1, &barrier);
++    ID3D12DescriptorHeap* heaps[] = {srv_.Get()};
++    cmd->SetDescriptorHeaps(1, heaps);
++    cmd->SetGraphicsRootSignature(root_.Get());
++    cmd->SetPipelineState(pipeline_.Get());
++    cmd->SetGraphicsRootDescriptorTable(0, srv_->GetGPUDescriptorHandleForHeapStart());
++    cmd->OMSetRenderTargets(1, &target, FALSE, nullptr);
++    D3D12_VIEWPORT viewport{0, 0, float(width_), float(height_), 0, 1};
++    D3D12_RECT scissor{0, 0, LONG(width_), LONG(height_)};
++    cmd->RSSetViewports(1, &viewport);
++    cmd->RSSetScissorRects(1, &scissor);
++    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
++    cmd->DrawInstanced(3, 1, 0, 0);
++    std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
++    cmd->ResourceBarrier(1, &barrier);
++  }
++
++ private:
++  uint32_t width_ = 0, height_ = 0;
++  Microsoft::WRL::ComPtr<ID3D12Resource> sdr_;
++  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_, srv_;
++  Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
++  Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline_;
++};
++}  // namespace rex::ui::d3d12
