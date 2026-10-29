@@ -78,6 +78,12 @@ resultado da busca até a conclusão; `JoinSelected` resolve o endereço selecio
 para o resultado correspondente. Os estados foram exercitados com uma API
 simulada, mas ainda não há evento do jogo conectado a esse código nem teste de
 entrada com outra identidade EOS.
+`selection_gateway.*` detecta uma conexão TCP local para o endereço de uma sala
+e mantém o socket aberto durante a admissão; `SocketBridge::Adopt` pode assumir
+o socket após a conexão estar pronta. Um teste local preservou os dados enviados
+antes da transferência e rejeitou origem diferente do processo do jogo. Ainda
+falta conectar esse evento ao `JoinSelected`, identificar o momento real em que
+o jogo seleciona uma partida e encaminhar QoS e dados para o host EOS.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,

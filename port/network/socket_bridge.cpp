@@ -1,6 +1,8 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#ifndef REDBARON_STANDALONE_BRIDGE_TEST
 #include "transport.h"
+#endif
 #include "socket_bridge.h"
 #include <algorithm>
 #include <array>
@@ -84,6 +86,15 @@ struct SocketBridge::Impl {
   bool Control(Stream& stream,Kind kind) {
     return wire.Send(stream.peer,Header(stream.peer,kind,0,0,stream.id,stream.origin),true);
   }
+  bool Adopt(uint16_t peer,uint16_t port,SOCKET accepted) {
+    Socket socket(accepted);
+    if(accepted==INVALID_SOCKET || !GamePort(port) || !wire.Ready(peer) || streams.size()>=128 || next_id==0)return false;
+    Nonblocking(accepted);int one=1;setsockopt(accepted,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<char*>(&one),sizeof(one));
+    Stream s{std::move(socket),peer,wire.id(),next_id++};
+    auto request=Header(peer,Open,0,port,s.id,s.origin);
+    if(!wire.Send(peer,request,true))return false;
+    streams.emplace((uint64_t(s.origin)<<32)|s.id,std::move(s));return true;
+  }
   void Erase(uint64_t key,bool notify=true) {
     auto it=streams.find(key); if(it==streams.end())return;
     if(diagnostics)std::cerr<<"TCP close peer="<<it->second.peer<<" key="<<key<<" accepted="<<it->second.accepted<<" ends="<<it->second.local_end<<it->second.remote_end<<" pending="<<(it->second.pending.size()-it->second.offset)<<"\n";
@@ -137,12 +148,7 @@ struct SocketBridge::Impl {
           SOCKET accepted=accept(e.socket.s,reinterpret_cast<sockaddr*>(&remote),&length);
           if(accepted==INVALID_SOCKET)break;
           if(remote.sin_addr.s_addr!=own || streams.size()>=128 || next_id==0){closesocket(accepted);continue;}
-          Nonblocking(accepted);int one=1;setsockopt(accepted,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<char*>(&one),sizeof(one));
-          Stream s{Socket(accepted),e.peer,wire.id(),next_id++};
-          if(diagnostics)std::cerr<<"TCP outgoing peer="<<e.peer<<" port="<<e.port<<" key="<<((uint64_t(s.origin)<<32)|s.id)<<"\n";
-          auto request=Header(e.peer,Open,0,e.port,s.id,s.origin);
-          if(!wire.Send(e.peer,request,true))continue;
-          streams.emplace((uint64_t(s.origin)<<32)|s.id,std::move(s));
+          Adopt(e.peer,e.port,accepted);
         }
       } else {
         for(int n=0;n<64;++n) {
@@ -213,6 +219,7 @@ void SocketBridge::Member(uint16_t id,bool present) {
   }
 }
 void SocketBridge::Packet(uint16_t peer,const Bytes& b,bool reliable){impl_->Packet(peer,b,reliable);}
+bool SocketBridge::Adopt(uint16_t peer,uint16_t port,uintptr_t accepted){return impl_->Adopt(peer,port,static_cast<SOCKET>(accepted));}
 void SocketBridge::Poll(){impl_->Poll();}
 std::string SocketBridge::Address(uint16_t peer) const {
   return "127."+std::to_string(impl_->ns)+"."+std::to_string(peer>>8)+"."+std::to_string(peer&255);
