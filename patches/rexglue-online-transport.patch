@@ -220,11 +220,10 @@
  bool LanPublish(LanRecord record);
 --- a/include/rex/ui/window_sdl.h
 +++ b/include/rex/ui/window_sdl.h
-@@ -32,6 +32,7 @@
+@@ -32,5 +32,6 @@
    ~WindowSDL() override;
  
    void* GetNativeWindowHandle() const override;
 +  void ShowAfterShaderPreparation();
    bool SetRelativeMouseMode(bool enable) override;
-   bool WarpMouseToCenter(int32_t& x_out, int32_t& y_out) override;
- 
+  bool WarpMouseToCenter(int32_t& x_out, int32_t& y_out) override;
