@@ -31,7 +31,7 @@ O Xbox Series do usuário é o controle de referência. A compatibilidade é amp
 
 O launcher preserva preferências e usa o TOML atual. O nome chega ao perfil XAM e a aba Online permite LAN experimental; UPnP segue desabilitado. DLSS tem cinco modos com escala automática. FPS/HDR exibem o estado real da saída; HDR converte conteúdo SDR. FSR/DLSS ainda precisam de movimento de objetos e composição separada do HUD. Sem frame generation. Ver [vídeo](VIDEO.md).
 
-O repositório poderá tornar-se público posteriormente, sem arquivos do jogo nem código gerado. O instalador já usa uma pasta extraída fornecida pelo usuário e compila em destino separado. Extração de pacotes e instalação das ferramentas ainda não foram implementadas.
+O repositório poderá tornar-se público posteriormente, sem arquivos do jogo nem código gerado. O instalador usa uma pasta extraída fornecida pelo usuário e compila em destino separado; a preparação automática das ferramentas já foi testada parcialmente. A extração do pacote do jogo base ainda não foi implementada, e a instalação do Microsoft Build Tools precisa ser validada em uma máquina limpa.
 
 Interface nativa Windows em WPF/.NET Framework 4.8. Quatro mapas de entrada não equivalem a quatro câmeras locais; a tela dividida atual foi validada com dois jogadores e quatro bots.
 
