@@ -107,6 +107,12 @@ namespace RedBaron {
                 var onlineLoaded=Settings.Load(s.Root);
                 Assert(onlineLoaded.OnlineServer==loaded.OnlineServer && onlineLoaded.OnlineMode=="coop" && onlineLoaded.OnlineLocalPlayers==2,"Online room settings did not roundtrip");
                 Assert(!File.ReadAllText(s.Toml).Contains("redbaron_p2p_namespace"),"Temporary room identity leaked into persistent game settings");
+                string invite=OnlineSession.Invitation("wss://play.example.org/rooms?region=sa","0123456789ABCDEF"), inviteServer;
+                Assert(OnlineSession.ParseInvitation(invite,out inviteServer)=="0123456789ABCDEF" && inviteServer=="wss://play.example.org/rooms?region=sa","Invitation did not roundtrip");
+                Assert(OnlineSession.ParseInvitation("0123456789abcdef",out inviteServer)=="0123456789ABCDEF" && inviteServer==null,"Plain room code did not roundtrip");
+                foreach(string invalidInvite in new[]{"", "redbaron://join/0123456789ABCDEF?server=ws%3A%2F%2Fevil.example", "redbaron://join/0123456789ABCDEF?server=wss%3A%2F%2Fexample.org&extra=1", "redbaron://join/invalid?server=wss%3A%2F%2Fexample.org"})
+                    Reject(()=>{string ignored;OnlineSession.ParseInvitation(invalidInvite,out ignored);},"Invalid invitation accepted");
+                results.Add("Online invitations: server and room roundtrip; empty and unsafe inputs rejected");
                 results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
                 var release=new ReleaseInfo{tag_name="v1.0",assets=new[]{new ReleaseAsset {
                     name="RedBaron_Recomp-v1.0-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),

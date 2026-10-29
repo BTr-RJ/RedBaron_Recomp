@@ -2,8 +2,10 @@
 
 ## Salas online em desenvolvimento
 
-O launcher pode criar uma sala ou entrar usando um código de 16 caracteres. Configure
-o endereço em **Online → Room server**; o anfitrião cria a sala, compartilha o código,
+O launcher pode criar uma sala ou entrar usando um convite. O anfitrião configura
+o endereço em **Online → Room server settings**, cria a sala e copia o convite;
+quem entra cola esse texto, que já contém o endereço e o código. Um código de 16
+caracteres também é aceito se o endereço já estiver configurado. O anfitrião
 inicia o jogo e abre **Online → Player Match → Find Game**. Os demais entram na sala,
 abrem o jogo e procuram o mesmo modo. Mantenha o launcher aberto durante a partida.
 

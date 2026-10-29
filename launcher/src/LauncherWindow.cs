@@ -104,7 +104,7 @@ namespace RedBaron {
             Button("CreateRoom").Click+=async(sender,e)=>await ConnectOnline(false);
             Button("JoinRoom").Click+=async(sender,e)=>await ConnectOnline(true);
             Button("LeaveRoom").Click+=async(sender,e)=>await LeaveOnline();
-            Button("CopyRoom").Click+=(sender,e)=>{if(online!=null && online.Room.Length>0)Clipboard.SetText(online.Room);};
+            Button("CopyRoom").Click+=(sender,e)=>{try {if(online!=null && online.Room.Length>0){Clipboard.SetText(OnlineSession.Invitation(settings.OnlineServer,online.Room));Status("Invitation copied. Send it to your friends.");}}catch(Exception error){Status("Could not copy the invitation: "+error.Message,true);}};
             Button("InstallButton").Click+=async(sender,e)=>await Install();
             Button("InstallDlc").Click+=async(sender,e)=>await InstallDlc();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
@@ -225,12 +225,20 @@ namespace RedBaron {
         }
         async Task ConnectOnline(bool join) {
             if(connectingOnline || online!=null)return;
+            string room="";
+            if(join) {
+                try {
+                    string invitationServer;
+                    room=OnlineSession.ParseInvitation(Text("RoomCode").Text,out invitationServer);
+                    if(invitationServer!=null)Text("OnlineServer").Text=invitationServer;
+                } catch(Exception error) {Status(error.Message,true);Label("OnlineState").Text=error.Message;return;}
+            }
             if(!Save())return;
             if(!caps.flags.ContainsKey("redbaron_p2p_namespace")) {Status("Update the game runtime before connecting online.",true);return;}
             connectingOnline=true;OnlineControls(false);Label("OnlineState").Text="Connecting to room server…";
             var session=new OnlineSession(message=>window.Dispatcher.BeginInvoke(new Action(()=>Label("OnlineState").Text=message)));
             try {
-                await session.Start(settings,join?Text("RoomCode").Text.Trim().ToUpperInvariant():"");
+                await session.Start(settings,room);
                 online=session;Text("RoomCode").Text=online.Room;
                 Status("Online room connected. Follow the host instructions in the Online tab.");
             } catch(Exception error) {session.Dispose();Label("OnlineState").Text=error.Message;Status(error.Message,true);}

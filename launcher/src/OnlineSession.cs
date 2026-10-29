@@ -16,6 +16,28 @@ namespace RedBaron {
         public OnlineMember member {get;set;} public OnlineMember[] members {get;set;}
     }
     public sealed class OnlineSession : IDisposable {
+        public static string Invitation(string server, string room) {
+            Settings.ValidateOnlineServer(server,true);
+            if(!System.Text.RegularExpressions.Regex.IsMatch(room??"",@"\A[0-9A-F]{16}\z"))
+                throw new InvalidDataException("The room code is invalid.");
+            return "redbaron://join/"+room+"?server="+Uri.EscapeDataString(server);
+        }
+        public static string ParseInvitation(string text, out string server) {
+            server=null;
+            text=(text??"").Trim();
+            if(System.Text.RegularExpressions.Regex.IsMatch(text,@"\A[0-9A-Fa-f]{16}\z"))
+                return text.ToUpperInvariant();
+            Uri uri;
+            if(text.Length>1024 || !Uri.TryCreate(text,UriKind.Absolute,out uri) ||
+                uri.Scheme!="redbaron" || uri.Host!="join" || uri.Port!=-1 ||
+                !String.IsNullOrEmpty(uri.UserInfo) || !String.IsNullOrEmpty(uri.Fragment) ||
+                !System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath,@"\A/[0-9A-Fa-f]{16}\z") ||
+                !uri.Query.StartsWith("?server=",StringComparison.Ordinal) || uri.Query.IndexOf('&')>=0)
+                throw new InvalidDataException("Paste the invitation or 16-character room code from the host.");
+            server=Uri.UnescapeDataString(uri.Query.Substring(8));
+            Settings.ValidateOnlineServer(server,true);
+            return uri.AbsolutePath.Substring(1).ToUpperInvariant();
+        }
         readonly Process process=new Process();
         readonly TaskCompletionSource<bool> admitted=new TaskCompletionSource<bool>();
         readonly object gate=new object();
