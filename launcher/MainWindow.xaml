@@ -149,19 +149,36 @@
       <TabItem Header="Online">
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Player identity" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Set your primary player name. Experimental LAN play uses the game's original Online menu and network gameplay." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
+          <TextBlock Text="Your primary player name is shown in game and in the room." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
           <TextBlock Text="Player name" Margin="0,0,0,7"/>
           <TextBox Name="PlayerName" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="Online player name"/>
           <TextBlock Name="NameValidation" Text="1–15 characters: A–Z, numbers, internal spaces, hyphens or underscores." Style="{StaticResource Muted}" Margin="0,8,0,26"/>
           <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Padding="0,24,0,0"><StackPanel>
-            <TextBlock Text="Connection" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
+            <TextBlock Text="Online room" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
+            <TextBlock Text="Room server" Margin="0,0,0,7"/>
+            <TextBox Name="OnlineServer" MaxWidth="700" HorizontalAlignment="Stretch" MaxLength="512" AutomationProperties.Name="Room server address"/>
+            <TextBlock Text="Use the host's wss:// server address. The project server is prepared for hosting; a public endpoint is not available yet." Style="{StaticResource Muted}" Margin="0,8,0,18" MaxWidth="740" HorizontalAlignment="Left"/>
+            <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="20"/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <StackPanel><TextBlock Text="Room mode" Margin="0,0,0,7"/><ComboBox Name="OnlineMode" AutomationProperties.Name="Online room mode"/></StackPanel>
+              <StackPanel Grid.Column="2"><TextBlock Text="Players on this PC" Margin="0,0,0,7"/><ComboBox Name="OnlineLocalPlayers" AutomationProperties.Name="Local players in online room"/></StackPanel>
+            </Grid>
+            <TextBlock Text="Room code" Margin="0,0,0,7"/>
+            <TextBox Name="RoomCode" Width="360" HorizontalAlignment="Left" MaxLength="16" CharacterCasing="Upper" AutomationProperties.Name="Room code"/>
+            <WrapPanel Margin="0,12,0,12">
+              <Button Name="CreateRoom" Content="Create room" Margin="0,0,10,8"/>
+              <Button Name="JoinRoom" Content="Join room" Margin="0,0,10,8"/>
+              <Button Name="CopyRoom" Content="Copy code" IsEnabled="False" Margin="0,0,10,8"/>
+              <Button Name="LeaveRoom" Content="Leave room" IsEnabled="False" Margin="0,0,0,8"/>
+            </WrapPanel>
+            <TextBlock Name="OnlineState" Text="No room connected." Style="{StaticResource Muted}" Margin="0,0,0,14"/>
+            <TextBlock Text="Host: click Play, then Online → Player Match → Find Game and choose a mode. Once the match lobby appears, friends can search for the same mode. Keep the launcher running during online play." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
+            <TextBlock Text="Local network" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
             <CheckBox Name="LanEnabled" Content="Enable experimental LAN play" Margin="0,0,0,14"/>
             <TextBlock Text="Host IPv4 address" Margin="0,0,0,7"/>
             <TextBox Name="LanPeer" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="LAN host IPv4 address"/>
             <TextBlock Text="255.255.255.255 discovers hosts on your local network. If discovery fails, enter the host PC's IPv4 address on joining PCs." Style="{StaticResource Muted}" Margin="0,8,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
             <TextBlock Text="In game: Online → Player Match → Find Game. Choose the same mode and options on each PC. An empty search creates a public match. Team DogFight has been tested between two local game instances; testing on separate PCs is still needed." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
-            <CheckBox Content="Configure ports automatically with UPnP" IsEnabled="False"/>
-            <TextBlock Text="Internet matchmaking, invitations, ranked services and rollback are not available. No router ports are opened automatically. Use LAN play only on a trusted network." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
+            <TextBlock Text="A connected online room takes precedence over LAN. Direct connections use WebRTC; a configured TURN server provides relay fallback. Ranked services and rollback are not implemented." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
           </StackPanel></Border>
         </StackPanel></ScrollViewer>
       </TabItem>

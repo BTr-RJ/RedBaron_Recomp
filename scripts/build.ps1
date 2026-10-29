@@ -46,7 +46,7 @@ function Invoke-CheckedNative {
 if (!$ConfigureOnly -and (Test-Path -LiteralPath (Join-Path $BuildDirectory 'snoopyflyingace.exe'))) {
     $backupDir = Join-Path $BuildDirectory ('backups/build_' + (Get-Date -Format 'yyyyMMdd_HHmmss_fff'))
     New-Item -ItemType Directory -Path $backupDir | Out-Null
-    foreach ($name in @('snoopyflyingace.exe', 'rexruntime.dll', 'rexgpu-xenos.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt', 'snoopyflyingace.toml')) {
+    foreach ($name in @('snoopyflyingace.exe', 'redbaron_net.exe', 'datachannel.dll', 'rexruntime.dll', 'rexgpu-xenos.dll', 'amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt', 'snoopyflyingace.toml')) {
         $source = Join-Path $BuildDirectory $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backupDir }
     }
@@ -64,7 +64,7 @@ $cmakeArgs = @('-S', $portDir, '-B', $BuildDirectory, '-G', 'Ninja',
 Invoke-CheckedNative 'cmake' $cmakeArgs
 if ($ConfigureOnly) { Write-Output 'Code generation and configuration complete.'; return }
 
-Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyflyingace', 'redbaron_probe', '--parallel', "$Parallel")
+Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyflyingace', 'redbaron_probe', 'redbaron_content_inspect', '--parallel', "$Parallel")
 foreach ($name in @('rexruntime.dll', 'rexgpu-xenos.dll')) {
     Copy-Item -LiteralPath (Join-Path $SdkRoot ('bin/' + $name)) -Destination $BuildDirectory
 }
@@ -72,4 +72,5 @@ foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt'
     $dependency = Join-Path $SdkRoot ('bin/' + $name)
     if (Test-Path -LiteralPath $dependency) { Copy-Item -LiteralPath $dependency -Destination $BuildDirectory }
 }
+Invoke-CheckedNative 'python' @((Join-Path $PSScriptRoot 'build-network.py'), '--parallel', "$Parallel", '--stage', $BuildDirectory)
 Write-Output (Join-Path $BuildDirectory 'snoopyflyingace.exe')

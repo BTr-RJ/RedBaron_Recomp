@@ -12,12 +12,15 @@
 #include <rex/system/flags.h>
 
 REXCVAR_DECLARE(uint32_t, redbaron_local_profiles);
+REXCVAR_DECLARE(uint32_t, redbaron_p2p_namespace);
+REXCVAR_DECLARE(uint32_t, redbaron_online_players);
 
 namespace redbaron {
 void ConfigureLocalInput(rex::input::InputSystem& input);
 void ConfigureLauncherInput(rex::RuntimeConfig& config);
 void ConfigureVideoTiming();
 void InstallVideoHooks(rex::Runtime& runtime);
+void ApplyWindowBranding(rex::ui::Window* window);
 std::unique_ptr<rex::ui::ImGuiDialog> CreateFpsCounter(rex::ui::ImGuiDrawer* drawer);
 }
 
@@ -49,6 +52,10 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   void OnPreSetup(rex::RuntimeConfig& config) override {
     // Set the application's startup policy before KernelState constructs profiles.
     REXCVAR_SET(redbaron_local_profiles, 4);
+    if (REXCVAR_GET(redbaron_p2p_namespace) != 0) {
+      const auto reserved = REXCVAR_GET(redbaron_online_players);
+      REXCVAR_SET(redbaron_local_profiles, reserved == 2 ? 2 : 1);
+    }
     rex::cvar::SetFlagByName("hide_cursor_fullscreen", "true");
     redbaron::ConfigureVideoTiming();
     redbaron::ConfigureLauncherInput(config);
@@ -92,6 +99,7 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    redbaron::ApplyWindowBranding(window());
     fps_counter_ = redbaron::CreateFpsCounter(drawer);
   }
 

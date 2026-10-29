@@ -56,6 +56,9 @@ try {
     $profilesPatch=Join-Path $project 'patches/rexglue-local-profiles-lan.patch'
     Native 'git' @('apply','--check','--ignore-space-change',$profilesPatch)
     Native 'git' @('apply','--ignore-space-change',$profilesPatch)
+    $onlinePatch=Join-Path $project 'patches/rexglue-online-transport.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$onlinePatch)
+    Native 'git' @('apply','--ignore-space-change',$onlinePatch)
 } finally {Pop-Location}
 Native 'cmake' @('-S',$source,'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
     '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++','-DCMAKE_C_FLAGS=-march=x86-64-v2',

@@ -1,6 +1,6 @@
 // snoopyflyingace - ReXGlue Recompiled Project
 
-#include "generated/default/snoopyflyingace_init.h"
+#include "generated/default/SnoopyFlyingAce_init.h"
 
 #include "snoopyflyingace_app.h"
 

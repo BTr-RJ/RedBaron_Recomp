@@ -30,6 +30,9 @@ namespace RedBaron {
         public string PlayerName { get; set; }
         public bool LanEnabled { get; set; }
         public string LanPeer { get; set; }
+        public string OnlineServer { get; set; }
+        public string OnlineMode { get; set; }
+        public int OnlineLocalPlayers { get; set; }
         public string Resolution { get; set; }
         public bool Fullscreen { get; set; }
         public bool Vsync { get; set; }
@@ -48,6 +51,7 @@ namespace RedBaron {
         public Settings() {
             Version = 1; ShowLauncher = true; PlayerName = "Player";
             LanPeer = "255.255.255.255";
+            OnlineServer = ""; OnlineMode = "multiplayer"; OnlineLocalPlayers = 1;
             Resolution = "1280x720"; Fullscreen = true; Vsync = true;
             Anisotropic = 3; Adapter = -1; Scale = 1;
             FsrSharpness = 90;
@@ -116,6 +120,9 @@ namespace RedBaron {
             return s;
         }
         public void Validate() {
+            ValidateOnlineServer(OnlineServer, false);
+            if ((OnlineMode != "multiplayer" && OnlineMode != "coop") || OnlineLocalPlayers < 1 || OnlineLocalPlayers > 2)
+                throw new InvalidDataException("Choose an online mode and one or two local players.");
             string[] octets = (LanPeer ?? "").Split('.');
             byte octet;
             if (octets.Length != 4 || octets.Any(part => !Regex.IsMatch(part, @"\A(0|[1-9][0-9]{0,2})\z") || !Byte.TryParse(part, out octet)) || LanPeer == "0.0.0.0")
@@ -176,6 +183,17 @@ namespace RedBaron {
             return t.Patch(values);
         }
         static string Bool(bool value) { return value ? "true" : "false"; }
+        public static void ValidateOnlineServer(string value, bool required) {
+            if (String.IsNullOrWhiteSpace(value)) {
+                if (required) throw new InvalidDataException("Enter the room server address. A public server has not been hosted yet.");
+                return;
+            }
+            Uri uri;
+            if (!Uri.TryCreate(value, UriKind.Absolute, out uri) || !String.IsNullOrEmpty(uri.UserInfo) ||
+                !String.IsNullOrEmpty(uri.Fragment) || uri.Port < 1 ||
+                (uri.Scheme != "wss" && !(uri.Scheme == "ws" && (uri.Host == "127.0.0.1" || uri.Host == "localhost"))))
+                throw new InvalidDataException("Use wss:// for the room server, or ws://127.0.0.1:port for local testing.");
+        }
         public static readonly string[] DlssModes = {"native_aa","quality","balanced","performance","ultra_performance"};
         public int DlssRenderScale(int width, int height) {
             // The emulated render targets support integer multiples of 720p.

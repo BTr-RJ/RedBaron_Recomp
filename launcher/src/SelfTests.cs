@@ -81,6 +81,15 @@ namespace RedBaron {
                 }
                 loaded.LanPeer="255.255.255.255";loaded.LanEnabled=false;Services.Save(loaded,caps);
                 results.Add("LAN: runtime gating, IPv4 validation, persistence and rejected-save preservation");
+                foreach(string invalid in new[]{"http://example.org","ws://example.org:8787","wss://user:pass@example.org","wss://example.org/#fragment"})
+                    Reject(()=>Settings.ValidateOnlineServer(invalid,true),"Invalid room server accepted");
+                Reject(()=>Settings.ValidateOnlineServer("",true),"Missing room server accepted");
+                loaded.OnlineServer="wss://play.example.org/rooms";loaded.OnlineMode="coop";loaded.OnlineLocalPlayers=2;
+                Services.Save(loaded,caps);
+                var onlineLoaded=Settings.Load(s.Root);
+                Assert(onlineLoaded.OnlineServer==loaded.OnlineServer && onlineLoaded.OnlineMode=="coop" && onlineLoaded.OnlineLocalPlayers==2,"Online room settings did not roundtrip");
+                Assert(!File.ReadAllText(s.Toml).Contains("redbaron_p2p_namespace"),"Temporary room identity leaked into persistent game settings");
+                results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
                 Assert(loaded.Scale==2 && loaded.Resolution=="7680x4320" && !loaded.Vsync && loaded.FsrSharpness==50,"Video settings did not roundtrip");
                 loaded.Fps=120;Reject(()=>Services.Save(loaded,caps),"Old game build accepted an unsupported FPS target");
                 caps.flags["redbaron_fps"]=new Flag{allowed=Settings.FrameRates.Select(fps=>fps.ToString()).ToArray()};

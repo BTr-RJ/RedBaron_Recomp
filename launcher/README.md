@@ -13,7 +13,7 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 | Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut |
 | Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS, experimental FSR 3.1.5/DLSS, FSR sharpness, FPS counter and HDR10 output; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
-| Online | Primary player name, experimental LAN enable switch and host IPv4; UPnP disabled |
+| Online | Primary player name, experimental WebRTC room creation/joining and LAN host IPv4; public server not hosted yet; UPnP disabled |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
 
 ## Current limits

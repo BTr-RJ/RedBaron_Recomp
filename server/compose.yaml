@@ -1,0 +1,32 @@
+# Linux VPS deployment. Generate state/ with prepare_deploy.py first.
+services:
+  rooms:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: state/rooms.env
+    mem_limit: 256m
+    pids_limit: 64
+  https:
+    image: caddy:2-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./state/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+  relay:
+    image: coturn/coturn:4.18.0-r0-alpine
+    network_mode: host
+    restart: unless-stopped
+    command: ["-c", "/etc/coturn/redbaron.conf"]
+    volumes:
+      - ./state/turnserver.conf:/etc/coturn/redbaron.conf:ro
+    mem_limit: 512m
+    pids_limit: 128
+volumes:
+  caddy-data:
+  caddy-config:

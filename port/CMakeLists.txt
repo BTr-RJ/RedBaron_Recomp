@@ -21,10 +21,18 @@ set(SNOOPYFLYINGACE_SOURCES
     src/main.cpp
     src/local_input.cpp
     src/video.cpp
+    src/branding.cpp
 )
 
 if(WIN32)
-    add_executable(snoopyflyingace WIN32 ${SNOOPYFLYINGACE_SOURCES})
+    enable_language(RC)
+    set(REDBARON_ICON "${CMAKE_CURRENT_BINARY_DIR}/RedBaron.ico")
+    execute_process(COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+        "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/make-icon.ps1" -Output "${REDBARON_ICON}"
+        COMMAND_ERROR_IS_FATAL ANY)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/redbaron_brand.rc"
+        "1 ICON \"${REDBARON_ICON}\"\n2 RCDATA \"${REDBARON_ICON}\"\n")
+    add_executable(snoopyflyingace WIN32 ${SNOOPYFLYINGACE_SOURCES} "${CMAKE_CURRENT_BINARY_DIR}/redbaron_brand.rc")
 else()
     add_executable(snoopyflyingace ${SNOOPYFLYINGACE_SOURCES})
 endif()
@@ -42,7 +50,7 @@ endif()
 rexglue_setup_target(snoopyflyingace)
 option(REDBARON_INPUT_FEED "Enable scripted controllers in a diagnostic build only" OFF)
 if(REDBARON_INPUT_FEED)
-    target_compile_definitions(snoopyflyingace PRIVATE REDBARON_INPUT_FEED=1)
+    set_source_files_properties(src/local_input.cpp PROPERTIES COMPILE_DEFINITIONS REDBARON_INPUT_FEED=1)
 endif()
 option(REDBARON_BUILD_RUNTIME_TESTS "Build runtime integration tests (no game assets)" OFF)
 if(REDBARON_BUILD_RUNTIME_TESTS)
@@ -57,11 +65,13 @@ endif()
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
     target_link_libraries(redbaron_probe PRIVATE rex::runtime)
+    add_executable(redbaron_content_inspect src/content_inspect.cpp)
+    target_link_libraries(redbaron_content_inspect PRIVATE rex::runtime)
     # GPU plugins are loaded dynamically, so TARGET_RUNTIME_DLLS misses them.
     # Keep the runtime/plugin pair and optional upscalers together for both
     # hosts, including direct CMake builds (not just scripts/build.ps1).
     get_filename_component(REDBARON_SDK_ROOT "${rexglue_DIR}/../../.." ABSOLUTE)
-    set(REDBARON_RUNTIME_HOSTS snoopyflyingace redbaron_probe)
+    set(REDBARON_RUNTIME_HOSTS snoopyflyingace redbaron_probe redbaron_content_inspect)
     if(TARGET redbaron_runtime_tests)
         list(APPEND REDBARON_RUNTIME_HOSTS redbaron_runtime_tests)
     endif()

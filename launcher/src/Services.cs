@@ -131,11 +131,13 @@ namespace RedBaron {
             try {AtomicFile.Write(s.FileName,json);}
             catch {AtomicFile.Write(s.Toml,original);throw;}
         }
-        public static Process Play(Settings s) {
+        public static Process Play(Settings s, IEnumerable<string> onlineArguments=null) {
             if(!File.Exists(s.Exe)) throw new FileNotFoundException("Game not installed. Open Install and select your local game files.");
             if(!File.Exists(Path.Combine(s.Root,"game","default.xex"))) throw new FileNotFoundException("Game files are missing from this installation.");
             if(IsGameRunning(s)) throw new InvalidOperationException("The game is already running.");
-            var info=new ProcessStartInfo(s.Exe,"--game_data_root="+QuoteArgument(Path.Combine(s.Root,"game"))) {WorkingDirectory=s.Build,UseShellExecute=false};
+            var arguments=new List<string>{"--game_data_root="+Path.Combine(s.Root,"game")};
+            if(onlineArguments!=null)arguments.AddRange(onlineArguments);
+            var info=new ProcessStartInfo(s.Exe,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);
         }
         static void ExtractResource(string name,string path) {

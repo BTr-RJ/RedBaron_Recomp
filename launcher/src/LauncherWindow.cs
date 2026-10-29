@@ -30,6 +30,8 @@ namespace RedBaron {
         int playerIndex=0;
         Binding capture;
         WindowLayout layout;
+        OnlineSession online;
+        bool connectingOnline=false, onlineGame=false;
         T Get<T>(string name) where T:FrameworkElement {return (T)window.FindName(name);}
         ComboBox Combo(string name) {return Get<ComboBox>(name);}
         TextBox Text(string name) {return Get<TextBox>(name);}
@@ -70,8 +72,11 @@ namespace RedBaron {
             Choices("DlssMode",new[]{new Choice("DLAA · native","native_aa"),new Choice("Quality","quality"),new Choice("Balanced","balanced"),new Choice("Performance","performance"),new Choice("Ultra Performance","ultra_performance")},s.DlssMode);
             Choices("FsrSharpness",new[]{new Choice("Soft",0),new Choice("Medium",50),new Choice("Sharp (default)",90),new Choice("Maximum",100)},s.FsrSharpness);
             Choices("Anisotropic",new[]{new Choice("Game default",-1),new Choice("Off",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
+            Choices("OnlineMode",new[]{new Choice("Multiplayer · up to 8 players","multiplayer"),new Choice("Co-op · 2 players","coop")},s.OnlineMode);
+            Choices("OnlineLocalPlayers",new[]{new Choice("1 player",1),new Choice("2 players",2)},s.OnlineLocalPlayers);
             ApplySettings();
-            foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName","LanPeer"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
+            foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName","LanPeer","OnlineServer"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
+            foreach(var name in new[]{"OnlineMode","OnlineLocalPlayers"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","DlssMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             Combo("Gpu").SelectionChanged+=(sender,e)=> {
                 if(loading || caps.flags.Count==0) return;
@@ -91,6 +96,10 @@ namespace RedBaron {
             Button("RefreshDevices").Click+=async(sender,e)=>await Refresh();
             Button("Save").Click+=(sender,e)=>Save();
             Button("Play").Click+=(sender,e)=>Play();
+            Button("CreateRoom").Click+=async(sender,e)=>await ConnectOnline(false);
+            Button("JoinRoom").Click+=async(sender,e)=>await ConnectOnline(true);
+            Button("LeaveRoom").Click+=async(sender,e)=>await LeaveOnline();
+            Button("CopyRoom").Click+=(sender,e)=>{if(online!=null && online.Room.Length>0)Clipboard.SetText(online.Room);};
             Button("InstallButton").Click+=async(sender,e)=>await Install();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
@@ -98,12 +107,14 @@ namespace RedBaron {
             window.PreviewKeyDown+=CaptureKey;
             window.PreviewMouseDown+=CaptureMouse;
             window.Closing+=(sender,e)=>{
+                if(connectingOnline || onlineGame) {e.Cancel=true;Status("Close the online game or wait for the room connection before closing the launcher.",true);return;}
                 if(installation!=null) {e.Cancel=true;Status("Cancel the installation and wait for it to stop before closing.",true);return;}
                 if(dirty && !args.Contains("--capture")) {
                     var result=MessageBox.Show(window,"Save changes before exiting?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
                     if(result==MessageBoxResult.Cancel || (result==MessageBoxResult.Yes && !Save())) e.Cancel=true;
                 }
             };
+            window.Closed+=(sender,e)=>{if(online!=null)online.Dispose();};
             window.Loaded+=async(sender,e)=>{
                 await Refresh();
                 if(args.Contains("--capture")) await CaptureScreens();
@@ -115,6 +126,8 @@ namespace RedBaron {
             Text("SourcePath").Text=settings.Source;Text("DestinationPath").Text=settings.Destination;Text("SdkPath").Text=settings.Sdk;
             Text("PlayerName").Text=settings.PlayerName;
             Text("LanPeer").Text=settings.LanPeer; Check("LanEnabled").IsChecked=settings.LanEnabled;
+            Text("OnlineServer").Text=settings.OnlineServer;
+            Select("OnlineMode",settings.OnlineMode);Select("OnlineLocalPlayers",settings.OnlineLocalPlayers);
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;Check("ShowFps").IsChecked=settings.ShowFps;Check("Hdr").IsChecked=settings.Hdr;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
             Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);Select("DlssMode",settings.DlssMode);
@@ -165,6 +178,7 @@ namespace RedBaron {
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
             settings.LanEnabled=Check("LanEnabled").IsChecked==true;settings.LanPeer=Text("LanPeer").Text.Trim();
+            settings.OnlineServer=Text("OnlineServer").Text.Trim();settings.OnlineMode=Val(Combo("OnlineMode"));settings.OnlineLocalPlayers=Number(Combo("OnlineLocalPlayers"));
             settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;settings.Vsync=Check("Vsync").IsChecked==true;settings.ShowFps=Check("ShowFps").IsChecked==true;settings.Hdr=Check("Hdr").IsChecked==true;
             settings.Resolution=Val(Combo("Resolution"));settings.Fullscreen=Number(Combo("DisplayMode"))==1;
             settings.DlssMode=Val(Combo("DlssMode"));settings.Scale=Number(Combo("RenderScale"));settings.Fps=Number(Combo("FrameRate"));settings.FsrSharpness=Number(Combo("FsrSharpness"));
@@ -175,10 +189,43 @@ namespace RedBaron {
             try {ReadSettings();Services.Save(settings,caps);Select("RenderScale",settings.Scale);dirty=false;Status("Settings saved. They will apply the next time you start the game.");return true;}
             catch(Exception error) {Status(error.Message,true);return false;}
         }
-        void Play() {
+        async void Play() {
             if(!Save()) return;
-            try {Services.Play(settings).Dispose();window.Close();}
+            try {
+                if(online==null) {Services.Play(settings).Dispose();window.Close();return;}
+                using(var game=Services.Play(settings,online.GameArguments())) {
+                    onlineGame=true;window.Hide();
+                    try {await Task.Run(()=>game.WaitForExit());}
+                    finally {onlineGame=false;window.Show();window.Activate();}
+                }
+            }
             catch(Exception error) {Status(error.Message,true);}
+        }
+        void OnlineControls(bool enabled) {
+            foreach(var name in new[]{"CreateRoom","JoinRoom"})Button(name).IsEnabled=enabled;
+            foreach(var name in new[]{"OnlineServer","RoomCode","PlayerName"})Text(name).IsEnabled=enabled;
+            Combo("OnlineMode").IsEnabled=enabled;Combo("OnlineLocalPlayers").IsEnabled=enabled;
+            Button("LeaveRoom").IsEnabled=!enabled && !connectingOnline;
+            Button("CopyRoom").IsEnabled=online!=null && online.Room.Length>0;
+        }
+        async Task ConnectOnline(bool join) {
+            if(connectingOnline || online!=null)return;
+            if(!Save())return;
+            if(!caps.flags.ContainsKey("redbaron_p2p_namespace")) {Status("Update the game runtime before connecting online.",true);return;}
+            connectingOnline=true;OnlineControls(false);Label("OnlineState").Text="Connecting to room server…";
+            var session=new OnlineSession(message=>window.Dispatcher.BeginInvoke(new Action(()=>Label("OnlineState").Text=message)));
+            try {
+                await session.Start(settings,join?Text("RoomCode").Text.Trim().ToUpperInvariant():"");
+                online=session;Text("RoomCode").Text=online.Room;
+                Status("Online room connected. Follow the host instructions in the Online tab.");
+            } catch(Exception error) {session.Dispose();Label("OnlineState").Text=error.Message;Status(error.Message,true);}
+            finally {connectingOnline=false;OnlineControls(online==null);}
+        }
+        async Task LeaveOnline() {
+            if(onlineGame || Services.IsGameRunning(settings)) {Status("Close the game before leaving the online room.",true);return;}
+            var previous=online;online=null;
+            if(previous!=null)await Task.Run(()=>previous.Dispose());
+            OnlineControls(true);Label("OnlineState").Text="No room connected.";Status("Left the online room.");
         }
         async Task Refresh(bool preserve=true) {
             if(probing) return;

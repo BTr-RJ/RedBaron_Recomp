@@ -1,4 +1,24 @@
-# Multiplayer local e LAN
+# Multiplayer local, LAN e salas online experimentais
+
+## Salas online em desenvolvimento
+
+O launcher pode criar uma sala ou entrar usando um código de 16 caracteres. Configure
+o endereço em **Online → Room server**; o anfitrião cria a sala, compartilha o código,
+inicia o jogo e abre **Online → Player Match → Find Game**. Os demais entram na sala,
+abrem o jogo e procuram o mesmo modo. Mantenha o launcher aberto durante a partida.
+
+O serviço de salas e a configuração para Caddy/Coturn estão em [server](../server/README.md).
+**Ainda não há servidor público hospedado.** WebRTC estabelece conexões criptografadas
+entre anfitrião e participantes, com relay TURN quando configurado. O anfitrião controla
+a entrada e retransmite tráfego entre clientes; o jogo conserva seu protocolo original.
+Isso não comprova autoridade completa da simulação nem implementa rollback.
+
+Oito instâncias no mesmo PC passaram pelo lobby, terminaram uma rodada de Team Dog Fight
+e iniciaram outra no mapa seguinte. Uma tentativa anterior de entrada de vários clientes
+durante a partida terminou em desconexões; esse cenário segue em investigação. Os testes
+de transporte cobrem oito processos, transferência TCP, UDP, saída do anfitrião e rejeição
+de certificado inválido. São necessários testes entre computadores, sob CGNAT, com relay
+público e em co-op antes de declarar o online pronto. Não há garantia de ausência de lag.
 
 Online e quatro jogadores locais voltaram a ser a prioridade do usuário em 29/10/2026. **Dois jogadores em tela dividida estão funcionando; quatro locais ainda não.** A primeira partida LAN foi exercitada entre dois processos no mesmo PC, usando o modo original Team DogFight. Isso ainda não comprova conexão entre PCs diferentes ou pela Internet.
 

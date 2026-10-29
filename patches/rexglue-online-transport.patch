@@ -1,0 +1,156 @@
+--- a/src/kernel/xam/xam_net.cpp
++++ b/src/kernel/xam/xam_net.cpp
+@@ -807,6 +807,7 @@
+   }
+ 
+   N_XSOCKADDR_IN native_name(name);
++  native_name.sin_addr = LanSocketAddress(native_name.sin_addr);
+   if (LanEnabled() && !uint32_t(native_name.sin_addr)) native_name.sin_addr = LanBindAddress();
+   native_name.sin_port = LanNativePort(native_name.sin_port);
+   X_STATUS status = socket->Bind(&native_name, namelen);
+@@ -834,7 +835,7 @@
+     XThread::SetLastError(WSAGetLastError()); return ~0u;
+   }
+   name->sin_family = address.sin_family; name->sin_port = LanGuestPort(ntohs(address.sin_port));
+-  name->sin_addr = ntohl(address.sin_addr.s_addr); std::memset(name->x_sin_zero, 0, 8); *length = 16;
++  name->sin_addr = LanGuestAddress(ntohl(address.sin_addr.s_addr)); std::memset(name->x_sin_zero, 0, 8); *length = 16;
+   if (LanEnabled()) REXKRNL_DEBUG("LAN getsockname: address={:08X} port={}", uint32_t(name->sin_addr), uint16_t(name->sin_port));
+   return 0;
+ }
+@@ -851,6 +852,7 @@
+   if (LanEnabled() && native_name.address_family == AF_INET) {
+     auto* address = reinterpret_cast<N_XSOCKADDR_IN*>(&native_name);
+     address->sin_port = LanNativePort(address->sin_port);
++    address->sin_addr = LanSocketAddress(address->sin_addr);
+     if (uint32_t(address->sin_addr) == 0x7F000001 && LanBindAddress()) address->sin_addr = LanBindAddress();
+     if (LanBindAddress()) {
+       sockaddr_in current{}; int length = sizeof(current);
+@@ -912,6 +914,7 @@
+       auto* address = reinterpret_cast<N_XSOCKADDR_IN*>(&native_addr);
+       address->sin_port = LanGuestPort(address->sin_port);
+       if (LanEnabled() && LanBindAddress() && uint32_t(address->sin_addr) == LanBindAddress()) address->sin_addr = 0x7F000001;
++      else address->sin_addr = LanGuestAddress(address->sin_addr);
+       addr_ptr->address_family = native_addr.address_family;
+       std::memcpy(addr_ptr->sa_data, native_addr.sa_data, sizeof(addr_ptr->sa_data));
+       *addrlen_ptr = native_len;
+@@ -1060,7 +1063,7 @@
+   if (ret >= 0 && from_ptr) {
+     from_ptr->sin_family = native_from.sin_family;
+     from_ptr->sin_port = LanGuestPort(native_from.sin_port);
+-    from_ptr->sin_addr = LanEnabled() && LanBindAddress() && uint32_t(native_from.sin_addr) == LanBindAddress() ? 0x7F000001 : uint32_t(native_from.sin_addr);
++    from_ptr->sin_addr = LanEnabled() && LanBindAddress() && uint32_t(native_from.sin_addr) == LanBindAddress() ? 0x7F000001 : LanGuestAddress(native_from.sin_addr);
+     std::memset(from_ptr->x_sin_zero, 0, sizeof(from_ptr->x_sin_zero));
+   }
+   if (ret >= 0 && fromlen_ptr) {
+@@ -1108,6 +1111,7 @@
+   N_XSOCKADDR_IN native_to{}; if (to_ptr) native_to = *to_ptr;
+   if (to_ptr) {
+     native_to.sin_port = LanNativePort(native_to.sin_port);
++    native_to.sin_addr = LanSocketAddress(native_to.sin_addr);
+     if (LanEnabled() && LanBindAddress() && uint32_t(native_to.sin_addr) == 0x7F000001) native_to.sin_addr = LanBindAddress();
+   }
+   int result = socket->SendTo(buf_ptr, buf_len, flags, to_ptr ? &native_to : nullptr, to_len);
+--- a/src/system/xam/lan_lobby.cpp
++++ b/src/system/xam/lan_lobby.cpp
+@@ -17,6 +17,12 @@
+ REXCVAR_DEFINE_STRING(redbaron_lan_peer, "255.255.255.255", "Network", "LAN host IPv4 or broadcast address")
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ REXCVAR_DEFINE_STRING(redbaron_lan_bind, "0.0.0.0", "Network", "Local IPv4 interface for LAN sockets")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DEFINE_UINT32(redbaron_p2p_namespace, 0, "Network", "Internal loopback namespace for the online companion; zero disables it")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DEFINE_UINT32(redbaron_p2p_id, 0, "Network", "Room-assigned peer identity")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DEFINE_UINT32(redbaron_online_players, 1, "Network", "Local player slots reserved in the online room")
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ 
+ namespace rex::system::xam {
+@@ -146,8 +152,27 @@
+ Lobby& State() { static Lobby lobby; return lobby; }
+ }
+ bool LanEnabled() { return REXCVAR_GET(redbaron_lan) && InitSockets(); }
++bool LanCanHostMatch() {
++  const auto ns = REXCVAR_GET(redbaron_p2p_namespace);
++  return !REXCVAR_GET(redbaron_lan) || ns < 1 || ns > 254 || REXCVAR_GET(redbaron_p2p_id) == 0;
++}
+ uint32_t LanBindAddress() { return ParseIp(REXCVAR_GET(redbaron_lan_bind)); }
++uint32_t LanSocketAddress(uint32_t guest) {
++  const auto ns = REXCVAR_GET(redbaron_p2p_namespace);
++  if (REXCVAR_GET(redbaron_lan) && ns >= 1 && ns <= 254 && (guest & 0xFFFF0000) == 0x0ACB0000)
++    return 0x7F000000 | (ns << 16) | (guest & 0xFFFF);
++  return guest;
++}
++uint32_t LanGuestAddress(uint32_t native) {
++  const auto ns = REXCVAR_GET(redbaron_p2p_namespace);
++  if (REXCVAR_GET(redbaron_lan) && ns >= 1 && ns <= 254 && (native & 0xFFFF0000) == (0x7F000000 | (ns << 16)))
++    return 0x0ACB0000 | (native & 0xFFFF);
++  return native;
++}
+ uint32_t LanAddress() {
++  const auto ns = REXCVAR_GET(redbaron_p2p_namespace);
++  if (REXCVAR_GET(redbaron_lan) && ns >= 1 && ns <= 254 && REXCVAR_GET(redbaron_p2p_id) <= 65535)
++    return 0x0ACB0000 | REXCVAR_GET(redbaron_p2p_id);
+   uint32_t configured = ParseIp(REXCVAR_GET(redbaron_lan_bind));
+   if (configured) return configured;
+   if (!InitSockets()) return 0;
+@@ -222,7 +247,7 @@
+       const uint64_t nonce = (uint64_t(random()) << 32) | random();
+       Bytes packet{'R','B','L','A','N','0','1',3}; Put(packet, uint32_t(nonce >> 32)); Put(packet, uint32_t(nonce));
+       packet.insert(packet.end(), targets[i].id.begin(), targets[i].id.end());
+-      auto peer = Address(targets[i].address, kDiscoveryPort);
++      auto peer = Address(LanSocketAddress(targets[i].address), kDiscoveryPort);
+       pending.emplace(nonce, Pending{i, std::chrono::steady_clock::now()});
+       if (sendto(socket.value, reinterpret_cast<const char*>(packet.data()), int(packet.size()), 0, reinterpret_cast<sockaddr*>(&peer), sizeof(peer)) == int(packet.size())) ++results[i].sent;
+     }
+@@ -237,7 +262,7 @@
+       if (!reader.Get(high) || !reader.Get(low)) continue;
+       auto found = pending.find((uint64_t(high) << 32) | low); if (found == pending.end()) continue;
+       const size_t i = found->second.target; LanSessionId id;
+-      if (ntohl(sender.sin_addr.s_addr) != targets[i].address || ntohs(sender.sin_port) != kDiscoveryPort || !reader.Take(id.data(), 8) || id != targets[i].id ||
++      if (LanGuestAddress(ntohl(sender.sin_addr.s_addr)) != targets[i].address || ntohs(sender.sin_port) != kDiscoveryPort || !reader.Take(id.data(), 8) || id != targets[i].id ||
+           !reader.Get(enabled) || enabled > 1 || !reader.Get(data_size) || data_size > 1024 || reader.left != data_size) continue;
+       auto& result = results[i]; result.contacted = true; result.disabled = !enabled;
+       result.data.assign(reader.at, reader.at + data_size); ++result.received;
+@@ -282,8 +307,9 @@
+     LanRecord record;
+     if (size <= 0 || !Decode(bytes.data(), size, packet.data(), record) || record.title != title) continue;
+     // The responder's actual address is authoritative, including VPN/loopback routes.
+-    std::memcpy(record.info.data()+8, &sender.sin_addr.s_addr, 4);
+-    std::memcpy(record.info.data()+12, &sender.sin_addr.s_addr, 4);
++    const uint32_t guest_ip = htonl(LanGuestAddress(ntohl(sender.sin_addr.s_addr)));
++    std::memcpy(record.info.data()+8, &guest_ip, 4);
++    std::memcpy(record.info.data()+12, &guest_ip, 4);
+     if (std::none_of(result.begin(), result.end(), [&](const auto& old) { return Id(old) == Id(record); })) result.push_back(std::move(record));
+   }
+   return result;
+--- a/src/system/xsession.cpp
++++ b/src/system/xsession.cpp
+@@ -155,6 +155,14 @@
+   };
+   if (message == 0xB0010) {
+     if (s.created_) return kWrongState;
++    // Private presence parties exist on every machine. Public game hosting is
++    // reserved for the peer that created the WebRTC room, preventing a joining
++    // client from becoming a competing host when the first search is empty.
++    const auto requested_flags = Read32(data + 4);
++    if ((requested_flags & 9) == 9 && !xam::LanCanHostMatch()) {
++      REXKRNL_WARN("Online client cannot host a public match; wait for the room host's game lobby");
++      return X_ERROR_ACCESS_DENIED;
++    }
+     const auto owner = Read32(data + 16);
+     auto profile = kernel->user_profile(owner);
+     if (!profile) return X_ERROR_NO_SUCH_USER;
+--- a/include/rex/system/xam/lan_lobby.h
++++ b/include/rex/system/xam/lan_lobby.h
+@@ -15,8 +15,11 @@
+   std::map<uint32_t, std::vector<uint8_t>> properties;
+ };
+ bool LanEnabled();
++bool LanCanHostMatch();
+ uint32_t LanAddress();  // Host-order IPv4, suitable for a guest big-endian store.
+ uint32_t LanBindAddress();
++uint32_t LanSocketAddress(uint32_t guest_address);
++uint32_t LanGuestAddress(uint32_t socket_address);
+ uint64_t LanUserId(uint32_t index);
+ std::array<uint8_t, 36> LanXnAddress();
+ bool LanPublish(LanRecord record);
