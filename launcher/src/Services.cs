@@ -160,6 +160,20 @@ namespace RedBaron {
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe},s.Root,record,token);
             if(code!=0) throw new IOException("Installation failed. See the log for details; your source files were preserved.");
         }
+        public static async Task InstallDlc(Settings s,string source,Action<string> log,CancellationToken token) {
+            if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before installing downloadable content.");
+            string inspector=Path.Combine(s.Build,"redbaron_content_inspect.exe");
+            if(!File.Exists(inspector))throw new FileNotFoundException("Update the game installation to enable DLC installation.");
+            string userRoot=File.Exists(s.Toml)?new Toml(File.ReadAllText(s.Toml)).String("user_data_root",""):"";
+            if(String.IsNullOrWhiteSpace(userRoot))userRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"snoopyflyingace");
+            else if(!Path.IsPathRooted(userRoot))userRoot=Path.GetFullPath(Path.Combine(s.Build,userRoot));
+            string job=Path.Combine(s.Root,"launcher-data","dlc-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
+            string script=Path.Combine(job,"install-dlc.ps1");ExtractResource("InstallDlc.ps1",script);
+            string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
+            int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,
+                "-Source",source,"-UserRoot",userRoot,"-Inspector",inspector},s.Root,log,token);
+            if(code!=0)throw new IOException("DLC installation failed. Check the installation log above; existing content was preserved.");
+        }
         public static void CreateShortcut(Settings s,string launcher) {
             string desktop=Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             WriteShortcut(s,launcher,Path.Combine(desktop,"RedBaron_Recomp.lnk"));

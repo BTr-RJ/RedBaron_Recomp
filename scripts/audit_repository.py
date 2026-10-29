@@ -5,7 +5,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIXES = (
-    "game/", "sdk_experimental/", "build_cpp_release/",
+    "game/", "dlc/", "server/state/", "network-work/", "sdk_experimental/", "build_cpp_release/",
     "port/generated/default/", "port/metadata/",
 )
 EXACT = {"port/src/snoopyflyingace.ico", "port/src/snoopyflyingace.rc"}

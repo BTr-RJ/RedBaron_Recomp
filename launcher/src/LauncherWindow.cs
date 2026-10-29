@@ -93,6 +93,7 @@ namespace RedBaron {
             Button("BrowseSource").Click+=(sender,e)=>Browse("SourcePath");
             Button("BrowseDestination").Click+=(sender,e)=>Browse("DestinationPath");
             Button("BrowseSdk").Click+=(sender,e)=>Browse("SdkPath");
+            Button("BrowseDlc").Click+=(sender,e)=>Browse("DlcSource");
             Button("RefreshDevices").Click+=async(sender,e)=>await Refresh();
             Button("Save").Click+=(sender,e)=>Save();
             Button("Play").Click+=(sender,e)=>Play();
@@ -101,6 +102,7 @@ namespace RedBaron {
             Button("LeaveRoom").Click+=async(sender,e)=>await LeaveOnline();
             Button("CopyRoom").Click+=(sender,e)=>{if(online!=null && online.Room.Length>0)Clipboard.SetText(online.Room);};
             Button("InstallButton").Click+=async(sender,e)=>await Install();
+            Button("InstallDlc").Click+=async(sender,e)=>await InstallDlc();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
             Button("RestoreBindings").Click+=(sender,e)=>{settings.Players[playerIndex].Bindings=Actions.Defaults();ShowPlayer();Changed();};
@@ -108,7 +110,7 @@ namespace RedBaron {
             window.PreviewMouseDown+=CaptureMouse;
             window.Closing+=(sender,e)=>{
                 if(connectingOnline || onlineGame) {e.Cancel=true;Status("Close the online game or wait for the room connection before closing the launcher.",true);return;}
-                if(installation!=null) {e.Cancel=true;Status("Cancel the installation and wait for it to stop before closing.",true);return;}
+                if(installation!=null) {e.Cancel=true;Status("Wait for the installation to finish before closing.",true);return;}
                 if(dirty && !args.Contains("--capture")) {
                     var result=MessageBox.Show(window,"Save changes before exiting?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
                     if(result==MessageBoxResult.Cancel || (result==MessageBoxResult.Yes && !Save())) e.Cancel=true;
@@ -291,7 +293,7 @@ namespace RedBaron {
             if(installation!=null)return;
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;
             installation=new CancellationTokenSource();
-            foreach(string name in new[]{"InstallButton","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=false;
+            foreach(string name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=false;
             Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
             Status("Installation in progress…");
             try {
@@ -309,9 +311,29 @@ namespace RedBaron {
             finally {
                 installation.Dispose();installation=null;
                 Get<ProgressBar>("InstallProgress").Visibility=Visibility.Collapsed;Button("CancelInstall").Visibility=Visibility.Collapsed;
-                foreach(string name in new[]{"InstallButton","UseExisting","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=true;
+                foreach(string name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=true;
                 Button("Save").IsEnabled=caps.flags.Count>0;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);
             }
+        }
+        async Task InstallDlc() {
+            if(installation!=null)return;
+            string source=Text("DlcSource").Text.Trim();
+            if(String.IsNullOrEmpty(source)){Status("Choose the folder containing your DLC packages.",true);return;}
+                installation=new CancellationTokenSource();
+                foreach(var name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","Save","Play","RefreshDevices"})Button(name).IsEnabled=false;
+                Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
+                Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Status("Installing DLC…");
+                try {
+                    await Services.InstallDlc(settings,source,line=>window.Dispatcher.BeginInvoke(new Action(()=>{
+                        Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;
+                    })),installation.Token);
+                    Status("DLC installation complete. Restart the game to load the content.");
+                } catch(Exception error){Status(error.Message,true);}
+                finally {
+                    installation.Dispose();installation=null;Get<ProgressBar>("InstallProgress").Visibility=Visibility.Collapsed;
+                    foreach(var name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","RefreshDevices"})Button(name).IsEnabled=true;
+                    Button("Save").IsEnabled=caps.flags.Count>0;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);
+                }
         }
         async Task UseExisting() {
             if(dirty && MessageBox.Show(window,"Discard unsaved changes and switch installations?","RedBaron_Recomp",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;

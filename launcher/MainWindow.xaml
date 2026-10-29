@@ -116,6 +116,12 @@
           <ProgressBar Name="InstallProgress" Height="5" Background="#2C3440" Foreground="#D65F68" IsIndeterminate="True" Visibility="Collapsed"/>
           <TextBlock Name="InstallState" Style="{StaticResource Muted}" Margin="0,10,0,8"/>
           <TextBox Name="InstallLog" IsReadOnly="True" Height="120" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="12" Visibility="Collapsed"/>
+          <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Padding="0,24,0,0" Margin="0,20,0,0"><StackPanel>
+            <TextBlock Text="Install downloadable content" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <TextBlock Text="Choose your local DLC folder. Compatible game packages are installed; existing content is preserved. Avatar items are not supported." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="DlcSource" AutomationProperties.Name="DLC folder"/><Button Name="BrowseDlc" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
+            <Button Name="InstallDlc" Content="Install DLC" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+          </StackPanel></Border>
         </StackPanel></ScrollViewer>
       </TabItem>
       <TabItem Header="Video">

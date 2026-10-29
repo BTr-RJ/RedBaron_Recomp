@@ -39,7 +39,8 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/r:' + (Join-Path $wpf 'PresentationFramework.dll')),
     ('/resource:' + (Join-Path $PSScriptRoot 'MainWindow.xaml') + ',MainWindow.xaml'),
     ('/resource:' + $archive + ',Source.zip'),
-    ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'))
+    ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'),
+    ('/resource:' + (Join-Path $PSScriptRoot 'install-dlc.ps1') + ',InstallDlc.ps1'))
 $arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }

@@ -10,11 +10,18 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 
 | Tab | Available features |
 |---|---|
-| Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut |
+| Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut; select a folder with owned DLC packages to install compatible game content |
 | Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS, experimental FSR 3.1.5/DLSS, FSR sharpness, FPS counter and HDR10 output; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
 | Online | Primary player name, experimental WebRTC room creation/joining and LAN host IPv4; public server not hosted yet; UPnP disabled |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
+
+For downloadable content, open **Install**, select the folder containing your own
+STFS packages and click **Install DLC**. The launcher recognizes this title's
+marketplace packages, preserves existing installations and ignores avatar items.
+Close the game before installing. In a local test, both supplied marketplace
+packages were enumerated and mounted by the game; individual content and maps still
+need gameplay verification. No game content is included with this project.
 
 ## Current limits
 

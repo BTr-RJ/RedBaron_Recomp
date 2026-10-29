@@ -15,7 +15,9 @@ Isso não comprova autoridade completa da simulação nem implementa rollback.
 
 Oito instâncias no mesmo PC passaram pelo lobby, terminaram uma rodada de Team Dog Fight
 e iniciaram outra no mapa seguinte. Uma tentativa anterior de entrada de vários clientes
-durante a partida terminou em desconexões; esse cenário segue em investigação. Os testes
+durante a partida terminou em desconexões; após corrigir o fechamento de streams, um novo
+teste iniciou com dois e recebeu mais seis durante a partida, mantendo os oito após mais
+de um minuto. Os testes
 de transporte cobrem oito processos, transferência TCP, UDP, saída do anfitrião e rejeição
 de certificado inválido. São necessários testes entre computadores, sob CGNAT, com relay
 público e em co-op antes de declarar o online pronto. Não há garantia de ausência de lag.
