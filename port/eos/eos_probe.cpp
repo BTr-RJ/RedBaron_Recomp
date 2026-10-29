@@ -4,6 +4,8 @@
 #include <eos_connect.h>
 #include <eos_lobby.h>
 #include "eos_wire.h"
+#include "session_record.h"
+#include "lobby_record.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -51,6 +53,21 @@ struct DeviceFlow {
   }
 };
 
+static std::string TestSession(bool large) {
+  std::vector<uint8_t> data(104,0);
+  const char prefix[]="RBLAN01";std::copy_n(prefix,7,data.begin());data[7]=2;
+  data[16]=0x58;data[17]=0x41;data[18]=0x09;data[19]=0xb5;data[83]=8;
+  auto put=[&](uint32_t value){for(int shift=24;shift>=0;shift-=8)data.push_back(uint8_t(value>>shift));};
+  if(large) {
+    data[99]=3;data[103]=8;
+    for(uint32_t i=0;i<3;++i) {put(i);put(0);}
+    for(uint32_t i=0;i<8;++i) {put(i);put(1000);data.insert(data.end(),1000,uint8_t(i));}
+  }
+  constexpr char digits[]="0123456789abcdef";std::string hex;hex.reserve(data.size()*2);
+  for(const auto b:data) {hex.push_back(digits[b>>4]);hex.push_back(digits[b&15]);}
+  return hex;
+}
+
 // The diagnostic owns and destroys only the lobby it creates.
 struct LobbyFlow {
   EOS_HLobby lobby{};
@@ -63,8 +80,9 @@ struct LobbyFlow {
   bool search_requested=false;
   uint32_t search_count=0;
   unsigned search_attempts=0;
+  unsigned record_stage=0;
   bool attribute_verified=false;
-  std::string test_record=std::string(208,'a');
+  std::string test_record=TestSession(true);
   bool retry_search=false;
   std::chrono::steady_clock::time_point retry_at{};
   bool done=false;
@@ -90,20 +108,25 @@ struct LobbyFlow {
         copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
         EOS_HLobbyDetails details{};
         if (EOS_LobbySearch_CopySearchResultByIndex(self.search,&copy,&details)==EOS_EResult::EOS_Success) {
-          EOS_LobbyDetails_CopyAttributeByKeyOptions attr_options{};
-          attr_options.ApiVersion=EOS_LOBBYDETAILS_COPYATTRIBUTEBYKEY_API_LATEST;
-          attr_options.AttrKey="RB_TEST_RECORD";
-          EOS_Lobby_Attribute* attr{};
-          if (EOS_LobbyDetails_CopyAttributeByKey(details,&attr_options,&attr)==EOS_EResult::EOS_Success) {
-            self.attribute_verified=attr && attr->Data && attr->Data->ValueType==EOS_ELobbyAttributeType::EOS_AT_STRING &&
-              attr->Data->Value.AsUtf8 && self.test_record==attr->Data->Value.AsUtf8;
-            if (attr) EOS_Lobby_Attribute_Release(attr);
+          self.attribute_verified=redbaron::eos::ReadLobbyRecord(details)==self.test_record;
+          if(self.attribute_verified && self.record_stage==1) {
+            EOS_LobbyDetails_CopyAttributeByKeyOptions stale{};
+            stale.ApiVersion=EOS_LOBBYDETAILS_COPYATTRIBUTEBYKEY_API_LATEST;stale.AttrKey="RB_RECORD_52";
+            EOS_Lobby_Attribute* old{};
+            const auto result=EOS_LobbyDetails_CopyAttributeByKey(details,&stale,&old);
+            if(old) EOS_Lobby_Attribute_Release(old);
+            self.attribute_verified=result==EOS_EResult::EOS_NotFound;
           }
           EOS_LobbyDetails_Release(details);
         }
       }
     }
-    if (self.search_result==EOS_EResult::EOS_Success && !self.attribute_verified && self.search_attempts<5) {
+    if(self.attribute_verified && self.record_stage==0) {
+      EOS_LobbySearch_Release(self.search);self.search=nullptr;
+      self.record_stage=1;self.test_record=TestSession(false);self.attribute_verified=false;self.search_attempts=0;
+      self.search_result=redbaron::eos::PublishLobbyRecord(self.lobby,self.user,self.id.c_str(),self.test_record,53,&self,Updated);
+      if(self.search_result!=EOS_EResult::EOS_Success)self.Destroy();
+    } else if (self.search_result==EOS_EResult::EOS_Success && !self.attribute_verified && self.search_attempts<5) {
       self.retry_search=true;self.retry_at=std::chrono::steady_clock::now()+std::chrono::seconds(2);
     } else {
       EOS_LobbySearch_Release(self.search);self.search=nullptr;
@@ -146,25 +169,7 @@ struct LobbyFlow {
     self.id=data->LobbyId;
     std::cout << "EOS test lobby created\n";
     if (!self.search_requested) {self.Destroy();return;}
-    EOS_Lobby_UpdateLobbyModificationOptions modify{};
-    modify.ApiVersion=EOS_LOBBY_UPDATELOBBYMODIFICATION_API_LATEST;
-    modify.LocalUserId=self.user;modify.LobbyId=self.id.c_str();
-    EOS_HLobbyModification builder{};
-    self.search_result=EOS_Lobby_UpdateLobbyModification(self.lobby,&modify,&builder);
-    if (self.search_result!=EOS_EResult::EOS_Success) {self.Destroy();return;}
-    EOS_Lobby_AttributeData attr{};
-    attr.ApiVersion=EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;attr.Key="RB_TEST_RECORD";
-    attr.ValueType=EOS_ELobbyAttributeType::EOS_AT_STRING;attr.Value.AsUtf8=self.test_record.c_str();
-    EOS_LobbyModification_AddAttributeOptions add{};
-    add.ApiVersion=EOS_LOBBYMODIFICATION_ADDATTRIBUTE_API_LATEST;
-    add.Attribute=&attr;add.Visibility=EOS_ELobbyAttributeVisibility::EOS_LAT_PUBLIC;
-    self.search_result=EOS_LobbyModification_AddAttribute(builder,&add);
-    if (self.search_result==EOS_EResult::EOS_Success) {
-      EOS_Lobby_UpdateLobbyOptions update{};
-      update.ApiVersion=EOS_LOBBY_UPDATELOBBY_API_LATEST;update.LobbyModificationHandle=builder;
-      EOS_Lobby_UpdateLobby(self.lobby,&update,&self,Updated);
-    }
-    EOS_LobbyModification_Release(builder);
+    self.search_result=redbaron::eos::PublishLobbyRecord(self.lobby,self.user,self.id.c_str(),self.test_record,0,&self,Updated);
     if (self.search_result!=EOS_EResult::EOS_Success) self.Destroy();
   }
 };

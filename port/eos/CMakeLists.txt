@@ -24,7 +24,9 @@ target_include_directories(redbaron_eos_fragment_tests PRIVATE "${REDBARON_EOS_S
 add_test(NAME redbaron_eos_fragmentation COMMAND redbaron_eos_fragment_tests)
 add_library(redbaron_eos_wire STATIC eos_wire.cpp fragmentation.cpp)
 target_include_directories(redbaron_eos_wire PRIVATE "${REDBARON_EOS_SDK}/Include")
-target_link_libraries(redbaron_eos_probe PRIVATE redbaron_eos_wire)
+add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp ../network/session_record.cpp)
+target_include_directories(redbaron_eos_lobby PRIVATE "${REDBARON_EOS_SDK}/Include")
+target_link_libraries(redbaron_eos_probe PRIVATE redbaron_eos_wire redbaron_eos_lobby)
 add_executable(redbaron_eos_wire_tests eos_wire_test.cpp)
 target_include_directories(redbaron_eos_wire_tests PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_wire_tests PRIVATE redbaron_eos_wire "${REDBARON_EOS_SDK}/Lib/EOSSDK-Win64-Shipping.lib")
@@ -32,3 +34,5 @@ add_custom_command(TARGET redbaron_eos_wire_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${REDBARON_EOS_SDK}/Bin/EOSSDK-Win64-Shipping.dll" "$<TARGET_FILE_DIR:redbaron_eos_wire_tests>")
 add_test(NAME redbaron_eos_wire_routing COMMAND redbaron_eos_wire_tests)
+add_executable(redbaron_eos_record_tests session_record.cpp session_record_test.cpp)
+add_test(NAME redbaron_eos_session_record COMMAND redbaron_eos_record_tests)
