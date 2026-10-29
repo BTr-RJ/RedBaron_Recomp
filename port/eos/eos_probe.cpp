@@ -10,6 +10,7 @@
 #include "lobby_record.h"
 #include "lobby_publisher.h"
 #include "lobby_directory.h"
+#include "directory_mapping.h"
 #include "../network/session_publisher.h"
 #include "../network/directory_responder.h"
 #include <algorithm>
@@ -76,9 +77,11 @@ static std::string TestSession(bool large) {
   for(const auto b:data) {hex.push_back(digits[b>>4]);hex.push_back(digits[b&15]);}
   return hex;
 }
-static bool TestDirectoryResponder(const std::string& record) {
+static bool TestDirectoryResponder(const std::vector<redbaron::eos::LobbyEntry>& entries) {
   redbaron::net::DirectoryResponder responder(198);
-  if(!responder.Set(256,record))return false;
+  redbaron::eos::DirectoryMapping mapping(responder);
+  if(entries.size()!=1 || !mapping.Update(entries) || !mapping.LobbyAt(256) || *mapping.LobbyAt(256)!=entries[0].id)return false;
+  const auto& record=entries[0].record;
   SOCKET query_socket=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
   if(query_socket==INVALID_SOCKET)return false;
   sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(0x7fc60001u);
@@ -176,7 +179,7 @@ struct LobbyFlow {
       const bool directory_ok=directory.Refresh(self.search) &&
         (self.record_stage==2 ? directory.entries().empty() :
           directory.entries().size()==1 && directory.entries()[0].record==self.test_record && directory.entries()[0].id==self.id &&
-          TestDirectoryResponder(directory.entries()[0].record));
+          TestDirectoryResponder(directory.entries()));
       if (self.search_count) {
         EOS_LobbySearch_CopySearchResultByIndexOptions copy{};
         copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;

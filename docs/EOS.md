@@ -70,6 +70,9 @@ detalhes necessários para uma futura entrada. `directory_responder.*` responde
 essas duas partes ao EOS e verificou os pacotes UDP com um cliente simulado;
 é necessário manter a associação estável entre resultado e lobby, ligar o
 seletor do jogo à entrada e estabelecer o P2P antes de usar isso em partidas.
+`directory_mapping.*` preserva endereços enquanto as salas permanecem na lista,
+rejeita identificadores de sessão duplicados e resolve o endereço para o lobby;
+ele ainda não detecta a seleção do jogo nem inicia a entrada.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
