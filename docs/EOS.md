@@ -81,9 +81,12 @@ entrada com outra identidade EOS.
 `selection_gateway.*` detecta uma conexão TCP local para o endereço de uma sala
 e mantém o socket aberto durante a admissão; `SocketBridge::Adopt` pode assumir
 o socket após a conexão estar pronta. Um teste local preservou os dados enviados
-antes da transferência e rejeitou origem diferente do processo do jogo. Ainda
-falta conectar esse evento ao `JoinSelected`, identificar o momento real em que
-o jogo seleciona uma partida e encaminhar QoS e dados para o host EOS.
+antes da transferência e rejeitou origem diferente do processo do jogo.
+`selection_join.*` liga esse evento a `JoinSelected` e aguarda a preparação do
+peer antes de entregar o socket. O diagnóstico usou um resultado real do EOS,
+mas simulou tanto a entrada na sala quanto o peer P2P. Ainda falta colocar esses
+componentes no processo do jogo, verificar o momento real de seleção e encaminhar
+QoS e dados para o host EOS.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,

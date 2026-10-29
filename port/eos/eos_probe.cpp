@@ -11,6 +11,7 @@
 #include "lobby_publisher.h"
 #include "lobby_directory.h"
 #include "directory_mapping.h"
+#include "selection_join.h"
 #include "../network/session_publisher.h"
 #include "../network/directory_responder.h"
 #include <algorithm>
@@ -101,6 +102,54 @@ static bool TestDirectoryResponder(const std::vector<redbaron::eos::LobbyEntry>&
   }
   closesocket(query_socket);return ok;
 }
+namespace {
+struct FakeWire : redbaron::net::Wire {
+  bool ready=false;std::vector<redbaron::net::Bytes> sent;
+  bool Send(uint16_t id,const redbaron::net::Bytes& data,bool reliable) override {
+    if(id!=0 || !reliable)return false;sent.push_back(data);return true;
+  }
+  bool Ready(uint16_t id) const override {return ready && id==0;}
+  size_t Buffered(uint16_t) const override {return 0;}
+  uint16_t id() const override {return 1;}
+};
+void* join_context{};
+EOS_Lobby_OnJoinLobbyCallback join_callback{};
+void EOS_CALL FakeJoin(EOS_HLobby,const EOS_Lobby_JoinLobbyOptions*,void* context,EOS_Lobby_OnJoinLobbyCallback callback) {
+  join_context=context;join_callback=callback;
+}
+void EOS_CALL FakeLeave(EOS_HLobby,const EOS_Lobby_LeaveLobbyOptions* options,void* context,EOS_Lobby_OnLeaveLobbyCallback callback) {
+  EOS_Lobby_LeaveLobbyCallbackInfo result{};result.ClientData=context;result.LobbyId=options->LobbyId;result.ResultCode=EOS_EResult::EOS_Success;
+  callback(&result);
+}
+}
+static bool TestSelectionJoin(redbaron::eos::LobbyDirectory& directory,EOS_ProductUserId user) {
+  if(directory.entries().size()!=1)return false;
+  const std::string id=directory.entries()[0].id;
+  redbaron::net::DirectoryResponder responder(198);
+  redbaron::eos::DirectoryMapping mapping(responder);
+  if(!mapping.Update(directory.entries()))return false;
+  redbaron::net::SelectionGateway gateway(198,1);if(!gateway.Add(256))return false;
+  FakeWire wire;redbaron::net::SocketBridge bridge(wire,198);
+  redbaron::eos::LobbyJoin join(reinterpret_cast<EOS_HLobby>(1),user,{FakeJoin,FakeLeave,EOS_LobbyDetails_Release});
+  redbaron::eos::SelectionJoin selection(gateway,bridge,wire,mapping,directory,join,[&](const std::string& room){
+    if(room!=id)return false;wire.ready=true;return true;
+  });
+  SOCKET game=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(game==INVALID_SOCKET)return false;
+  sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(0x7fc60001u);
+  sockaddr_in destination{};destination.sin_family=AF_INET;destination.sin_addr.s_addr=htonl(0x7fc60100u);destination.sin_port=htons(21000);
+  bool ok=bind(game,reinterpret_cast<sockaddr*>(&local),sizeof(local))==0 &&
+          connect(game,reinterpret_cast<sockaddr*>(&destination),sizeof(destination))==0 && send(game,"test",4,0)==4;
+  if(ok) {
+    selection.Poll();ok=join.state()==redbaron::eos::LobbyJoin::State::Joining && join_callback;
+    if(ok) {
+      EOS_Lobby_JoinLobbyCallbackInfo result{};result.ClientData=join_context;result.ResultCode=EOS_EResult::EOS_Success;result.LobbyId=id.c_str();
+      join_callback(&result);join_callback=nullptr;selection.Poll();selection.Poll();
+      ok=selection.state()==redbaron::net::SelectionAdmission::State::Connected && wire.sent.size()==1 && wire.sent[0][8]==std::byte{2};
+      selection.Cancel();selection.Poll();
+    }
+  }
+  closesocket(game);return ok;
+}
 
 // The diagnostic owns and destroys only the lobby it creates.
 struct LobbyFlow {
@@ -179,7 +228,7 @@ struct LobbyFlow {
       const bool directory_ok=directory.Refresh(self.search) &&
         (self.record_stage==2 ? directory.entries().empty() :
           directory.entries().size()==1 && directory.entries()[0].record==self.test_record && directory.entries()[0].id==self.id &&
-          TestDirectoryResponder(directory.entries()));
+          TestDirectoryResponder(directory.entries()) && TestSelectionJoin(directory,self.user));
       if (self.search_count) {
         EOS_LobbySearch_CopySearchResultByIndexOptions copy{};
         copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;

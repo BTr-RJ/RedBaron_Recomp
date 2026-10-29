@@ -11,7 +11,9 @@ foreach(required Include/eos_sdk.h Lib/EOSSDK-Win64-Shipping.lib Bin/EOSSDK-Win6
         message(FATAL_ERROR "Official EOS SDK component missing: ${required}")
     endif()
 endforeach()
-add_executable(redbaron_eos_probe eos_probe.cpp ../network/session_publisher.cpp ../network/directory_responder.cpp)
+add_executable(redbaron_eos_probe eos_probe.cpp ../network/session_publisher.cpp ../network/directory_responder.cpp
+    ../network/selection_gateway.cpp ../network/selection_admission.cpp ../network/socket_bridge.cpp)
+target_compile_definitions(redbaron_eos_probe PRIVATE REDBARON_STANDALONE_BRIDGE_TEST)
 target_include_directories(redbaron_eos_probe PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_probe PRIVATE "${REDBARON_EOS_SDK}/Lib/EOSSDK-Win64-Shipping.lib" ws2_32)
 add_custom_command(TARGET redbaron_eos_probe POST_BUILD
@@ -24,7 +26,7 @@ target_include_directories(redbaron_eos_fragment_tests PRIVATE "${REDBARON_EOS_S
 add_test(NAME redbaron_eos_fragmentation COMMAND redbaron_eos_fragment_tests)
 add_library(redbaron_eos_wire STATIC eos_wire.cpp fragmentation.cpp)
 target_include_directories(redbaron_eos_wire PRIVATE "${REDBARON_EOS_SDK}/Include")
-add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp lobby_publisher.cpp lobby_directory.cpp lobby_join.cpp join_selected.cpp directory_mapping.cpp ../network/session_record.cpp)
+add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp lobby_publisher.cpp lobby_directory.cpp lobby_join.cpp join_selected.cpp selection_join.cpp directory_mapping.cpp ../network/session_record.cpp)
 target_include_directories(redbaron_eos_lobby PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_probe PRIVATE redbaron_eos_wire redbaron_eos_lobby)
 add_executable(redbaron_eos_wire_tests eos_wire_test.cpp)
