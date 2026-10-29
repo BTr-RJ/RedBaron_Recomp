@@ -16,6 +16,7 @@ void ConfigureLocalInput(rex::input::InputSystem& input);
 void ConfigureLauncherInput(rex::RuntimeConfig& config);
 void ConfigureVideoTiming();
 void InstallVideoHooks(rex::Runtime& runtime);
+std::unique_ptr<rex::ui::ImGuiDialog> CreateFpsCounter(rex::ui::ImGuiDrawer* drawer);
 }
 
 class SnoopyflyingaceApp : public rex::ReXApp {
@@ -79,6 +80,15 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   void OnPreLaunchModule() override {
     redbaron::InstallVideoHooks(*runtime());
   }
+
+  void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    fps_counter_ = redbaron::CreateFpsCounter(drawer);
+  }
+
+  void OnShutdown() override { fps_counter_.reset(); }
+
+ private:
+  std::unique_ptr<rex::ui::ImGuiDialog> fps_counter_;
 
   // Override virtual hooks for customization:
   // void OnPostInitLogging() override {}
