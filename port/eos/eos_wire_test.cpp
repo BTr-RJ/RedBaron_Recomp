@@ -53,9 +53,9 @@ int main() {
     auto handle=reinterpret_cast<EOS_HP2P>(1);
     {
       EosWire host(handle,a,0,"TestSocket",api),one(handle,b,1,"TestSocket",api),two(handle,c,2,"TestSocket",api);
-      Check(host.SetMember(1,b) && host.SetMember(2,c));
-      Check(one.SetMember(0,a) && one.SetMember(2,c));
-      Check(two.SetMember(0,a) && two.SetMember(1,b));
+      std::array<EOS_ProductUserId,8> roster{a,b,c};
+      auto invalid=roster;invalid[2]=b;Check(!host.SetRoster(invalid));
+      Check(host.SetRoster(roster) && one.SetRoster(roster) && two.SetRoster(roster));
       Check(!host.SetMember(3,b) && !one.SetMember(3,b));
       auto data=Frame(1,2,32768);unsigned deliveries=0;
       two.packet=[&](uint16_t from,const Bytes& received,bool reliable){Check(from==1 && received==data && reliable);++deliveries;};

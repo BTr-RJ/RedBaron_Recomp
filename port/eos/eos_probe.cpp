@@ -12,6 +12,7 @@
 #include "lobby_directory.h"
 #include "directory_mapping.h"
 #include "selection_join.h"
+#include "lobby_roster.h"
 #include "../network/session_publisher.h"
 #include "../network/directory_responder.h"
 #include <algorithm>
@@ -154,6 +155,7 @@ static bool TestSelectionJoin(redbaron::eos::LobbyDirectory& directory,EOS_Produ
 // The diagnostic owns and destroys only the lobby it creates.
 struct LobbyFlow {
   EOS_HLobby lobby{};
+  EOS_HP2P p2p{};
   EOS_ProductUserId user{};
   EOS_HLobbySearch search{};
   std::unique_ptr<redbaron::eos::LobbyPublisher> publisher;
@@ -169,6 +171,7 @@ struct LobbyFlow {
   unsigned search_attempts=0;
   unsigned record_stage=0;
   bool attribute_verified=false;
+  bool roster_verified=false;
   bool waiting_for_publish=false;
   std::string test_record=TestSession(true);
   bool retry_search=false;
@@ -295,6 +298,24 @@ struct LobbyFlow {
       waiting_for_publish=false;search_result=publisher->error();Destroy();
     } else if(publisher->Synced()) {waiting_for_publish=false;BeginSearch();}
   }
+  static void EOS_CALL RosterUpdated(const EOS_Lobby_UpdateLobbyCallbackInfo* data) {
+    auto& self=*static_cast<LobbyFlow*>(data->ClientData);
+    if(data->ResultCode!=EOS_EResult::EOS_Success){self.search_result=data->ResultCode;self.Destroy();return;}
+    EOS_Lobby_CopyLobbyDetailsHandleOptions options{};
+    options.ApiVersion=EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;options.LocalUserId=self.user;options.LobbyId=self.id.c_str();
+    EOS_HLobbyDetails details{};
+    if(EOS_Lobby_CopyLobbyDetailsHandle(self.lobby,&options,&details)==EOS_EResult::EOS_Success) {
+      auto roster=redbaron::eos::ReadLobbyRoster(details);
+      if(roster && self.p2p) {
+        redbaron::eos::EosWire wire(self.p2p,self.user,0,"RedBaronRosterTest");
+        self.roster_verified=redbaron::eos::ApplyLobbyRoster(details,wire);
+      }
+      EOS_LobbyDetails_Release(details);
+    }
+    if(!self.roster_verified){self.search_result=EOS_EResult::EOS_UnexpectedError;self.Destroy();return;}
+    self.publisher=std::make_unique<redbaron::eos::LobbyPublisher>(self.lobby,self.user,self.id);
+    if(!self.StartSource()) {self.search_result=EOS_EResult::EOS_UnexpectedError;self.Destroy();}
+  }
   static void EOS_CALL Created(const EOS_Lobby_CreateLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
     if (data->ResultCode!=EOS_EResult::EOS_Success || !data->LobbyId) {
@@ -303,8 +324,15 @@ struct LobbyFlow {
     self.id=data->LobbyId;
     std::cout << "EOS test lobby created\n";
     if (!self.search_requested) {self.Destroy();return;}
-    self.publisher=std::make_unique<redbaron::eos::LobbyPublisher>(self.lobby,self.user,self.id);
-    if(!self.StartSource()) {self.search_result=EOS_EResult::EOS_UnexpectedError;self.Destroy();}
+    EOS_Lobby_CopyLobbyDetailsHandleOptions options{};
+    options.ApiVersion=EOS_LOBBY_COPYLOBBYDETAILSHANDLE_API_LATEST;options.LocalUserId=self.user;options.LobbyId=self.id.c_str();
+    EOS_HLobbyDetails details{};self.search_result=EOS_Lobby_CopyLobbyDetailsHandle(self.lobby,&options,&details);
+    if(self.search_result!=EOS_EResult::EOS_Success){self.Destroy();return;}
+    auto roster=redbaron::eos::AssignLobbyRoster(details,{});
+    if(roster)self.search_result=redbaron::eos::PublishLobbyRoster(self.lobby,self.user,self.id.c_str(),details,*roster,&self,RosterUpdated);
+    else self.search_result=EOS_EResult::EOS_UnexpectedError;
+    EOS_LobbyDetails_Release(details);
+    if(self.search_result!=EOS_EResult::EOS_Success)self.Destroy();
   }
 };
 
@@ -409,6 +437,7 @@ int main(int argc, char** argv) {
             }
             if (lobby_check || search_check) {
               lobby_flow.lobby=EOS_Platform_GetLobbyInterface(handle);
+              lobby_flow.p2p=EOS_Platform_GetP2PInterface(handle);
               lobby_flow.user=flow.user;
               lobby_flow.search_requested=search_check;
               std::random_device random;
@@ -437,7 +466,8 @@ int main(int argc, char** argv) {
                   if (search_check) {
                     std::cout << "EOS search result: " << int(lobby_flow.search_result) << ", matches: " << lobby_flow.search_count << '\n';
                     std::cout << "EOS public test attribute verified: " << (lobby_flow.attribute_verified ? "yes" : "no") << '\n';
-                    if (lobby_flow.search_result!=EOS_EResult::EOS_Success || lobby_flow.search_count!=1 || !lobby_flow.attribute_verified) status=1;
+                    std::cout << "EOS owner roster verified: " << (lobby_flow.roster_verified ? "yes" : "no") << '\n';
+                    if (lobby_flow.search_result!=EOS_EResult::EOS_Success || lobby_flow.search_count!=1 || !lobby_flow.attribute_verified || !lobby_flow.roster_verified) status=1;
                   }
                 }
               }

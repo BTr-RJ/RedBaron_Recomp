@@ -47,6 +47,23 @@ bool EosWire::SetMember(uint16_t slot, EOS_ProductUserId user) {
   }
   members_.emplace(slot,user);return true;
 }
+bool EosWire::SetRoster(const std::array<EOS_ProductUserId,8>& users) {
+  if(users[local_slot_]!=local_ || !users[0])return false;
+  for(size_t i=0;i<users.size();++i)if(users[i]) {
+    if(!EOS_ProductUserId_IsValid(users[i]))return false;
+    for(size_t j=0;j<i;++j)if(users[j]==users[i])return false;
+  }
+  for(uint16_t i=0;i<users.size();++i) {
+    if(i==local_slot_)continue;
+    auto old=members_.find(i);
+    if(old!=members_.end() && old->second!=users[i])RemoveMember(i);
+  }
+  for(uint16_t i=0;i<users.size();++i) {
+    if(i==local_slot_ || !users[i] || members_.contains(i))continue;
+    if(!SetMember(i,users[i]))return false;
+  }
+  return true;
+}
 void EosWire::RemoveMember(uint16_t slot) {
   auto it=members_.find(slot);
   if (it==members_.end() || slot==local_slot_) return;

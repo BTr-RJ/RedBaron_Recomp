@@ -3,6 +3,7 @@
 #include "../network/wire.h"
 #include "fragmentation.h"
 #include <functional>
+#include <array>
 #include <map>
 #include <string_view>
 
@@ -24,6 +25,8 @@ class EosWire final : public redbaron::net::Wire {
   EosWire(const EosWire&) = delete;
   EosWire& operator=(const EosWire&) = delete;
   bool SetMember(uint16_t slot, EOS_ProductUserId user);
+  // The caller must stop the session on failure: a partial update is possible.
+  bool SetRoster(const std::array<EOS_ProductUserId,8>& users);
   void RemoveMember(uint16_t slot);
   bool Send(uint16_t to, const redbaron::net::Bytes& bytes, bool reliable) override;
   bool Ready(uint16_t to) const override;

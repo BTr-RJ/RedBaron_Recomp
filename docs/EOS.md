@@ -106,6 +106,11 @@ dedicada ao transporte, pois consome as filas dos canais 0 e 1 dessa instância.
 Um teste automatizado simula três membros e a API P2P: verifica encaminhamento,
 mensagens fragmentadas confiáveis e não confiáveis e rejeição de remetentes
 desconhecidos ou forjados. Essa simulação não prova conectividade EOS real.
+`lobby_roster.*` associa membros autenticados a posições estáveis atribuídas
+pelo anfitrião, publica a tabela como atributos privados e a aplica ao adaptador
+P2P depois de verificar cada identidade na lista de membros EOS. O fluxo foi
+testado no serviço real somente com o anfitrião; inclusão e saída dos demais
+membros foram simuladas e precisam de integração às notificações do lobby.
 
 ## Integração e validação
 
