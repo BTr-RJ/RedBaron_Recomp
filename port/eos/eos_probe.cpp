@@ -3,6 +3,7 @@
 #include <eos_sdk.h>
 #include <eos_connect.h>
 #include <eos_lobby.h>
+#include "eos_wire.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -162,12 +163,13 @@ int main(int argc, char** argv) {
   const bool device_login=argc==3 && std::string_view(argv[1])=="--device-login";
   const bool lobby_check=argc==3 && std::string_view(argv[1])=="--lobby-check";
   const bool search_check=argc==3 && std::string_view(argv[1])=="--search-check";
-  if (!sdk_check && !platform_check && !device_login && !lobby_check && !search_check) {
-    std::cerr << "Usage: redbaron_eos_probe --sdk-check | --platform-check <config> | --device-login <config> | --lobby-check <config> | --search-check <config>\n";
+  const bool wire_check=argc==3 && std::string_view(argv[1])=="--wire-check";
+  if (!sdk_check && !platform_check && !device_login && !lobby_check && !search_check && !wire_check) {
+    std::cerr << "Usage: redbaron_eos_probe --sdk-check | --platform-check <config> | --device-login <config> | --lobby-check <config> | --search-check <config> | --wire-check <config>\n";
     return 2;
   }
   std::map<std::string,std::string> config;
-  if (platform_check || device_login || lobby_check || search_check) {
+  if (platform_check || device_login || lobby_check || search_check || wire_check) {
     try { config=ReadConfig(argv[2]); }
     catch(const std::exception& error) { std::cerr << error.what() << '\n'; return 2; }
   }
@@ -183,7 +185,7 @@ int main(int argc, char** argv) {
   const char* version = EOS_GetVersion();
   std::cout << "EOS SDK initialized: " << (version ? version : "unknown version") << '\n';
   int status=0;
-  if (platform_check || device_login || lobby_check || search_check) {
+  if (platform_check || device_login || lobby_check || search_check || wire_check) {
     EOS_Platform_Options platform{};
     platform.ApiVersion=EOS_PLATFORM_OPTIONS_API_LATEST;
     platform.ProductId=config.at("product_id").c_str();
@@ -198,7 +200,7 @@ int main(int argc, char** argv) {
     else {
       DeviceFlow flow;
       LobbyFlow lobby_flow;
-      if (device_login || lobby_check || search_check) {
+      if (device_login || lobby_check || search_check || wire_check) {
         flow.connect=EOS_Platform_GetConnectInterface(handle);
         if (!flow.connect) {std::cerr << "EOS Connect interface unavailable\n";status=1;}
         else {
@@ -214,6 +216,15 @@ int main(int argc, char** argv) {
             std::cerr << "EOS device login failed: " << (flow.done ? int(flow.result) : -1) << '\n';status=1;
           } else {
             std::cout << "EOS device login succeeded\n";
+            if (wire_check) {
+              auto p2p=EOS_Platform_GetP2PInterface(handle);
+              if (!p2p) {std::cerr << "EOS P2P interface unavailable\n";status=1;}
+              else {
+                redbaron::eos::EosWire wire(p2p,flow.user,0,"RedBaronDiagnostic");
+                if (wire.Ready(1) || !wire.Poll()) {std::cerr << "EOS P2P empty-membership check failed\n";status=1;}
+                else std::cout << "EOS P2P adapter initialized; no peers connected\n";
+              }
+            }
             if (lobby_check || search_check) {
               lobby_flow.lobby=EOS_Platform_GetLobbyInterface(handle);
               lobby_flow.user=flow.user;
@@ -250,7 +261,7 @@ int main(int argc, char** argv) {
         }
       } else for (int i=0;i<10;++i) {EOS_Platform_Tick(handle);std::this_thread::sleep_for(std::chrono::milliseconds(10));}
       EOS_Platform_Release(handle);
-      if (!device_login && !lobby_check && !search_check) std::cout << "EOS platform created and released (no login was attempted)\n";
+      if (!device_login && !lobby_check && !search_check && !wire_check) std::cout << "EOS platform created and released (no login was attempted)\n";
     }
   }
   const EOS_EResult shutdown = EOS_Shutdown();

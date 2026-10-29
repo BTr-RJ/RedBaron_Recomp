@@ -60,8 +60,20 @@ Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
 não cria uma conta e não verifica conectividade com os serviços da Epic. Um
 segundo teste cobre a fragmentação e remontagem de mensagens de até 32 KiB em
-pacotes de até 1170 bytes, limite declarado pelo SDK usado. Essa rotina ainda
-não está ligada ao transporte P2P do EOS.
+pacotes de até 1170 bytes, limite declarado pelo SDK usado. Ela é utilizada
+pelo adaptador P2P experimental descrito abaixo.
+
+`port/eos/eos_wire.*` contém um adaptador experimental de pacotes P2P do EOS
+para a interface de rede existente. Ele só aceita membros previamente fornecidos
+pelo responsável pela sessão e usa o anfitrião para retransmitir entre clientes.
+O comando `--wire-check <config>` valida apenas sua inicialização com uma
+identidade autenticada e sem outros jogadores. O adaptador ainda não está ligado
+ao lobby, ao jogo ou ao launcher; tráfego real, desconexões e autenticação dos
+membros continuam pendentes de validação. Ele deve usar uma instância do EOS
+dedicada ao transporte, pois consome as filas dos canais 0 e 1 dessa instância.
+Um teste automatizado simula três membros e a API P2P: verifica encaminhamento,
+mensagens fragmentadas confiáveis e não confiáveis e rejeição de remetentes
+desconhecidos ou forjados. Essa simulação não prova conectividade EOS real.
 
 ## Integração e validação
 
