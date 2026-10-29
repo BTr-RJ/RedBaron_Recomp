@@ -1,24 +1,25 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include "session_publisher.h"
-#include "transport.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <random>
 #include <stdexcept>
+#include <utility>
 
 namespace redbaron::net {
 using Clock = std::chrono::steady_clock;
 struct SessionPublisher::Impl {
-  Transport& transport;
+  SessionPublisher::Publish publish;
   SOCKET socket = INVALID_SOCKET;
   sockaddr_in game{};
   std::array<unsigned char, 20> query{};
   Clock::time_point next{}, last_response{};
   std::string published;
   std::random_device random;
-  Impl(Transport& value, unsigned char ns) : transport(value) {
+  Impl(SessionPublisher::Publish value, unsigned char ns) : publish(std::move(value)) {
+    if (!publish) throw std::invalid_argument("Session publisher callback is required");
     socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (socket == INVALID_SOCKET) throw std::runtime_error("Could not create session discovery socket");
     game.sin_family = AF_INET;
@@ -36,7 +37,6 @@ struct SessionPublisher::Impl {
   }
   ~Impl() { if (socket != INVALID_SOCKET) closesocket(socket); }
   void Poll() {
-    if (!transport.admitted() || transport.id() != 0) return;
     auto now = Clock::now();
     if (now >= next) {
       for (size_t i=8; i<16; ++i) query[i] = static_cast<unsigned char>(random());
@@ -56,7 +56,7 @@ struct SessionPublisher::Impl {
       last_response = now;
       // Do not advertise a private or full native game session.
       if (!(data[80] | data[81] | data[82] | data[83])) {
-        if (!published.empty()) { transport.PublishSession(""); published.clear(); }
+        if (!published.empty()) { publish(""); published.clear(); }
         continue;
       }
       // A new query nonce must not make an unchanged session look different.
@@ -64,14 +64,14 @@ struct SessionPublisher::Impl {
       static constexpr char hex[] = "0123456789abcdef";
       std::string record; record.reserve(size_t(length)*2);
       for (int i=0; i<length; ++i) { record.push_back(hex[data[i]>>4]); record.push_back(hex[data[i]&15]); }
-      if (record != published) { transport.PublishSession(record); published=std::move(record); }
+      if (record != published) { publish(record); published=std::move(record); }
     }
     if (!published.empty() && now-last_response > std::chrono::seconds(3)) {
-      transport.PublishSession(""); published.clear();
+      publish(""); published.clear();
     }
   }
 };
-SessionPublisher::SessionPublisher(Transport& t, unsigned char ns) : impl_(std::make_unique<Impl>(t,ns)) {}
+SessionPublisher::SessionPublisher(Publish publish, unsigned char ns) : impl_(std::make_unique<Impl>(std::move(publish),ns)) {}
 SessionPublisher::~SessionPublisher() = default;
 void SessionPublisher::Poll() { impl_->Poll(); }
 }

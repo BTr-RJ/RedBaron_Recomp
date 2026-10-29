@@ -26,7 +26,7 @@ int main(int argc,char** argv) {
     SocketBridge bridge(transport,uint8_t(ns),options.value("diagnostics",false));
     std::unique_ptr<SessionPublisher> publisher;
     if(options.value("public",false) && options.value("room","").empty())
-      publisher=std::make_unique<SessionPublisher>(transport,uint8_t(ns));
+      publisher=std::make_unique<SessionPublisher>([&transport](const std::string& record){transport.PublishSession(record);},uint8_t(ns));
     transport.status=[&](const Json& message){
       Json output=message;
       if(message.at("op")=="welcome") {
@@ -53,7 +53,7 @@ int main(int argc,char** argv) {
     while(!transport.stopped()) {
       transport.Poll();
       if(transport.admitted())bridge.Poll();
-      if(publisher)publisher->Poll();
+      if(publisher && transport.admitted() && transport.id()==0)publisher->Poll();
       if(parent && WaitForSingleObject(parent,0)==WAIT_OBJECT_0)break;
       if(piped) {
         DWORD available=0;

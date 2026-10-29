@@ -1,12 +1,14 @@
 #pragma once
 #include <memory>
+#include <functional>
+#include <string>
 
 namespace redbaron::net {
-class Transport;
 // Advertises only an actual local game session, never the room alone.
 class SessionPublisher {
  public:
-  SessionPublisher(Transport& transport, unsigned char name_space);
+  using Publish = std::function<void(const std::string&)>;
+  SessionPublisher(Publish publish, unsigned char name_space);
   ~SessionPublisher();
   void Poll();
  private:
