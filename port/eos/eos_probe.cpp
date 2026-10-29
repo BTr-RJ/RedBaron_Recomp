@@ -63,6 +63,8 @@ struct LobbyFlow {
   bool search_requested=false;
   uint32_t search_count=0;
   unsigned search_attempts=0;
+  bool attribute_verified=false;
+  std::string test_record=std::string(208,'a');
   bool retry_search=false;
   std::chrono::steady_clock::time_point retry_at{};
   bool done=false;
@@ -83,8 +85,25 @@ struct LobbyFlow {
       EOS_LobbySearch_GetSearchResultCountOptions options{};
       options.ApiVersion=EOS_LOBBYSEARCH_GETSEARCHRESULTCOUNT_API_LATEST;
       self.search_count=EOS_LobbySearch_GetSearchResultCount(self.search,&options);
+      if (self.search_count) {
+        EOS_LobbySearch_CopySearchResultByIndexOptions copy{};
+        copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
+        EOS_HLobbyDetails details{};
+        if (EOS_LobbySearch_CopySearchResultByIndex(self.search,&copy,&details)==EOS_EResult::EOS_Success) {
+          EOS_LobbyDetails_CopyAttributeByKeyOptions attr_options{};
+          attr_options.ApiVersion=EOS_LOBBYDETAILS_COPYATTRIBUTEBYKEY_API_LATEST;
+          attr_options.AttrKey="RB_TEST_RECORD";
+          EOS_Lobby_Attribute* attr{};
+          if (EOS_LobbyDetails_CopyAttributeByKey(details,&attr_options,&attr)==EOS_EResult::EOS_Success) {
+            self.attribute_verified=attr && attr->Data && attr->Data->ValueType==EOS_ELobbyAttributeType::EOS_AT_STRING &&
+              attr->Data->Value.AsUtf8 && self.test_record==attr->Data->Value.AsUtf8;
+            if (attr) EOS_Lobby_Attribute_Release(attr);
+          }
+          EOS_LobbyDetails_Release(details);
+        }
+      }
     }
-    if (self.search_result==EOS_EResult::EOS_Success && self.search_count==0 && self.search_attempts<5) {
+    if (self.search_result==EOS_EResult::EOS_Success && !self.attribute_verified && self.search_attempts<5) {
       self.retry_search=true;self.retry_at=std::chrono::steady_clock::now()+std::chrono::seconds(2);
     } else {
       EOS_LobbySearch_Release(self.search);self.search=nullptr;
@@ -97,14 +116,9 @@ struct LobbyFlow {
     find.ApiVersion=EOS_LOBBYSEARCH_FIND_API_LATEST;find.LocalUserId=user;
     EOS_LobbySearch_Find(search,&find,this,Found);
   }
-  static void EOS_CALL Created(const EOS_Lobby_CreateLobbyCallbackInfo* data) {
+  static void EOS_CALL Updated(const EOS_Lobby_UpdateLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
-    if (data->ResultCode!=EOS_EResult::EOS_Success || !data->LobbyId) {
-      self.result=data->ResultCode;self.done=true;return;
-    }
-    self.id=data->LobbyId;
-    std::cout << "EOS test lobby created\n";
-    if (!self.search_requested) {self.Destroy();return;}
+    if (data->ResultCode!=EOS_EResult::EOS_Success) {self.search_result=data->ResultCode;self.Destroy();return;}
     EOS_Lobby_CreateLobbySearchOptions create{};
     create.ApiVersion=EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
     create.MaxResults=1;
@@ -123,6 +137,35 @@ struct LobbyFlow {
       EOS_LobbySearch_Release(self.search);self.search=nullptr;self.Destroy();return;
     }
     self.Find();
+  }
+  static void EOS_CALL Created(const EOS_Lobby_CreateLobbyCallbackInfo* data) {
+    auto& self=*static_cast<LobbyFlow*>(data->ClientData);
+    if (data->ResultCode!=EOS_EResult::EOS_Success || !data->LobbyId) {
+      self.result=data->ResultCode;self.done=true;return;
+    }
+    self.id=data->LobbyId;
+    std::cout << "EOS test lobby created\n";
+    if (!self.search_requested) {self.Destroy();return;}
+    EOS_Lobby_UpdateLobbyModificationOptions modify{};
+    modify.ApiVersion=EOS_LOBBY_UPDATELOBBYMODIFICATION_API_LATEST;
+    modify.LocalUserId=self.user;modify.LobbyId=self.id.c_str();
+    EOS_HLobbyModification builder{};
+    self.search_result=EOS_Lobby_UpdateLobbyModification(self.lobby,&modify,&builder);
+    if (self.search_result!=EOS_EResult::EOS_Success) {self.Destroy();return;}
+    EOS_Lobby_AttributeData attr{};
+    attr.ApiVersion=EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;attr.Key="RB_TEST_RECORD";
+    attr.ValueType=EOS_ELobbyAttributeType::EOS_AT_STRING;attr.Value.AsUtf8=self.test_record.c_str();
+    EOS_LobbyModification_AddAttributeOptions add{};
+    add.ApiVersion=EOS_LOBBYMODIFICATION_ADDATTRIBUTE_API_LATEST;
+    add.Attribute=&attr;add.Visibility=EOS_ELobbyAttributeVisibility::EOS_LAT_PUBLIC;
+    self.search_result=EOS_LobbyModification_AddAttribute(builder,&add);
+    if (self.search_result==EOS_EResult::EOS_Success) {
+      EOS_Lobby_UpdateLobbyOptions update{};
+      update.ApiVersion=EOS_LOBBY_UPDATELOBBY_API_LATEST;update.LobbyModificationHandle=builder;
+      EOS_Lobby_UpdateLobby(self.lobby,&update,&self,Updated);
+    }
+    EOS_LobbyModification_Release(builder);
+    if (self.search_result!=EOS_EResult::EOS_Success) self.Destroy();
   }
 };
 
@@ -252,7 +295,8 @@ int main(int argc, char** argv) {
                   std::cout << "EOS test lobby destroyed successfully\n";
                   if (search_check) {
                     std::cout << "EOS search result: " << int(lobby_flow.search_result) << ", matches: " << lobby_flow.search_count << '\n';
-                    if (lobby_flow.search_result!=EOS_EResult::EOS_Success || lobby_flow.search_count!=1) status=1;
+                    std::cout << "EOS public test attribute verified: " << (lobby_flow.attribute_verified ? "yes" : "no") << '\n';
+                    if (lobby_flow.search_result!=EOS_EResult::EOS_Success || lobby_flow.search_count!=1 || !lobby_flow.attribute_verified) status=1;
                   }
                 }
               }

@@ -54,7 +54,10 @@ testes foram concluídos usando o produto configurado pelo usuário. O login por
 dispositivo não é autenticação de conta Epic e não fornece lista de amigos.
 O comando `--search-check <config>` cria uma sala pública temporária em uma
 categoria aleatória de diagnóstico, busca essa categoria pela mesma identidade
-e remove a sala. A busca repetida foi necessária até a sala aparecer no índice.
+e remove a sala. Publica e lê um atributo de teste de 208 caracteres, tamanho
+do registro LAN mínimo codificado em hexadecimal. A busca repetida foi necessária
+até a sala e o atributo aparecerem no índice. Registros maiores ainda exigem
+solução para limites dos atributos e validação antes da integração.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
