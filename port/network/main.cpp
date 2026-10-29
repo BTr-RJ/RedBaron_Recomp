@@ -1,6 +1,7 @@
 #include <WinSock2.h>
 #include <Windows.h>
 #include "socket_bridge.h"
+#include "directory.h"
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -9,11 +10,12 @@ using namespace redbaron::net;
 extern "C" __declspec(dllimport) void RedBaronInitCryptoThreading();
 int main(int argc,char** argv) {
   try {
-    if(argc!=3 || std::string(argv[1])!="--config") {
-      std::cerr<<"Usage: redbaron_net --config session.json\n"; return 2;
+    if(argc!=3 || (std::string(argv[1])!="--config" && std::string(argv[1])!="--list")) {
+      std::cerr<<"Usage: redbaron_net --config session.json | --list directory.json\n"; return 2;
     }
     std::ifstream file(argv[2]);if(!file)throw std::runtime_error("Session configuration was not found");
     auto options=Json::parse(file);
+    if(std::string(argv[1])=="--list") { std::cout<<ReadDirectory(options).dump()<<std::endl; return 0; }
     int ns=options.value("namespace",120);
     if(ns<1 || ns>254)throw std::runtime_error("Invalid local network namespace");
     RedBaronInitCryptoThreading();

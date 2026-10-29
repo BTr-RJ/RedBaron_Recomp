@@ -4,6 +4,7 @@
 #include <string>
 
 namespace redbaron::net {
+void ValidateServerUrl(const std::string& url);
 class Signaling {
  public:
   Signaling(std::string url,std::function<void()> opened,

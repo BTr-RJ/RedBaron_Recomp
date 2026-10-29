@@ -5,10 +5,16 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <regex>
 #include <stdexcept>
 #include <thread>
 
 namespace redbaron::net {
+void ValidateServerUrl(const std::string& url) {
+  if (!url.starts_with("wss://") &&
+      !std::regex_match(url, std::regex(R"(ws://(127\.0\.0\.1|localhost):[0-9]{1,5}(/[^\s]*)?)")))
+    throw std::runtime_error("Public room servers require wss:// with a valid TLS certificate");
+}
 namespace {
 void Check(bool value,const char* operation) {
   if(!value)throw std::runtime_error(std::string(operation)+" failed (Windows error "+std::to_string(GetLastError())+")");

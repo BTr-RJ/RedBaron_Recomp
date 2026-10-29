@@ -75,6 +75,13 @@ async def main(executable):
                     await directory.send(json.dumps(dict(op="list", protocol=1, build="redbaron-wire-1")))
                     listing = json.loads(await directory.recv())
                     assert [item["room"] for item in listing["rooms"]] == [welcome["room"]], listing
+                config = Path(folder) / "directory.json"
+                config.write_text(json.dumps(dict(server=url, mode="multiplayer")))
+                directory = await asyncio.create_subprocess_exec(str(executable), "--list", str(config),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                output, errors = await asyncio.wait_for(directory.communicate(), 30)
+                assert directory.returncode == 0, (output, errors)
+                assert [item["room"] for item in json.loads(output)["rooms"]] == [welcome["room"]], output
                 print("PASS: public native host appears in room directory", flush=True)
                 for i in range(1, 8):
                     client = await launch(i, welcome["room"])

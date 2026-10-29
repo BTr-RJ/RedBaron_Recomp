@@ -15,6 +15,12 @@ available slot; locked and private rooms are never included. This is a backend
 building block: the game's room browser and automatic connection are not yet
 integrated, and the current launcher still creates private rooms.
 
+For integration work, `redbaron_net --list directory.json` accepts a JSON file
+containing `server`, optional `mode` (`all`, `multiplayer`, or `coop`) and
+optional `offset`. It returns one validated directory page as JSON. Public
+servers require WSS and a trusted certificate; plain WS is limited to loopback
+tests. The command does not join a room or start the game.
+
 ## Local development
 
 Use Python 3.11 or newer in a virtual environment:

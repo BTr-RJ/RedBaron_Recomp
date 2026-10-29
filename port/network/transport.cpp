@@ -1,6 +1,5 @@
 #include "transport.h"
 #include <stdexcept>
-#include <regex>
 
 namespace redbaron::net {
 namespace {
@@ -11,9 +10,7 @@ uint16_t Read16(const Bytes& bytes, size_t at) {
 }
 Transport::Transport(Json options) : options_(std::move(options)) {
   const auto url = options_.at("server").get<std::string>();
-  if (!url.starts_with("wss://") &&
-      !std::regex_match(url, std::regex(R"(ws://(127\.0\.0\.1|localhost):[0-9]{1,5}(/[^\s]*)?)")))
-    throw std::runtime_error("Public room servers require wss:// with a valid TLS certificate");
+  ValidateServerUrl(url);
   socket_ = std::make_unique<Signaling>(url, [this] { Queue([this] {
     Json hello{{"op", options_.value("room", "").empty() ? "create" : "join"},
       {"protocol", 1}, {"build", "redbaron-wire-1"}, {"name", options_.at("name")},

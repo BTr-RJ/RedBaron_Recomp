@@ -40,6 +40,17 @@ async def main(executable, openssl):
             events = [json.loads(line) for line in stdout.splitlines()]
             assert not connections and not any(e["op"] == "welcome" for e in events), events
             assert any("12175" in e.get("reason", "") for e in events), (events, stderr)
+            process = await asyncio.create_subprocess_exec(executable, "--list", str(config),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), 20)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise AssertionError("Directory TLS validation did not finish")
+            events = [json.loads(line) for line in stdout.splitlines()]
+            assert process.returncode != 0 and not connections, (events, stderr)
+            assert any("12175" in e.get("message", "") for e in events), (events, stderr)
             print("PASS: untrusted WSS certificate rejected by Windows (ERROR_WINHTTP_SECURE_FAILURE)")
 
 
