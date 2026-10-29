@@ -114,13 +114,13 @@ namespace RedBaron {
                     Reject(()=>{string ignored;OnlineSession.ParseInvitation(invalidInvite,out ignored);},"Invalid invitation accepted");
                 results.Add("Online invitations: server and room roundtrip; empty and unsafe inputs rejected");
                 results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
-                var release=new ReleaseInfo{tag_name="v1.0",assets=new[]{new ReleaseAsset {
-                    name="RedBaron_Recomp-v1.0-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
-                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v1.0/RedBaron_Recomp-v1.0-windows-x64.zip"}}};
+                var release=new ReleaseInfo{tag_name="v0.10",assets=new[]{new ReleaseAsset {
+                    name="RedBaron_Recomp-v0.10-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
+                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.10/RedBaron_Recomp-v0.10-windows-x64.zip"}}};
                 Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Valid release rejected");
                 release.assets[0].browser_download_url="https://example.org/update.zip";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Untrusted update host accepted");
-                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v1.0/RedBaron_Recomp-v1.0-windows-x64.zip";
+                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.10/RedBaron_Recomp-v0.10-windows-x64.zip";
                 release.assets[0].digest="sha256:bad";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Unverified update accepted");
                 release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=600L*1024*1024;
