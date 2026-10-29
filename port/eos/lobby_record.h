@@ -10,6 +10,8 @@ namespace redbaron::eos {
 EOS_EResult PublishLobbyRecord(EOS_HLobby lobby, EOS_ProductUserId owner, const char* lobby_id,
                               std::string_view record, size_t old_count, void* callback_data,
                               EOS_Lobby_OnUpdateLobbyCallback callback);
+EOS_EResult ClearLobbyRecord(EOS_HLobby lobby, EOS_ProductUserId owner, const char* lobby_id,
+                            size_t old_count, void* callback_data, EOS_Lobby_OnUpdateLobbyCallback callback);
 // The caller must validate the decoded native session before using it.
 std::optional<std::string> ReadLobbyRecord(EOS_HLobbyDetails details);
 }

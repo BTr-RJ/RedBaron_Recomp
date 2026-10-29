@@ -11,9 +11,9 @@ foreach(required Include/eos_sdk.h Lib/EOSSDK-Win64-Shipping.lib Bin/EOSSDK-Win6
         message(FATAL_ERROR "Official EOS SDK component missing: ${required}")
     endif()
 endforeach()
-add_executable(redbaron_eos_probe eos_probe.cpp)
+add_executable(redbaron_eos_probe eos_probe.cpp ../network/session_publisher.cpp)
 target_include_directories(redbaron_eos_probe PRIVATE "${REDBARON_EOS_SDK}/Include")
-target_link_libraries(redbaron_eos_probe PRIVATE "${REDBARON_EOS_SDK}/Lib/EOSSDK-Win64-Shipping.lib")
+target_link_libraries(redbaron_eos_probe PRIVATE "${REDBARON_EOS_SDK}/Lib/EOSSDK-Win64-Shipping.lib" ws2_32)
 add_custom_command(TARGET redbaron_eos_probe POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${REDBARON_EOS_SDK}/Bin/EOSSDK-Win64-Shipping.dll" "$<TARGET_FILE_DIR:redbaron_eos_probe>")
@@ -24,7 +24,7 @@ target_include_directories(redbaron_eos_fragment_tests PRIVATE "${REDBARON_EOS_S
 add_test(NAME redbaron_eos_fragmentation COMMAND redbaron_eos_fragment_tests)
 add_library(redbaron_eos_wire STATIC eos_wire.cpp fragmentation.cpp)
 target_include_directories(redbaron_eos_wire PRIVATE "${REDBARON_EOS_SDK}/Include")
-add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp ../network/session_record.cpp)
+add_library(redbaron_eos_lobby STATIC session_record.cpp lobby_record.cpp lobby_publisher.cpp ../network/session_record.cpp)
 target_include_directories(redbaron_eos_lobby PRIVATE "${REDBARON_EOS_SDK}/Include")
 target_link_libraries(redbaron_eos_probe PRIVATE redbaron_eos_wire redbaron_eos_lobby)
 add_executable(redbaron_eos_wire_tests eos_wire_test.cpp)

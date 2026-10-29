@@ -59,6 +59,11 @@ mínimo, divididos em atributos pequenos, verificando a remoção dos atributos
 antigos ao reduzir o registro. A busca repetida foi necessária até as alterações
 aparecerem no índice. `lobby_record.*` implementa essa publicação e leitura e
 valida o registro nativo; ainda não está ligado ao processo de rede ou ao jogo.
+No diagnóstico, o publicador de sessão consulta um jogo simulado por UDP local;
+`lobby_publisher.*` sincroniza o registro no EOS, consolida alterações enquanto
+há uma atualização pendente e remove o registro ao desaparecer a sessão. O teste
+verifica publicação, atualização e retirada no serviço real. O jogo simulado
+não valida a integração com um executável em execução nem a entrada de clientes.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,

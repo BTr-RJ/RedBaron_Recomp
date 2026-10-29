@@ -45,6 +45,27 @@ EOS_EResult PublishLobbyRecord(EOS_HLobby lobby,EOS_ProductUserId owner,const ch
   }
   EOS_LobbyModification_Release(builder);return result;
 }
+EOS_EResult ClearLobbyRecord(EOS_HLobby lobby,EOS_ProductUserId owner,const char* lobby_id,
+                            size_t old_count,void* context,EOS_Lobby_OnUpdateLobbyCallback callback) {
+  if(!lobby || !EOS_ProductUserId_IsValid(owner) || !lobby_id || !*lobby_id || !callback || !old_count || old_count>kMaxChunks)
+    return EOS_EResult::EOS_InvalidParameters;
+  EOS_Lobby_UpdateLobbyModificationOptions modify{};
+  modify.ApiVersion=EOS_LOBBY_UPDATELOBBYMODIFICATION_API_LATEST;modify.LocalUserId=owner;modify.LobbyId=lobby_id;
+  EOS_HLobbyModification builder{};
+  auto result=EOS_Lobby_UpdateLobbyModification(lobby,&modify,&builder);
+  if(result!=EOS_EResult::EOS_Success)return result;
+  EOS_LobbyModification_RemoveAttributeOptions remove{};
+  remove.ApiVersion=EOS_LOBBYMODIFICATION_REMOVEATTRIBUTE_API_LATEST;remove.Key=kCount;
+  result=EOS_LobbyModification_RemoveAttribute(builder,&remove);
+  for(size_t i=0;result==EOS_EResult::EOS_Success && i<old_count;++i) {
+    const auto key=Key(i);remove.Key=key.c_str();result=EOS_LobbyModification_RemoveAttribute(builder,&remove);
+  }
+  if(result==EOS_EResult::EOS_Success) {
+    EOS_Lobby_UpdateLobbyOptions update{};update.ApiVersion=EOS_LOBBY_UPDATELOBBY_API_LATEST;
+    update.LobbyModificationHandle=builder;EOS_Lobby_UpdateLobby(lobby,&update,context,callback);
+  }
+  EOS_LobbyModification_Release(builder);return result;
+}
 std::optional<std::string> ReadLobbyRecord(EOS_HLobbyDetails details) {
   if (!details)return std::nullopt;
   EOS_LobbyDetails_CopyAttributeByKeyOptions options{};

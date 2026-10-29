@@ -1,3 +1,5 @@
+#include <WinSock2.h>
+#include <WS2tcpip.h>
 #include <eos_init.h>
 #include <eos_version.h>
 #include <eos_sdk.h>
@@ -6,11 +8,16 @@
 #include "eos_wire.h"
 #include "session_record.h"
 #include "lobby_record.h"
+#include "lobby_publisher.h"
+#include "../network/session_publisher.h"
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -73,6 +80,10 @@ struct LobbyFlow {
   EOS_HLobby lobby{};
   EOS_ProductUserId user{};
   EOS_HLobbySearch search{};
+  std::unique_ptr<redbaron::eos::LobbyPublisher> publisher;
+  std::unique_ptr<redbaron::net::SessionPublisher> source;
+  SOCKET fake_game=INVALID_SOCKET;
+  bool winsock=false;
   std::string id;
   std::string bucket;
   EOS_EResult result=EOS_EResult::EOS_UnexpectedError;
@@ -82,10 +93,44 @@ struct LobbyFlow {
   unsigned search_attempts=0;
   unsigned record_stage=0;
   bool attribute_verified=false;
+  bool waiting_for_publish=false;
   std::string test_record=TestSession(true);
   bool retry_search=false;
   std::chrono::steady_clock::time_point retry_at{};
   bool done=false;
+  ~LobbyFlow() {
+    source.reset();
+    if(fake_game!=INVALID_SOCKET)closesocket(fake_game);
+    if(winsock)WSACleanup();
+  }
+  bool StartSource() {
+    WSADATA data{};if(WSAStartup(MAKEWORD(2,2),&data))return false;winsock=true;
+    fake_game=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);if(fake_game==INVALID_SOCKET)return false;
+    int exclusive=1;setsockopt(fake_game,SOL_SOCKET,SO_EXCLUSIVEADDRUSE,reinterpret_cast<const char*>(&exclusive),sizeof(exclusive));
+    sockaddr_in address{};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(0x7fc50000u);address.sin_port=htons(43821);
+    u_long nonblocking=1;
+    if(bind(fake_game,reinterpret_cast<sockaddr*>(&address),sizeof(address)) || ioctlsocket(fake_game,FIONBIO,&nonblocking))return false;
+    source=std::make_unique<redbaron::net::SessionPublisher>([this](const std::string& record) {
+      if(!publisher->Offer(record)) {search_result=EOS_EResult::EOS_InvalidParameters;Destroy();}
+      else waiting_for_publish=true;
+    },197);
+    return true;
+  }
+  void PollSource() {
+    if(!source)return;
+    source->Poll();
+    for(int n=0;n<16;++n) {
+      std::array<uint8_t,20> query{};sockaddr_in remote{};int remote_size=sizeof(remote);
+      const int got=recvfrom(fake_game,reinterpret_cast<char*>(query.data()),int(query.size()),0,reinterpret_cast<sockaddr*>(&remote),&remote_size);
+      if(got<0)break;
+      if(got!=20 || record_stage==2 || std::memcmp(query.data(),"RBLAN01\x01",8))continue;
+      std::vector<uint8_t> response;response.reserve(test_record.size()/2);
+      const auto nibble=[](char c){return c<='9' ? c-'0' : c-'a'+10;};
+      for(size_t i=0;i<test_record.size();i+=2)response.push_back(uint8_t(nibble(test_record[i])*16+nibble(test_record[i+1])));
+      std::copy(query.begin()+8,query.begin()+16,response.begin()+8);
+      sendto(fake_game,reinterpret_cast<const char*>(response.data()),int(response.size()),0,reinterpret_cast<sockaddr*>(&remote),remote_size);
+    }
+  }
   static void EOS_CALL Destroyed(const EOS_Lobby_DestroyLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
     self.result=data->ResultCode;self.done=true;
@@ -108,7 +153,8 @@ struct LobbyFlow {
         copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
         EOS_HLobbyDetails details{};
         if (EOS_LobbySearch_CopySearchResultByIndex(self.search,&copy,&details)==EOS_EResult::EOS_Success) {
-          self.attribute_verified=redbaron::eos::ReadLobbyRecord(details)==self.test_record;
+          const auto record=redbaron::eos::ReadLobbyRecord(details);
+          self.attribute_verified=self.record_stage==2 ? !record : record==self.test_record;
           if(self.attribute_verified && self.record_stage==1) {
             EOS_LobbyDetails_CopyAttributeByKeyOptions stale{};
             stale.ApiVersion=EOS_LOBBYDETAILS_COPYATTRIBUTEBYKEY_API_LATEST;stale.AttrKey="RB_RECORD_52";
@@ -124,8 +170,9 @@ struct LobbyFlow {
     if(self.attribute_verified && self.record_stage==0) {
       EOS_LobbySearch_Release(self.search);self.search=nullptr;
       self.record_stage=1;self.test_record=TestSession(false);self.attribute_verified=false;self.search_attempts=0;
-      self.search_result=redbaron::eos::PublishLobbyRecord(self.lobby,self.user,self.id.c_str(),self.test_record,53,&self,Updated);
-      if(self.search_result!=EOS_EResult::EOS_Success)self.Destroy();
+    } else if(self.attribute_verified && self.record_stage==1) {
+      EOS_LobbySearch_Release(self.search);self.search=nullptr;
+      self.record_stage=2;self.attribute_verified=false;self.search_attempts=0;
     } else if (self.search_result==EOS_EResult::EOS_Success && !self.attribute_verified && self.search_attempts<5) {
       self.retry_search=true;self.retry_at=std::chrono::steady_clock::now()+std::chrono::seconds(2);
     } else {
@@ -139,27 +186,32 @@ struct LobbyFlow {
     find.ApiVersion=EOS_LOBBYSEARCH_FIND_API_LATEST;find.LocalUserId=user;
     EOS_LobbySearch_Find(search,&find,this,Found);
   }
-  static void EOS_CALL Updated(const EOS_Lobby_UpdateLobbyCallbackInfo* data) {
-    auto& self=*static_cast<LobbyFlow*>(data->ClientData);
-    if (data->ResultCode!=EOS_EResult::EOS_Success) {self.search_result=data->ResultCode;self.Destroy();return;}
+  void BeginSearch() {
     EOS_Lobby_CreateLobbySearchOptions create{};
     create.ApiVersion=EOS_LOBBY_CREATELOBBYSEARCH_API_LATEST;
     create.MaxResults=1;
-    self.search_result=EOS_Lobby_CreateLobbySearch(self.lobby,&create,&self.search);
-    if (self.search_result!=EOS_EResult::EOS_Success) {self.Destroy();return;}
+    search_result=EOS_Lobby_CreateLobbySearch(lobby,&create,&search);
+    if (search_result!=EOS_EResult::EOS_Success) {Destroy();return;}
     EOS_Lobby_AttributeData attribute{};
     attribute.ApiVersion=EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;
     attribute.Key=EOS_LOBBY_SEARCH_BUCKET_ID;
     attribute.ValueType=EOS_ELobbyAttributeType::EOS_AT_STRING;
-    attribute.Value.AsUtf8=self.bucket.c_str();
+    attribute.Value.AsUtf8=bucket.c_str();
     EOS_LobbySearch_SetParameterOptions set{};
     set.ApiVersion=EOS_LOBBYSEARCH_SETPARAMETER_API_LATEST;
     set.Parameter=&attribute;set.ComparisonOp=EOS_EComparisonOp::EOS_CO_EQUAL;
-    self.search_result=EOS_LobbySearch_SetParameter(self.search,&set);
-    if (self.search_result!=EOS_EResult::EOS_Success) {
-      EOS_LobbySearch_Release(self.search);self.search=nullptr;self.Destroy();return;
+    search_result=EOS_LobbySearch_SetParameter(search,&set);
+    if (search_result!=EOS_EResult::EOS_Success) {
+      EOS_LobbySearch_Release(search);search=nullptr;Destroy();return;
     }
-    self.Find();
+    Find();
+  }
+  void TickPublisher() {
+    if(!waiting_for_publish)return;
+    publisher->Poll();
+    if(publisher->error()!=EOS_EResult::EOS_Success) {
+      waiting_for_publish=false;search_result=publisher->error();Destroy();
+    } else if(publisher->Synced()) {waiting_for_publish=false;BeginSearch();}
   }
   static void EOS_CALL Created(const EOS_Lobby_CreateLobbyCallbackInfo* data) {
     auto& self=*static_cast<LobbyFlow*>(data->ClientData);
@@ -169,8 +221,8 @@ struct LobbyFlow {
     self.id=data->LobbyId;
     std::cout << "EOS test lobby created\n";
     if (!self.search_requested) {self.Destroy();return;}
-    self.search_result=redbaron::eos::PublishLobbyRecord(self.lobby,self.user,self.id.c_str(),self.test_record,0,&self,Updated);
-    if (self.search_result!=EOS_EResult::EOS_Success) self.Destroy();
+    self.publisher=std::make_unique<redbaron::eos::LobbyPublisher>(self.lobby,self.user,self.id);
+    if(!self.StartSource()) {self.search_result=EOS_EResult::EOS_UnexpectedError;self.Destroy();}
   }
 };
 
@@ -292,6 +344,8 @@ int main(int argc, char** argv) {
                 const auto lobby_deadline=std::chrono::steady_clock::now()+std::chrono::seconds(60);
                 while (!lobby_flow.done && std::chrono::steady_clock::now()<lobby_deadline) {
                   EOS_Platform_Tick(handle);std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                  lobby_flow.PollSource();
+                  lobby_flow.TickPublisher();
                   if (lobby_flow.retry_search && std::chrono::steady_clock::now()>=lobby_flow.retry_at) lobby_flow.Find();
                 }
                 if (!lobby_flow.done || lobby_flow.result!=EOS_EResult::EOS_Success) {
