@@ -89,6 +89,7 @@
     <Border Background="#1C2028" BorderBrush="#323A47" BorderThickness="0,0,0,1" Padding="28,0">
       <Grid><StackPanel VerticalAlignment="Center"><TextBlock Text="RedBaron_Recomp" FontSize="23" FontWeight="SemiBold"/><TextBlock Text="Snoopy Flying Ace · PC" Foreground="#ACB7C8" FontSize="12" Margin="0,4,0,0"/></StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock Name="UpdateBadge" Text="Update available" Visibility="Collapsed" VerticalAlignment="Center" Foreground="#F1C477" Margin="0,0,18,0"/>
           <TextBlock Name="HeaderStatus" Text="Checking installation…" VerticalAlignment="Center" Foreground="#B7C6BC" Margin="0,0,18,0"/>
           <Button Name="ToggleFullscreen" Content="Fullscreen" ToolTip="Fullscreen (F11)" Padding="12,8"/>
           <Button Name="CloseLauncher" Content="Close" ToolTip="Close launcher" Padding="12,8" Margin="10,0,0,0"/>
@@ -107,9 +108,9 @@
           <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="DestinationPath" AutomationProperties.Name="Destination folder"/><Button Name="BrowseDestination" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
           <CheckBox Name="DesktopShortcut" Content="Create a desktop shortcut" Margin="0,16,0,20"/>
           <Expander Foreground="#D5DDE9" Header="Build tools" IsExpanded="False">
-            <StackPanel Margin="0,12,0,0"><TextBlock Text="Installed ReXGlue SDK" Margin="0,0,0,7"/>
+            <StackPanel Margin="0,12,0,0"><TextBlock Text="ReXGlue SDK folder (used if no SDK is bundled)" Margin="0,0,0,7"/>
               <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SdkPath" AutomationProperties.Name="SDK folder"/><Button Name="BrowseSdk" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
-              <TextBlock Text="Requires a compatible SDK, CMake, Ninja and Clang on this PC. No game files are downloaded." Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
+              <TextBlock Name="SdkInfo" Text="Checking build tools…" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
             </StackPanel>
           </Expander>
           <StackPanel Orientation="Horizontal" Margin="0,8,0,14"><Button Name="InstallButton" Content="Install and build" Style="{StaticResource Primary}"/><Button Name="CancelInstall" Content="Cancel installation" Margin="10,0,0,0" Visibility="Collapsed"/><Button Name="UseExisting" Content="Use existing installation…" Margin="10,0,0,0"/></StackPanel>
@@ -186,6 +187,16 @@
             <TextBlock Text="In game: Online → Player Match → Find Game. Choose the same mode and options on each PC. An empty search creates a public match. Team DogFight has been tested between two local game instances; testing on separate PCs is still needed." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
             <TextBlock Text="A connected online room takes precedence over LAN. Direct connections use WebRTC; a configured TURN server provides relay fallback. Ranked services and rollback are not implemented." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
           </StackPanel></Border>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+      <TabItem Header="Update">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+          <TextBlock Text="Project updates" Style="{StaticResource Heading}"/>
+          <TextBlock Text="Check GitHub for a published RedBaron_Recomp release. The downloaded package is verified using GitHub's SHA-256 before it is saved." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
+          <TextBlock Text="Current version" Margin="0,0,0,7"/><TextBlock Text="Development build" FontSize="16" Margin="0,0,0,22"/>
+          <TextBlock Name="UpdateState" Text="Checking for releases…" Style="{StaticResource Muted}" Margin="0,0,0,18"/>
+          <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Margin="0,0,0,8"/></WrapPanel>
+          <TextBlock Text="No game files are included in the download. Public releases are not available until the project is ready." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
         </StackPanel></ScrollViewer>
       </TabItem>
     </TabControl>

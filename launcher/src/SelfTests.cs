@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace RedBaron {
     static class SelfTests {
@@ -10,6 +15,19 @@ namespace RedBaron {
         [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
         static void Assert(bool value,string message) {if(!value)throw new Exception(message);}
         static void Reject(Action action,string message) {try {action();} catch(InvalidDataException) {return;}throw new Exception(message);}
+        static string DownloadTest(ReleaseAsset asset,string root,byte[] bytes) {
+            var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
+            int port=((IPEndPoint)listener.LocalEndpoint).Port;
+            var server=Task.Run(()=>{
+                using(var client=listener.AcceptTcpClient())using(var stream=client.GetStream()) {
+                    var request=new byte[4096];stream.Read(request,0,request.Length);
+                    byte[] header=Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: "+bytes.Length+"\r\nConnection: close\r\n\r\n");
+                    stream.Write(header,0,header.Length);stream.Write(bytes,0,bytes.Length);
+                }
+            });
+            try {return Updates.DownloadFromLocalTest(asset,root,"http://127.0.0.1:"+port+"/").GetAwaiter().GetResult();}
+            finally {listener.Stop();server.GetAwaiter().GetResult();}
+        }
         public static int Run(string[] args) {
             int index=Array.IndexOf(args,"--self-test");
             string directory=index+1<args.Length?Path.GetFullPath(args[index+1]):Path.Combine(Path.GetTempPath(),"RedBaron-tests-"+Guid.NewGuid().ToString("N"));
@@ -90,6 +108,26 @@ namespace RedBaron {
                 Assert(onlineLoaded.OnlineServer==loaded.OnlineServer && onlineLoaded.OnlineMode=="coop" && onlineLoaded.OnlineLocalPlayers==2,"Online room settings did not roundtrip");
                 Assert(!File.ReadAllText(s.Toml).Contains("redbaron_p2p_namespace"),"Temporary room identity leaked into persistent game settings");
                 results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
+                var release=new ReleaseInfo{tag_name="v1.0",assets=new[]{new ReleaseAsset {
+                    name="RedBaron_Recomp-v1.0-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
+                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v1.0/RedBaron_Recomp-v1.0-windows-x64.zip"}}};
+                Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Valid release rejected");
+                release.assets[0].browser_download_url="https://example.org/update.zip";
+                Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Untrusted update host accepted");
+                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v1.0/RedBaron_Recomp-v1.0-windows-x64.zip";
+                release.assets[0].digest="sha256:bad";
+                Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Unverified update accepted");
+                release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=600L*1024*1024;
+                Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Oversized update accepted");
+                byte[] payload=Encoding.UTF8.GetBytes("test update archive bytes");
+                release.assets[0].size=payload.Length;
+                using(var hash=SHA256.Create())release.assets[0].digest="sha256:"+BitConverter.ToString(hash.ComputeHash(payload)).Replace("-","");
+                string downloaded=DownloadTest(release.assets[0],s.Root,payload);
+                Assert(File.ReadAllBytes(downloaded).SequenceEqual(payload),"Verified update download differs");
+                release.assets[0].digest="sha256:"+new string('0',64);
+                Reject(()=>DownloadTest(release.assets[0],s.Root,payload),"Bad update checksum accepted");
+                Assert(!Directory.GetFiles(Path.GetDirectoryName(downloaded),"*.partial").Any(),"Partial update was not cleaned up");
+                results.Add("Update metadata: release version, trusted host, digest and package size");
                 Assert(loaded.Scale==2 && loaded.Resolution=="7680x4320" && !loaded.Vsync && loaded.FsrSharpness==50,"Video settings did not roundtrip");
                 loaded.Fps=120;Reject(()=>Services.Save(loaded,caps),"Old game build accepted an unsupported FPS target");
                 caps.flags["redbaron_fps"]=new Flag{allowed=Settings.FrameRates.Select(fps=>fps.ToString()).ToArray()};

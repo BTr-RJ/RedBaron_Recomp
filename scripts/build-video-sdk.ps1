@@ -32,14 +32,47 @@ New-Item -ItemType Directory -Path $source -Force | Out-Null
 # Work on an isolated copy. Never patch or remove anything in the original SDK.
 & robocopy $original $source /E /XD .git out build /XF *.bak /R:1 /W:1 /NJH /NJS /NFL /NDL
 if($LASTEXITCODE -ge 8) {throw 'Could not copy the SDK source.'}
+# Some Windows Git installations check out libmspack symlinks as small text
+# files. Materialize only the known in-tree links in this isolated copy.
+$mspackRoot=[IO.Path]::GetFullPath((Join-Path $source 'thirdparty/libmspack'))
+$mspackLinks=Join-Path $mspackRoot 'cabextract/mspack'
+if(Test-Path -LiteralPath $mspackLinks -PathType Container) {
+    foreach($file in Get-ChildItem -LiteralPath $mspackLinks -File) {
+        if($file.Length -gt 200 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)){continue}
+        $text=([IO.File]::ReadAllText($file.FullName)).Trim()
+        if($text -notmatch '^\.\./\.\./libmspack/mspack/[A-Za-z0-9_.-]+$'){continue}
+        $target=[IO.Path]::GetFullPath((Join-Path $file.DirectoryName $text))
+        if(!$target.StartsWith($mspackRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase) -or !(Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "Invalid libmspack source link: $($file.Name)"
+        }
+        Copy-Item -LiteralPath $target -Destination $file.FullName -Force
+    }
+}
 function Native([string]$Program,[string[]]$Arguments) {
-    & $Program @Arguments
-    if($LASTEXITCODE -ne 0) {throw "$Program failed with exit code $LASTEXITCODE. Work retained at $job"}
+    # Windows PowerShell 5 converts redirected native stderr to ErrorRecords,
+    # including nonfatal CMake warnings. Honor the process exit code instead.
+    $previous=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        & $Program @Arguments 2>&1 | ForEach-Object { $_.ToString() }
+        $code=$LASTEXITCODE
+    } finally {$ErrorActionPreference=$previous}
+    if($code -ne 0) {throw "$Program failed with exit code $code. Work retained at $job"}
 }
 $patch=Join-Path $project 'patches/rexglue-spatial-fsr-vsync.patch'
 Push-Location $source
 try {
     Native 'git' @('init','--quiet')
+    $codegenPatch=Join-Path $project 'patches/rexglue-codegen-repro.patch'
+    & git apply --check --quiet --ignore-space-change $codegenPatch
+    if($LASTEXITCODE -eq 0) {
+        Native 'git' @('apply','--ignore-space-change',$codegenPatch)
+    } else {
+        # Existing SDK checkouts may already contain all nine codegen changes.
+        & git apply --reverse --check --quiet --ignore-space-change $codegenPatch
+        if($LASTEXITCODE -ne 0){throw 'SDK codegen differs from the pinned base and cannot be patched safely.'}
+        Write-Output 'SDK codegen patch is already present.'
+    }
     Native 'git' @('apply','--check','--ignore-space-change',$patch)
     Native 'git' @('apply','--ignore-space-change',$patch)
     if($Fsr315) {

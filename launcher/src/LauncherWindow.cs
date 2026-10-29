@@ -31,6 +31,9 @@ namespace RedBaron {
         Binding capture;
         WindowLayout layout;
         OnlineSession online;
+        ReleaseAsset availableUpdate;
+        string updateFolder;
+        bool updateBusy, downloadingUpdate;
         bool connectingOnline=false, onlineGame=false, launchingGame=false;
         T Get<T>(string name) where T:FrameworkElement {return (T)window.FindName(name);}
         ComboBox Combo(string name) {return Get<ComboBox>(name);}
@@ -57,6 +60,7 @@ namespace RedBaron {
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
             layout=new WindowLayout(window,Button("ToggleFullscreen"));
+            Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+"Missing CMake, Ninja, Clang and Microsoft Build Tools can be downloaded during installation; Windows may request administrator approval. No game files are downloaded.";
             window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);layout.Center();};
             Button("ToggleFullscreen").Click+=(sender,e)=>layout.Toggle();
             Button("CloseLauncher").Click+=(sender,e)=>window.Close();
@@ -105,12 +109,16 @@ namespace RedBaron {
             Button("InstallDlc").Click+=async(sender,e)=>await InstallDlc();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
+            Button("CheckUpdates").Click+=async(sender,e)=>await CheckForUpdates();
+            Button("DownloadUpdate").Click+=async(sender,e)=>await DownloadUpdate();
+            Button("OpenUpdates").Click+=(sender,e)=>{if(updateFolder!=null)Process.Start("explorer.exe",Services.QuoteArgument(updateFolder));};
             Button("RestoreBindings").Click+=(sender,e)=>{settings.Players[playerIndex].Bindings=Actions.Defaults();ShowPlayer();Changed();};
             window.PreviewKeyDown+=CaptureKey;
             window.PreviewMouseDown+=CaptureMouse;
             window.Closing+=(sender,e)=>{
                 if(connectingOnline || onlineGame || launchingGame) {e.Cancel=true;Status("Wait for the game or room connection before closing the launcher.",true);return;}
                 if(installation!=null) {e.Cancel=true;Status("Wait for the installation to finish before closing.",true);return;}
+                if(downloadingUpdate) {e.Cancel=true;Status("Wait for the update download to finish before closing.",true);return;}
                 if(dirty && !args.Contains("--capture")) {
                     var result=MessageBox.Show(window,"Save changes before exiting?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
                     if(result==MessageBoxResult.Cancel || (result==MessageBoxResult.Yes && !Save())) e.Cancel=true;
@@ -120,6 +128,7 @@ namespace RedBaron {
             window.Loaded+=async(sender,e)=>{
                 await Refresh();
                 if(args.Contains("--capture")) await CaptureScreens();
+                else await CheckForUpdates();
             };
             loading=false;
         }
@@ -305,7 +314,7 @@ namespace RedBaron {
                     Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;
                 })),installation.Token);
                 string target=Path.GetFullPath(settings.Destination);
-                bool shortcut=settings.DesktopShortcut;string sdk=settings.Sdk;
+                bool shortcut=settings.DesktopShortcut;string sdk=Services.HasBundledSdk()?Path.Combine(target,"sdk_experimental"):settings.Sdk;
                 settings=Settings.Load(target);settings.Sdk=sdk;settings.DesktopShortcut=shortcut;
                 Json.Write(settings.FileName,settings);
                 if(shortcut) Services.CreateShortcut(settings,Path.Combine(target,"RedBaron_Launcher.exe"));
@@ -339,6 +348,33 @@ namespace RedBaron {
                     Button("Save").IsEnabled=caps.flags.Count>0;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);
                 }
         }
+        async Task CheckForUpdates() {
+            if(updateBusy)return;
+            updateBusy=true;Button("CheckUpdates").IsEnabled=false;Button("DownloadUpdate").IsEnabled=false;
+            Label("UpdateState").Text="Checking GitHub for a public release…";
+            try {
+                availableUpdate=await Updates.Check();
+                if(availableUpdate==null) {
+                    Label("UpdateState").Text="No newer public release is available.";
+                    Label("UpdateBadge").Visibility=Visibility.Collapsed;
+                } else {
+                    Label("UpdateState").Text="Available: "+availableUpdate.name+" ("+(availableUpdate.size/(1024*1024))+" MB).";
+                    Label("UpdateBadge").Visibility=Visibility.Visible;Button("DownloadUpdate").IsEnabled=true;
+                }
+            } catch(Exception error) {availableUpdate=null;Label("UpdateState").Text=error.Message;Label("UpdateBadge").Visibility=Visibility.Collapsed;}
+            finally {updateBusy=false;Button("CheckUpdates").IsEnabled=true;}
+        }
+        async Task DownloadUpdate() {
+            if(updateBusy || availableUpdate==null)return;
+            updateBusy=true;downloadingUpdate=true;Button("CheckUpdates").IsEnabled=false;Button("DownloadUpdate").IsEnabled=false;
+            Label("UpdateState").Text="Downloading and verifying the update…";
+            try {
+                string file=await Updates.Download(availableUpdate,settings.Root);
+                updateFolder=Path.GetDirectoryName(file);Button("OpenUpdates").IsEnabled=true;
+                Label("UpdateState").Text="Verified package downloaded: "+file;
+            } catch(Exception error){Label("UpdateState").Text=error.Message;}
+            finally {updateBusy=false;downloadingUpdate=false;Button("CheckUpdates").IsEnabled=true;Button("DownloadUpdate").IsEnabled=availableUpdate!=null;}
+        }
         async Task UseExisting() {
             if(dirty && MessageBox.Show(window,"Discard unsaved changes and switch installations?","RedBaron_Recomp",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;
             using(var dialog=new System.Windows.Forms.FolderBrowserDialog{Description="Select the folder containing game and build_cpp_release",SelectedPath=settings.Root}) {
@@ -354,9 +390,9 @@ namespace RedBaron {
             int index=Array.IndexOf(args,"--capture");
             if(index+1>=args.Length) {window.Close();return;}
             string folder=Path.GetFullPath(args[index+1]);Directory.CreateDirectory(folder);
-            for(int tab=0;tab<4;tab++) {
+            for(int tab=0;tab<5;tab++) {
                 Get<TabControl>("Tabs").SelectedIndex=tab;await Task.Delay(200);window.UpdateLayout();
-                SaveCapture(Path.Combine(folder,new[]{"install","video","controls","online"}[tab]+".png"));
+                SaveCapture(Path.Combine(folder,new[]{"install","video","controls","online","update"}[tab]+".png"));
                 if(tab==1) {
                     var item=(TabItem)Get<TabControl>("Tabs").Items[1];
                     ((ScrollViewer)item.Content).ScrollToEnd();await Task.Delay(100);window.UpdateLayout();

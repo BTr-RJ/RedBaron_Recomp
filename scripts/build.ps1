@@ -72,5 +72,16 @@ foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt'
     $dependency = Join-Path $SdkRoot ('bin/' + $name)
     if (Test-Path -LiteralPath $dependency) { Copy-Item -LiteralPath $dependency -Destination $BuildDirectory }
 }
-Invoke-CheckedNative 'python' @((Join-Path $PSScriptRoot 'build-network.py'), '--parallel', "$Parallel", '--stage', $BuildDirectory)
+$networkExe=Join-Path $SdkRoot 'bin/redbaron_net.exe'
+$networkDll=Join-Path $SdkRoot 'bin/datachannel.dll'
+if((Test-Path -LiteralPath $networkExe -PathType Leaf) -and (Test-Path -LiteralPath $networkDll -PathType Leaf)) {
+    Copy-Item -LiteralPath $networkExe,$networkDll -Destination $BuildDirectory -Force
+    $networkLicenses=Join-Path $SdkRoot 'licenses/network'
+    if(!(Test-Path -LiteralPath $networkLicenses -PathType Container)){throw 'Bundled online component licenses are missing.'}
+    $licenseDestination=Join-Path $BuildDirectory 'network-licenses'
+    New-Item -ItemType Directory -Path $licenseDestination -Force | Out-Null
+    Get-ChildItem -LiteralPath $networkLicenses -File | Copy-Item -Destination $licenseDestination -Force
+} else {
+    Invoke-CheckedNative 'python' @((Join-Path $PSScriptRoot 'build-network.py'), '--parallel', "$Parallel", '--stage', $BuildDirectory)
+}
 Write-Output (Join-Path $BuildDirectory 'snoopyflyingace.exe')

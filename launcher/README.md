@@ -19,6 +19,7 @@ may still compile at runtime and become available for preparation on later launc
 | Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS, experimental FSR 3.1.5/DLSS, FSR sharpness, FPS counter and HDR10 output; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
 | Online | Primary player name, experimental WebRTC room creation/joining and LAN host IPv4; public server not hosted yet; UPnP disabled |
+| Update | Check public GitHub releases and download the matching Windows ZIP after SHA-256 verification |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
 
 For downloadable content, open **Install**, select the folder containing your own
@@ -44,11 +45,16 @@ Windows-owned folder dialogs and external tool diagnostics may follow the instal
 
 ## Installation
 
-Provide an **already extracted folder** containing `default.xex`, `Config` and `Packages`, a compatible experimental SDK, and CMake, Ninja and Clang on PATH. STFS extraction and automatic tool installation are not included.
+Provide an **already extracted folder** containing `default.xex`, `Config` and `Packages`. Launcher builds made with the SDK bundle include the modified SDK and networking component. Missing CMake, Ninja and Clang are downloaded from pinned official releases; Microsoft C++ Build Tools and the Windows SDK are installed when missing, with Windows administrator approval. Base-game STFS extraction is not included.
 
-The Video tab requires the updated SDK patch. Build an isolated SDK installation with `scripts/build-video-sdk.ps1 -SdkSource <source> -Fsr315 -Dlss` for all current video features (omit `-Dlss` for AMD temporal only; omit both switches for the older spatial-only runtime), then select its output in Build tools. The local development SDK has already been updated. This launcher is not yet the completed official installer and has not been published in Releases.
+The Video tab requires the updated SDK patch. For launcher builds without a bundled SDK, build an isolated SDK installation with `scripts/build-video-sdk.ps1 -SdkSource <source> -Fsr315 -Dlss` for all current video features, then select it in Build tools. This launcher is not yet the completed official installer and has not been published in Releases.
 
-The launcher embeds authored port source/configuration files and the installer script. It does not embed the SDK, XEX, game assets, generated game C++ or saves. Code is generated locally, and runtime DLLs are copied from the SDK you provide. Installation rejects occupied destinations, linked source/destination paths and paths that overlap the source or SDK.
+The launcher embeds authored port source/configuration files, the installer and, when available at build time, an SDK bundle. It does not embed the XEX, game assets, generated game C++ or saves. Code is generated locally. Installation rejects occupied destinations, linked source/destination paths and paths that overlap the source or a separately selected SDK. A clean installation and launcher flow were exercised with tools already present. Missing CMake, Ninja and Python were tested in isolated paths; LLVM was downloaded and used to compile a Windows program. Installation of Microsoft Build Tools on a machine without them still needs verification.
+
+Update checks query public releases from the project repository. The downloader
+requires the official GitHub asset's SHA-256 and saves a verified ZIP in
+`launcher-data/updates`. Installing an update over an existing game build is not
+implemented yet. No public release exists at this stage.
 
 Logs are written to `launcher-data/install-<date>/install.log` under the source installation. The destination receives `.redbaron-install.json` with `installing`, `ready` or `failed` status. Cancellation stops the installer and its compiler processes; partial files remain for inspection. A retry requires an empty destination. Source files are not removed.
 

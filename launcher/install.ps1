@@ -4,7 +4,10 @@ param(
     [Parameter(Mandatory=$true)][string]$Destination,
     [Parameter(Mandatory=$true)][string]$Sdk,
     [Parameter(Mandatory=$true)][string]$SourceArchive,
-    [Parameter(Mandatory=$true)][string]$LauncherExe
+    [Parameter(Mandatory=$true)][string]$LauncherExe,
+    [string]$SdkArchive = '',
+    [string]$BootstrapScript = '',
+    [string]$LauncherConfig = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -35,9 +38,13 @@ function Read-BE32([byte[]]$Data,[int]$Offset) {
 
 $Source = Full-Path $Source
 $Destination = Full-Path $Destination
-$Sdk = Full-Path $Sdk
+$bundledSdk=!([string]::IsNullOrWhiteSpace($SdkArchive))
+if($bundledSdk) {
+    if(!(Test-Path -LiteralPath $SdkArchive -PathType Leaf)){throw 'The bundled SDK archive is missing.'}
+    $Sdk=Join-Path $Destination 'sdk_experimental'
+} else {$Sdk=Full-Path $Sdk}
 if ((Is-Within $Destination $Source) -or (Is-Within $Source $Destination) -or
-    (Is-Within $Destination $Sdk) -or (Is-Within $Sdk $Destination)) {
+    (!$bundledSdk -and ((Is-Within $Destination $Sdk) -or (Is-Within $Sdk $Destination)))) {
     throw 'Choose a destination folder separate from the source files and SDK.'
 }
 Assert-NoReparse $Source
@@ -60,9 +67,10 @@ for ($i=0; $i -lt $count; $i++) {
     }
 }
 if ($titleId -ne 0x584109B5) { throw ('Incompatible title: {0:X8}; expected 584109B5.' -f $titleId) }
-foreach ($tool in @('cmake','ninja','clang++')) { Get-Command $tool -ErrorAction Stop | Out-Null }
-foreach ($file in @('bin/rexglue.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','lib/cmake/rexglue/rexglueConfig.cmake')) {
-    if (!(Test-Path -LiteralPath (Join-Path $Sdk $file))) { throw "Incomplete SDK: $file" }
+if(!$bundledSdk) {
+    foreach ($file in @('bin/rexglue.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','lib/cmake/rexglue/rexglueConfig.cmake')) {
+        if (!(Test-Path -LiteralPath (Join-Path $Sdk $file))) { throw "Incomplete SDK: $file" }
+    }
 }
 
 # Enumerate before creating the destination; never follow source links.
@@ -77,7 +85,8 @@ while ($queue.Count) {
 }
 $bytes = ($files | Measure-Object Length -Sum).Sum
 $drive = New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($Destination))
-if ($drive.AvailableFreeSpace -lt $bytes + 4GB) { throw 'Not enough free space. Allow space for the game files plus 4 GB for compilation.' }
+$workingSpace=if($BootstrapScript -and !(Get-Command clang++ -ErrorAction SilentlyContinue)){10GB}else{4GB}
+if ($drive.AvailableFreeSpace -lt $bytes + $workingSpace) { throw 'Not enough free space. Allow room for the game, build files and the compiler download.' }
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 $marker = Join-Path $Destination '.redbaron-install.json'
 @{status='installing';titleId='584109B5';started=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
@@ -85,6 +94,19 @@ try {
     Write-Output 'Preparing port source files...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($SourceArchive,$Destination)
+    if($bundledSdk) {
+        Write-Output 'Unpacking the included ReXGlue SDK and online components...'
+        [IO.Compression.ZipFile]::ExtractToDirectory($SdkArchive,$Sdk)
+    }
+    foreach ($file in @('bin/rexglue.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','lib/cmake/rexglue/rexglueConfig.cmake')) {
+        if (!(Test-Path -LiteralPath (Join-Path $Sdk $file))) { throw "Incomplete SDK: $file" }
+    }
+    if($BootstrapScript) {
+        Write-Output 'Checking build tools...'
+        $needPython=!(Test-Path -LiteralPath (Join-Path $Sdk 'bin/redbaron_net.exe') -PathType Leaf) -or !(Test-Path -LiteralPath (Join-Path $Sdk 'bin/datachannel.dll') -PathType Leaf)
+        & $BootstrapScript -ToolRoot (Join-Path $Destination '.redbaron-tools') -RequirePython:$needPython
+    }
+    foreach ($tool in @('cmake','ninja','clang++')) { Get-Command $tool -ErrorAction Stop | Out-Null }
     Write-Output ('Copying {0} game files...' -f $files.Count)
     $index=0
     foreach ($file in $files) {
@@ -100,7 +122,9 @@ try {
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/snoopyflyingace.exe'))) { throw 'The build did not produce the game executable.' }
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/redbaron_probe.exe'))) { throw 'The hardware detector is missing after the build.' }
     Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $Destination 'RedBaron_Launcher.exe')
-    Copy-Item -LiteralPath ($LauncherExe+'.config') -Destination (Join-Path $Destination 'RedBaron_Launcher.exe.config')
+    if(!$LauncherConfig){$LauncherConfig=$LauncherExe+'.config'}
+    if(!(Test-Path -LiteralPath $LauncherConfig -PathType Leaf)){throw 'Launcher configuration resource is missing.'}
+    Copy-Item -LiteralPath $LauncherConfig -Destination (Join-Path $Destination 'RedBaron_Launcher.exe.config')
     @{status='ready';titleId='584109B5';completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
     Write-Output 'Installation complete.'
 } catch {

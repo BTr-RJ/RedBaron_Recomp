@@ -3,4 +3,4 @@ port/config/gamecontrollerdb.txt -text
 port/config/gamecontrollerdb.LICENSE.txt -text
 # Keep SDK patches usable independently of Windows checkout line endings.
 # Unified diffs encode a blank context line with a single space.
-*.patch text eol=lf whitespace=-blank-at-eol
+*.patch text eol=lf whitespace=-blank-at-eol,-blank-at-eof

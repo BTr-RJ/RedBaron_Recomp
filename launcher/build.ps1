@@ -1,11 +1,13 @@
 [CmdletBinding()]
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'out'))
+param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'out'), [string]$SdkRoot = '', [string]$SdkSourceRoot = '')
 $ErrorActionPreference = 'Stop'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $wpf = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/WPF'
 if (!(Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x compiler not found.' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if(!$SdkRoot){$SdkRoot=Join-Path $projectRoot 'sdk_experimental'}
+if(!$SdkSourceRoot){$SdkSourceRoot=Join-Path $projectRoot 'prioridade4_video/sdk_source'}
 $archive = Join-Path $OutputDirectory 'source.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
@@ -28,6 +30,49 @@ try {
         [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $projectRoot $name),$name) | Out-Null
     }
 } finally { $zip.Dispose() }
+$sdkArchive=Join-Path $OutputDirectory 'sdk.zip'
+if(Test-Path -LiteralPath $sdkArchive){Remove-Item -LiteralPath $sdkArchive}
+$sdkBundle=Test-Path -LiteralPath (Join-Path $SdkRoot 'bin/rexglue.exe') -PathType Leaf
+if($sdkBundle) {
+    $network=Join-Path $projectRoot 'network-work/build'
+    foreach($file in @('redbaron_net.exe','datachannel.dll','licenses/dependencies.json')) {
+        if(!(Test-Path -LiteralPath (Join-Path $network $file))){throw 'Build the online companion with scripts/build-network.py before bundling the SDK.'}
+    }
+    $zip=[IO.Compression.ZipFile]::Open($sdkArchive,[IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach($folder in @('bin','include','lib','share','licenses','cmake')) {
+            $base=Join-Path $SdkRoot $folder
+            if(!(Test-Path -LiteralPath $base -PathType Container)){continue}
+            foreach($file in Get-ChildItem -LiteralPath $base -Recurse -File) {
+                if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw "SDK bundle contains a link: $($file.FullName)"}
+                $name=$file.FullName.Substring(([IO.Path]::GetFullPath($SdkRoot)).TrimEnd('\').Length+1).Replace('\','/')
+                if($name -in @('bin/redbaron_net.exe','bin/datachannel.dll') -or $name.StartsWith('licenses/network/')){continue}
+                if($name -match '(?i)snoopy|(^|/)game/|\.(xex|xexp|pkg|bnk|wem|wmv|xpr)$'){throw "SDK bundle contains game data: $name"}
+                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,$name) | Out-Null
+            }
+        }
+        foreach($name in @('redbaron_net.exe','datachannel.dll')) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,(Join-Path $network $name),('bin/'+$name)) | Out-Null
+        }
+        foreach($file in Get-ChildItem -LiteralPath (Join-Path $network 'licenses') -File) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,('licenses/network/'+$file.Name)) | Out-Null
+        }
+        $sdkLicense=Join-Path $SdkSourceRoot 'LICENSE'
+        $thirdparty=Join-Path $SdkSourceRoot 'thirdparty'
+        if(!(Test-Path -LiteralPath $sdkLicense -PathType Leaf) -or !(Test-Path -LiteralPath $thirdparty -PathType Container)) {
+            throw 'Provide the matching SDK source tree to include its third-party license notices.'
+        }
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$sdkLicense,'licenses/ReXGlue-LICENSE.txt') | Out-Null
+        foreach($dependency in Get-ChildItem -LiteralPath $thirdparty -Directory) {
+            foreach($license in Get-ChildItem -LiteralPath $dependency.FullName -File | Where-Object { $_.Name -match '^(?i:LICENSE|COPYING|NOTICE)(\..*)?$' }) {
+                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$license.FullName,('licenses/sdk-thirdparty/'+$dependency.Name+'/'+$license.Name)) | Out-Null
+            }
+        }
+        $mspackLicense=Join-Path $thirdparty 'libmspack/libmspack/COPYING.LIB'
+        if(!(Test-Path -LiteralPath $mspackLicense -PathType Leaf)){throw 'libmspack license is missing from the SDK source.'}
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$mspackLicense,'licenses/sdk-thirdparty/libmspack/COPYING.LIB') | Out-Null
+    } finally {$zip.Dispose()}
+}
 $exe = Join-Path $OutputDirectory 'RedBaron_Launcher.exe'
 $iconPath = Join-Path $OutputDirectory 'RedBaron.ico'
 & (Join-Path $projectRoot 'scripts/make-icon.ps1') -Output $iconPath
@@ -40,7 +85,10 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'MainWindow.xaml') + ',MainWindow.xaml'),
     ('/resource:' + $archive + ',Source.zip'),
     ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'),
-    ('/resource:' + (Join-Path $PSScriptRoot 'install-dlc.ps1') + ',InstallDlc.ps1'))
+    ('/resource:' + (Join-Path $PSScriptRoot 'install-dlc.ps1') + ',InstallDlc.ps1'),
+    ('/resource:' + (Join-Path $PSScriptRoot 'bootstrap-tools.ps1') + ',BootstrapTools.ps1'),
+    ('/resource:' + (Join-Path $PSScriptRoot 'App.config') + ',App.config'))
+if($sdkBundle){$arguments+=('/resource:'+$sdkArchive+',Sdk.zip')}
 $arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }

@@ -20,6 +20,7 @@ def git(*args):
 
 
 def main():
+    public_check = "--public" in sys.argv[1:]
     commits = git("rev-list", "--all").decode("ascii").splitlines()
     if not commits:
         print("ERRO: nenhum commit para auditar.")
@@ -33,7 +34,7 @@ def main():
             path = raw.decode("utf-8", errors="surrogateescape")
             inspected.add(path)
             normalized = path.lower()
-            if (normalized.startswith(PREFIXES) or normalized in EXACT or
+            if ((public_check and normalized == "agents.md") or normalized.startswith(PREFIXES) or normalized in EXACT or
                     PurePosixPath(path).suffix.lower() in SUFFIXES):
                 violations.setdefault(path, commit[:12])
     if violations:

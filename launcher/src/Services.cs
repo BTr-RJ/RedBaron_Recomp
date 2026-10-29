@@ -26,6 +26,9 @@ namespace RedBaron {
         public bool Supports(string key,string value) { Flag flag; return flags.TryGetValue(key,out flag) && (flag.allowed==null || flag.allowed.Length==0 || flag.allowed.Contains(value)); }
     }
     public static class Services {
+        public static bool HasBundledSdk() {
+            using(var resource=Assembly.GetExecutingAssembly().GetManifestResourceStream("Sdk.zip"))return resource!=null;
+        }
         public static string LauncherExe { get { return Assembly.GetExecutingAssembly().Location; } }
         public static string FindRoot(string[] args) {
             int option=Array.IndexOf(args,"--root");
@@ -162,12 +165,20 @@ namespace RedBaron {
             Directory.CreateDirectory(job);
             string archive=Path.Combine(job,"source.zip"), script=Path.Combine(job,"install.ps1");
             ExtractResource("Source.zip",archive); ExtractResource("Install.ps1",script);
+            string appConfig=Path.Combine(job,"launcher.config");ExtractResource("App.config",appConfig);
+            string bootstrap=Path.Combine(job,"bootstrap-tools.ps1");ExtractResource("BootstrapTools.ps1",bootstrap);
+            string sdkArchive="";
+            using(var bundled=Assembly.GetExecutingAssembly().GetManifestResourceStream("Sdk.zip")) {
+                if(bundled!=null) {sdkArchive=Path.Combine(job,"sdk.zip");using(var output=File.Create(sdkArchive))bundled.CopyTo(output);}
+            }
             string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
             string logfile=Path.Combine(job,"install.log");
             object gate=new object();
             Action<string> record=line=>{lock(gate) File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
             record("Log: "+logfile);
-            int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe},s.Root,record,token);
+            var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe,"-LauncherConfig",appConfig,"-BootstrapScript",bootstrap};
+            if(sdkArchive.Length!=0){arguments.Add("-SdkArchive");arguments.Add(sdkArchive);}
+            int code=await RunAsync(powershell,arguments,s.Root,record,token);
             if(code!=0) throw new IOException("Installation failed. See the log for details; your source files were preserved.");
         }
         public static async Task InstallDlc(Settings s,string source,Action<string> log,CancellationToken token) {

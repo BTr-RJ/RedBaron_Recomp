@@ -12,7 +12,7 @@ Port nativo experimental de **Snoopy Flying Ace** para Windows x64, usando ReXGl
 - Backend SDL e base adicional de controles incluídos. O controle Microsoft foi reconhecido; outros modelos ainda exigem teste físico.
 - Roteamento opcional para separar teclado/mouse de controles por jogador. Perfis adicionais e partidas locais ainda dependem de implementação; veja [o diagnóstico de multiplayer](docs/MULTIPLAYER.md).
 
-O [launcher Windows](launcher/README.md) oferece **Install, Video, Controls e Online**, Save/Play e abertura direta opcional. Execute `launcher/out/RedBaron_Launcher.exe` após compilar com `launcher/build.ps1`. O instalador usa dados locais já extraídos e requer ferramentas/SDK instalados. Dois jogadores locais com bots e LAN experimental entre dois processos foram validados; quatro locais, Internet completa e rollback continuam pendentes. Som e Conquistas permanecem planejados. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
+O [launcher Windows](launcher/README.md) oferece **Install, Video, Controls, Online e Update**, Save/Play e abertura direta opcional. O instalador utiliza dados locais já extraídos; builds com SDK embutido preparam ferramentas ausentes. Oito instâncias online e dois jogadores locais com bots foram exercitados no mesmo computador; quatro locais, testes pela Internet e rollback continuam pendentes. Som e Conquistas permanecem planejados. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
 
 ## Conteúdo do repositório
 

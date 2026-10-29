@@ -8,6 +8,11 @@ da correção de codegen abaixo.
 
 `rexglue-snoopy-fallback-v2.patch` registra o diff atual de `src/codegen/builders/context.cpp` no SDK experimental utilizado.
 
+`rexglue-codegen-repro.patch` contém todas as nove alterações de codegen do SDK
+experimental sobre o commit indicado abaixo, incluindo o fallback acima. O script
+`build-video-sdk.ps1` aplica o conjunto automaticamente em uma cópia isolada ou
+confere que já está aplicado. Não aplique os dois patches de codegen juntos.
+
 - Commit base do SDK: `7236893039fac7e6ce8a21351a430933899f9320`.
 - Inclui resolução de destinos mesclados e fallback restrito aos três saltos cross-chunk verificados.
 - Preserva saltos locais e exige as condições de agrupamento e exceções do patch.
