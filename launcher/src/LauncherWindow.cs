@@ -31,7 +31,7 @@ namespace RedBaron {
         Binding capture;
         WindowLayout layout;
         OnlineSession online;
-        bool connectingOnline=false, onlineGame=false;
+        bool connectingOnline=false, onlineGame=false, launchingGame=false;
         T Get<T>(string name) where T:FrameworkElement {return (T)window.FindName(name);}
         ComboBox Combo(string name) {return Get<ComboBox>(name);}
         TextBox Text(string name) {return Get<TextBox>(name);}
@@ -109,7 +109,7 @@ namespace RedBaron {
             window.PreviewKeyDown+=CaptureKey;
             window.PreviewMouseDown+=CaptureMouse;
             window.Closing+=(sender,e)=>{
-                if(connectingOnline || onlineGame) {e.Cancel=true;Status("Close the online game or wait for the room connection before closing the launcher.",true);return;}
+                if(connectingOnline || onlineGame || launchingGame) {e.Cancel=true;Status("Wait for the game or room connection before closing the launcher.",true);return;}
                 if(installation!=null) {e.Cancel=true;Status("Wait for the installation to finish before closing.",true);return;}
                 if(dirty && !args.Contains("--capture")) {
                     var result=MessageBox.Show(window,"Save changes before exiting?","RedBaron_Recomp",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
@@ -194,14 +194,18 @@ namespace RedBaron {
         async void Play() {
             if(!Save()) return;
             try {
-                if(online==null) {Services.Play(settings).Dispose();window.Close();return;}
-                using(var game=Services.Play(settings,online.GameArguments())) {
+                launchingGame=true;Button("Play").IsEnabled=false;Status("Preparing cached shaders and starting the game…");
+                using(var game=Services.Play(settings,online==null?null:online.GameArguments())) {
+                    await Services.WaitForGameWindow(game);
+                    launchingGame=false;
+                    if(online==null) {window.Close();return;}
                     onlineGame=true;window.Hide();
                     try {await Task.Run(()=>game.WaitForExit());}
                     finally {onlineGame=false;window.Show();window.Activate();}
                 }
             }
             catch(Exception error) {Status(error.Message,true);}
+            finally {launchingGame=false;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);}
         }
         void OnlineControls(bool enabled) {
             foreach(var name in new[]{"CreateRoom","JoinRoom"})Button(name).IsEnabled=enabled;

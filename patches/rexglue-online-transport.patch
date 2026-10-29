@@ -140,6 +140,70 @@
      const auto owner = Read32(data + 16);
      auto profile = kernel->user_profile(owner);
      if (!profile) return X_ERROR_NO_SUCH_USER;
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -40,6 +40,7 @@
+ #include <rex/system/xthread.h>
+ #include <rex/ui/graphics_provider.h>
+ #include <rex/ui/keybinds.h>
++#include <rex/ui/window_sdl.h>
+ #include <rex/version.h>
+ 
+ #include <fmt/format.h>
+@@ -53,6 +54,7 @@
+                       "GPU emulation plugin to load at startup (e.g. 'xenos'); empty disables "
+                       "GPU emulation")
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DECLARE(bool, redbaron_prepare_shaders);
+ 
+ namespace rex {
+ 
+@@ -528,6 +530,12 @@
+       }
+     }
+ 
++    if (REXCVAR_GET(redbaron_prepare_shaders)) {
++      if (auto* sdl_window = dynamic_cast<ui::WindowSDL*>(window_.get())) {
++        sdl_window->ShowAfterShaderPreparation();
++        REXLOG_INFO("RedBaron cached shader preparation complete; showing game window");
++      }
++    }
+     OnPostLaunchModule(main_thread.get());
+     main_thread->Resume();
+ 
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -42,6 +42,10 @@
+ 
+ REXCVAR_DEFINE_BOOL(window_size_in_physical_pixels, false, "UI/Window",
+                     "Interpret startup window dimensions as physical pixels, independent of DPI")
++    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
++
++REXCVAR_DEFINE_BOOL(redbaron_prepare_shaders, false, "UI/Window",
++                    "Keep the game window hidden until cached shaders are prepared")
+     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ 
+ namespace rex::ui {
+@@ -188,7 +192,7 @@
+   // desired state so a reopened window comes back with the state it had.
+   ApplyTextInputActiveNow();
+   ApplyCursorVisibilityNow();
+-  SDL_ShowWindow(sdl_window_);
++  if (!REXCVAR_GET(redbaron_prepare_shaders)) SDL_ShowWindow(sdl_window_);
+ 
+   // Actualize state for the common Window code. Listener dispatch is handled
+   // by Window::Open after OpenImpl returns; these only record initial state.
+@@ -208,6 +212,10 @@
+ 
+ void WindowSDL::RequestCloseImpl() {
+   PerformClose();
++}
++
++void WindowSDL::ShowAfterShaderPreparation() {
++  if (sdl_window_) SDL_ShowWindow(sdl_window_);
+ }
+ 
+ void WindowSDL::PerformClose() {
 --- a/include/rex/system/xam/lan_lobby.h
 +++ b/include/rex/system/xam/lan_lobby.h
 @@ -15,8 +15,11 @@
@@ -154,3 +218,13 @@
  uint64_t LanUserId(uint32_t index);
  std::array<uint8_t, 36> LanXnAddress();
  bool LanPublish(LanRecord record);
+--- a/include/rex/ui/window_sdl.h
++++ b/include/rex/ui/window_sdl.h
+@@ -32,6 +32,7 @@
+   ~WindowSDL() override;
+ 
+   void* GetNativeWindowHandle() const override;
++  void ShowAfterShaderPreparation();
+   bool SetRelativeMouseMode(bool enable) override;
+   bool WarpMouseToCenter(int32_t& x_out, int32_t& y_out) override;
+ 

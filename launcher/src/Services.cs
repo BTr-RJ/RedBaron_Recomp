@@ -140,6 +140,16 @@ namespace RedBaron {
             var info=new ProcessStartInfo(s.Exe,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);
         }
+        public static async Task WaitForGameWindow(Process game) {
+            var deadline=DateTime.UtcNow.AddMinutes(3);
+            while(DateTime.UtcNow<deadline) {
+                game.Refresh();
+                if(game.HasExited)throw new IOException("The game closed during startup. Check the game log and installation.");
+                if(game.MainWindowHandle!=IntPtr.Zero)return;
+                await Task.Delay(100);
+            }
+            throw new IOException("The game is still starting. Wait for its window or close it before trying again.");
+        }
         static void ExtractResource(string name,string path) {
             using(var source=Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) {
                 if(source==null) throw new InvalidDataException("Missing installation resource: "+name);

@@ -57,6 +57,8 @@ class SnoopyflyingaceApp : public rex::ReXApp {
       REXCVAR_SET(redbaron_local_profiles, reserved == 2 ? 2 : 1);
     }
     rex::cvar::SetFlagByName("hide_cursor_fullscreen", "true");
+    if (!rex::cvar::HasNonDefaultValue("redbaron_prepare_shaders"))
+      rex::cvar::SetFlagByName("redbaron_prepare_shaders", "true");
     redbaron::ConfigureVideoTiming();
     redbaron::ConfigureLauncherInput(config);
     // Resolve mappings beside the EXE, independent of shortcut/terminal cwd.

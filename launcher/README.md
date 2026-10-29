@@ -8,6 +8,11 @@ Run `launcher/out/RedBaron_Launcher.exe`. In a development checkout, it finds th
 
 The desktop shortcut opens the launcher and respects **Show launcher next time**. Clear the checkbox and save to start the game directly next time. Hold **Shift while opening** or run `RedBaron_Launcher.exe --settings` to return to settings. Opening `snoopyflyingace.exe` directly still works and does not use this launcher preference.
 
+When starting the game, the launcher remains visible while the runtime prepares
+previously discovered shaders and pipelines. The game window opens after that work.
+A new installation has no complete cache: shaders first encountered in gameplay
+may still compile at runtime and become available for preparation on later launches.
+
 | Tab | Available features |
 |---|---|
 | Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut; select a folder with owned DLC packages to install compatible game content |
