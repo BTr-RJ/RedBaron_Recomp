@@ -1,5 +1,6 @@
 #include <WinSock2.h>
 #include <Windows.h>
+#include "transport.h"
 #include "socket_bridge.h"
 #include "directory.h"
 #include "session_publisher.h"

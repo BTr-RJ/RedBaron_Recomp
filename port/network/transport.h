@@ -8,23 +8,23 @@
 #include <mutex>
 #include <set>
 #include "signaling.h"
+#include "wire.h"
 
 namespace redbaron::net {
 using Json = nlohmann::json;
-using Bytes = std::vector<std::byte>;
 // All callbacks are marshalled onto Poll's owner thread. Socket code never runs
 // on libdatachannel threads, and neither library thread waits for the game.
-class Transport {
+class Transport : public Wire {
  public:
   explicit Transport(Json options);
-  ~Transport();
+  ~Transport() override;
   void Poll();
-  bool Send(uint16_t to, const Bytes& bytes, bool reliable);
-  bool Ready(uint16_t to) const;
-  size_t Buffered(uint16_t to) const;
+  bool Send(uint16_t to, const Bytes& bytes, bool reliable) override;
+  bool Ready(uint16_t to) const override;
+  size_t Buffered(uint16_t to) const override;
   void PublishSession(const std::string& record);
   void Stop();
-  uint16_t id() const { return id_; }
+  uint16_t id() const override { return id_; }
   bool admitted() const { return admitted_; }
   bool stopped() const { return stopped_; }
   std::function<void(const Json&)> status;

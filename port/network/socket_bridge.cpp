@@ -1,5 +1,6 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#include "transport.h"
 #include "socket_bridge.h"
 #include <algorithm>
 #include <array>
@@ -7,6 +8,8 @@
 #include <cstring>
 #include <stdexcept>
 #include <iostream>
+#include <map>
+#include <utility>
 
 namespace redbaron::net {
 namespace {
@@ -56,11 +59,11 @@ struct Stream {
 };
 }
 struct SocketBridge::Impl {
-  Transport& wire; uint8_t ns; uint32_t next_id=1; bool diagnostics;
+  Wire& wire; uint8_t ns; uint32_t next_id=1; bool diagnostics;
   std::map<uint64_t,Endpoint> endpoints;
   std::map<uint64_t,Stream> streams;
   std::map<std::pair<uint16_t,uint16_t>,Clock::time_point> udp_returns;
-  Impl(Transport& t,uint8_t n,bool log):wire(t),ns(n),diagnostics(log) {
+  Impl(Wire& t,uint8_t n,bool log):wire(t),ns(n),diagnostics(log) {
     if(n==0 || n==255) throw std::runtime_error("Invalid local network namespace");
     WSADATA data{}; if(WSAStartup(MAKEWORD(2,2),&data)) throw std::runtime_error("Winsock initialization failed");
   }
@@ -196,7 +199,7 @@ struct SocketBridge::Impl {
     std::erase_if(endpoints,[&](const auto& item){return !item.second.tcp && !UdpPort(item.second.port) && item.second.used<expiry;});
   }
 };
-SocketBridge::SocketBridge(Transport& t,uint8_t ns,bool diagnostics):impl_(std::make_unique<Impl>(t,ns,diagnostics)){}
+SocketBridge::SocketBridge(Wire& t,uint8_t ns,bool diagnostics):impl_(std::make_unique<Impl>(t,ns,diagnostics)){}
 SocketBridge::~SocketBridge()=default;
 void SocketBridge::Member(uint16_t id,bool present) {
   auto& s=*impl_;
