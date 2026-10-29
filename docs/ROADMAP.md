@@ -15,7 +15,7 @@ O Xbox Series do usuário é o controle de referência. A compatibilidade é amp
 3. **Multiplayer (prioridade atual):** perfis/saves separados, segundo jogador e transporte LAN experimental implementados. Próximos: dois PCs/controles físicos, quatro câmeras/jogadores locais, modos online restantes, reconexão, serviços de Internet e avaliação de rollback. Bots locais preservados e testados. Ver [estado e testes](MULTIPLAYER.md).
 4. **Vídeo (em validação):** FSR 1/CAS, VSync do monitor, resolução física até 8K, escala interna e filtros implementados. Validar missões em resoluções maiores; validar alvos de FPS nas demais missões, validar a correção da física e o pacing do VSync, refinar movimento de objetos/HUD dos previews FSR 3.1.5 e DLSS e validar HDR na TV. Ver [implementação e medições](VIDEO.md).
 5. **Launcher com instalador embutido:** SDK e transporte podem ser incluídos na compilação do launcher; ferramentas ausentes são preparadas de fontes oficiais. A instalação de jogo extraído passou em teste isolado; CMake, Ninja, Python e LLVM foram preparados em pastas isoladas. Verificar a instalação do Microsoft Build Tools em uma máquina limpa e fazer auditoria de redistribuição. Dois pacotes DLC de jogo foram instalados e montados em teste; validar o conteúdo em partida e estudar os itens de avatar. A aba Update consulta e baixa releases verificadas; aplicação sobre instalação existente ainda falta. Base-game STFS, Som e Conquistas permanecem pendentes.
-6. **Splash screens:** corrigir o pipeline 2D de apresentação das imagens de abertura.
+6. **Splash screens:** a sequência das imagens de abertura com falha é pulada por padrão, preservando o carregamento original. A correção do pipeline 2D permanece em investigação.
 
 ## Launcher: estado e evolução
 
@@ -35,4 +35,4 @@ O repositório poderá tornar-se público posteriormente, sem arquivos do jogo n
 
 Interface nativa Windows em WPF/.NET Framework 4.8. Quatro mapas de entrada não equivalem a quatro câmeras locais; a tela dividida atual foi validada com dois jogadores e quatro bots.
 
-O usuário autorizou empacotar e publicar o launcher em Releases quando o instalador estiver completo e validado. Essa condição ainda não foi atendida; nenhuma Release oficial foi publicada nesta etapa.
+O usuário definiu a primeira Release de testes como **0.10** e solicitou também ports Linux e Android com crossplay. Esses ports, a instalação completa e a validação online continuam pendentes. Nenhuma Release oficial foi publicada nesta etapa.

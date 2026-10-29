@@ -15,6 +15,10 @@ REXCVAR_DEFINE_BOOL(redbaron_show_fps, false, "Video",
                     "Show the in-game FPS counter")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+REXCVAR_DEFINE_BOOL(redbaron_skip_splash, true, "Video",
+                    "Skip the incorrectly rendered startup images")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+
 REXCVAR_DEFINE_UINT32(
     redbaron_fps, 0, "Video",
     "Engine frame-rate target; 0 preserves the original game setting")
@@ -24,6 +28,7 @@ REXCVAR_DEFINE_UINT32(
 namespace redbaron {
 namespace {
 PPCFunc *original_frame_interval = nullptr;
+PPCFunc *original_splash_update = nullptr;
 PPCFunc *original_display_tick = nullptr;
 std::atomic<uint64_t> game_frames{0};
 PPCFunc *original_world_tick = nullptr;
@@ -33,6 +38,23 @@ PPCFunc *original_set_timing = nullptr;
 rex::runtime::FunctionDispatcher *video_dispatcher = nullptr;
 std::atomic<double> world_delta{1.0 / 30.0};
 thread_local double physics_delta = 1.0 / 30.0;
+
+void SkipSplash(PPCContext &ctx, uint8_t *base) {
+  // The startup object's current image and image count are at these offsets.
+  // Keep the original loading and transition logic running.
+  const auto object = ctx.r3.u32;
+  const auto address = [base](uint32_t guest) {
+#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && REX_ARCH_ARM64)
+    return base + guest + (guest >= 0xE0000000u ? 0x1000u : 0u);
+#else
+    return base + guest;
+#endif
+  };
+  // Copy the value in guest byte order unchanged.
+  *reinterpret_cast<volatile uint32_t *>(address(object + 10120)) =
+      *reinterpret_cast<volatile uint32_t *>(address(object + 10124));
+  original_splash_update(ctx, base);
+}
 
 void DisplayTick(PPCContext &ctx, uint8_t *base) {
   original_display_tick(ctx, base);
@@ -171,6 +193,11 @@ void ConfigureVideoTiming() {
 void InstallVideoHooks(rex::Runtime &runtime) {
   const auto fps = REXCVAR_GET(redbaron_fps);
   auto *dispatcher = runtime.function_dispatcher();
+  if (REXCVAR_GET(redbaron_skip_splash)) {
+    original_splash_update = dispatcher->GetFunction(0x829AE1D8);
+    if (!original_splash_update || !dispatcher->SetFunction(0x829AE1D8, SkipSplash))
+      throw std::runtime_error("Could not skip the startup images.");
+  }
   if (REXCVAR_GET(redbaron_show_fps)) {
     original_display_tick = dispatcher->GetFunction(0x828D6548);
     if (!original_display_tick ||
