@@ -19,6 +19,8 @@ namespace RedBaron {
         public string inputError {get;set;}
         public bool hdrActive {get;set;}
         public int refreshHz {get;set;}
+        public int desktopWidth {get;set;}
+        public int desktopHeight {get;set;}
         public bool DlssAvailable(int adapter) { return gpus.Any(g=>g.dlss && (adapter<0 || g.index==adapter)); }
         public Capabilities() { flags=new Dictionary<string,Flag>(); devices=new List<Device>(); gpus=new List<Gpu>(); }
         public bool Supports(string key,string value) { Flag flag; return flags.TryGetValue(key,out flag) && (flag.allowed==null || flag.allowed.Length==0 || flag.allowed.Contains(value)); }
@@ -103,6 +105,8 @@ namespace RedBaron {
         public static void Save(Settings s,Capabilities caps) {
             s.Validate();
             if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before saving settings.");
+            if(s.LanEnabled && (!caps.flags.ContainsKey("redbaron_lan") || !caps.flags.ContainsKey("redbaron_lan_peer")))
+                throw new InvalidDataException("Update the game runtime to use experimental LAN play.");
             if(!caps.Supports("present_effect",s.Upscaling) || !caps.Supports("swap_post_effect",s.Antialiasing))
                 throw new InvalidDataException("The selected upscaling or antialiasing option is unavailable in this runtime. Refresh hardware detection.");
             if(!caps.flags.ContainsKey("present_vsync") || !caps.flags.ContainsKey("window_size_in_physical_pixels"))
@@ -114,6 +118,12 @@ namespace RedBaron {
             if((s.ShowFps && !caps.flags.ContainsKey("redbaron_show_fps")) || (s.Hdr && !caps.flags.ContainsKey("present_hdr")))
                 throw new InvalidDataException("Update the game runtime to use the FPS counter and HDR output.");
             if(!File.Exists(s.Exe)) { Json.Write(s.FileName,s); return; }
+            if(s.Upscaling=="dlss") {
+                if(!caps.Supports("present_fsr_quality_mode",s.DlssMode)) throw new InvalidDataException("Update the runtime to select DLSS quality modes.");
+                int width=s.Fullscreen?caps.desktopWidth:Int32.Parse(s.Resolution.Split('x')[0]);
+                int height=s.Fullscreen?caps.desktopHeight:Int32.Parse(s.Resolution.Split('x')[1]);
+                s.Scale=s.DlssRenderScale(width,height);
+            }
             string original=File.Exists(s.Toml)?File.ReadAllText(s.Toml):"";
             string updated=s.RuntimeText(original);
             string json=Json.Serializer.Serialize(s);

@@ -1,0 +1,74 @@
+--- a/src/ui/d3d12/d3d12_presenter.cpp
++++ b/src/ui/d3d12/d3d12_presenter.cpp
+@@ -24,6 +24,8 @@
+ #include <rex/ui/d3d12/d3d12_util.h>
+ #include <rex/ui/surface_win.h>
+ #include "hdr_output.h"
++
++REXCVAR_DEFINE_BOOL(redbaron_hdr_active, false, "Video", "Actual HDR10 swap-chain status (runtime managed)");
+ 
+ REXCVAR_DEFINE_BOOL(present_hdr, false, "UI/D3D12",
+                     "HDR10 output when Windows HDR is active; maps SDR content to 200 nit white")
+@@ -286,6 +288,7 @@
+   if (paint_context_.swap_chain && want_hdr != bool(hdr_output_)) {
+     paint_context_.DestroySwapChain();
+     hdr_output_.reset();
++    rex::cvar::SetFlagByName("redbaron_hdr_active", "false");
+   }
+ 
+   // ConnectOrReconnectPaintingToSurfaceFromUIThread may be called only for the
+@@ -441,10 +444,12 @@
+       hdr_blocked_ = true;
+       paint_context_.DestroySwapChain();
+       hdr_output_.reset();
++      rex::cvar::SetFlagByName("redbaron_hdr_active", "false");
+       return ConnectOrReconnectPaintingToSurfaceFromUIThread(
+           new_surface, new_surface_width, new_surface_height, false, is_vsync_implicit_out);
+     }
+     hdr_output_ = std::move(hdr);
++    rex::cvar::SetFlagByName("redbaron_hdr_active", "true");
+     REXLOG_INFO("HDR10 active: Rec.2020/PQ, SDR content mapped to 200 nit white");
+   }
+   is_vsync_implicit_out = REXCVAR_GET(present_vsync);
+@@ -454,6 +459,7 @@
+ void D3D12Presenter::DisconnectPaintingFromSurfaceFromUIThreadImpl() {
+   paint_context_.DestroySwapChain();
+   hdr_output_.reset();
++  rex::cvar::SetFlagByName("redbaron_hdr_active", "false");
+ }
+ 
+ bool D3D12Presenter::RefreshGuestOutputImpl(
+--- a/src/ui/d3d12/dlss.h
++++ b/src/ui/d3d12/dlss.h
+@@ -2,6 +2,7 @@
+ #include <nvsdk_ngx.h>
+ #include <nvsdk_ngx_helpers.h>
+ #include <rex/filesystem.h>
++#include <rex/cvar.h>
+ #include <rex/logging.h>
+ 
+ namespace rex::ui::d3d12 {
+@@ -56,6 +57,12 @@
+                                           : ratio < 2.4
+                                               ? NVSDK_NGX_PerfQuality_Value_MaxPerf
+                                               : NVSDK_NGX_PerfQuality_Value_UltraPerformance;
++      const auto mode = rex::cvar::GetFlagByName("present_fsr_quality_mode");
++      if (mode == "native_aa" || mode == "nativeaa") create.Feature.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_DLAA;
++      else if (mode == "quality") create.Feature.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_MaxQuality;
++      else if (mode == "balanced") create.Feature.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_Balanced;
++      else if (mode == "performance") create.Feature.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_MaxPerf;
++      else if (mode == "ultra_performance") create.Feature.InPerfQualityValue = NVSDK_NGX_PerfQuality_Value_UltraPerformance;
+       create.InFeatureCreateFlags = NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
+                                     NVSDK_NGX_DLSS_Feature_Flags_DepthInverted |
+                                     NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -78,7 +78,7 @@
+ REXCVAR_DEFINE_STRING(
+     present_fsr_quality_mode, "auto", "UI/Presenter",
+     "Temporal FSR quality mode: auto, nativeaa, quality, balanced, performance, ultra_performance")
+-    .allowed({"auto", "nativeaa", "quality", "balanced", "performance", "ultra_performance"})
++    .allowed({"auto", "nativeaa", "native_aa", "quality", "balanced", "performance", "ultra_performance"})
+     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ #else
+ REXCVAR_DEFINE_STRING(present_effect, "bilinear", "UI/Presenter", "Guest output effect: bilinear")

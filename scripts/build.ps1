@@ -28,6 +28,7 @@ foreach ($required in @(
     }
 }
 Get-Command cmake -ErrorAction Stop | Out-Null
+& (Join-Path $PSScriptRoot 'prepare-game.ps1') -GameRoot (Join-Path $projectRoot 'game')
 
 function Invoke-CheckedNative {
     param([string]$Program, [string[]]$Arguments)

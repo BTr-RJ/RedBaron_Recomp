@@ -11,6 +11,8 @@
 #include <rex/rex_app.h>
 #include <rex/system/flags.h>
 
+REXCVAR_DECLARE(uint32_t, redbaron_local_profiles);
+
 namespace redbaron {
 void ConfigureLocalInput(rex::input::InputSystem& input);
 void ConfigureLauncherInput(rex::RuntimeConfig& config);
@@ -45,6 +47,9 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    // Set the application's startup policy before KernelState constructs profiles.
+    REXCVAR_SET(redbaron_local_profiles, 4);
+    rex::cvar::SetFlagByName("hide_cursor_fullscreen", "true");
     redbaron::ConfigureVideoTiming();
     redbaron::ConfigureLauncherInput(config);
     // Resolve mappings beside the EXE, independent of shortcut/terminal cwd.
@@ -69,6 +74,11 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnPostSetup() override {
+    for (uint32_t user = 0; user < 4; ++user) {
+      const auto* profile = runtime()->kernel_state()->user_profile(user);
+      REXLOG_INFO("RedBaron local profile {}: {}", user + 1,
+                  profile ? profile->name() : "unavailable");
+    }
     // ReXApp constructs InputSystem for both SDL and XInput. Install the policy
     // before the guest starts polling, preserving the SDK drivers and merging.
     auto* input = static_cast<rex::input::InputSystem*>(runtime()->input_system());

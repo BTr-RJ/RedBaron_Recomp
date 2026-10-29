@@ -53,6 +53,9 @@ int main(int argc, char **argv) {
   IDXGIFactory1 *factory = nullptr;
   bool hdr_active = false;
   unsigned refresh = 0;
+  DEVMODEW desktop{};
+  desktop.dmSize = sizeof(desktop);
+  EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &desktop);
   using DlssProbe = bool (*)(IDXGIAdapter1 *);
   auto dlss_probe = reinterpret_cast<DlssProbe>(GetProcAddress(
       GetModuleHandleW(L"rexruntime.dll"), "RedBaronDlssAvailable"));
@@ -104,6 +107,8 @@ int main(int argc, char **argv) {
     factory->Release();
   }
   json << "],\"hdrActive\":" << (hdr_active ? "true" : "false")
+       << ",\"desktopWidth\":" << desktop.dmPelsWidth
+       << ",\"desktopHeight\":" << desktop.dmPelsHeight
        << ",\"refreshHz\":" << refresh << ",\"devices\":[";
   std::string input_error;
   if (SDL_Init(SDL_INIT_GAMEPAD)) {

@@ -13,12 +13,12 @@ The desktop shortcut opens the launcher and respects **Show launcher next time**
 | Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut |
 | Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS, experimental FSR 3.1.5/DLSS, FSR sharpness, FPS counter and HDR10 output; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
-| Online | Validated name saved for future integration; UPnP remains disabled while online play is postponed |
+| Online | Primary player name, experimental LAN enable switch and host IPv4; UPnP disabled |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
 
 ## Current limits
 
-The game recognizes only player 1. Configuring four input profiles does not enable four-player matches. One keyboard/mouse can share player 1 or be reserved for one profile at a time. Other profiles remain saved for later use. Actions follow the **FlyingAce** preset; in-game prompts still use Xbox labels. Mouse motion does not control the camera.
+Two local players now work in the native split-screen mode, including bots. Four input profiles do not enable four local cameras. For keyboard + controller, select Exclusive · player 2 and No controller/Automatic for Player 2, then press its Confirm binding to join in Enlist Now → Local Multiplayer. One keyboard/mouse serves one player. Profiles 3 and 4 remain reserved for future support. Actions follow the **FlyingAce** preset; in-game prompts still use Xbox labels. Mouse motion does not control the camera.
 
 The runtime includes spatial FSR 1/CAS and experimental **FSR 3.1.5 / NVIDIA DLSS Super Resolution**. Temporal reconstruction uses real depth/camera motion, but object velocities and separate HUD composition remain unfinished: moving objects/HUD can leave trails. No frame generation. DLSS requires an NGX-compatible NVIDIA GPU/driver, checked per adapter.
 
@@ -26,7 +26,7 @@ FPS targets reach 240, with values above 120 experimental. Physics now uses meas
 
 The launcher starts centered in the monitor's work area and fits smaller screens. Fullscreen/Restore (F11) and Close are available in its header; Esc exits fullscreen. These controls affect the launcher window. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
 
-Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name stays in launcher settings; it does not change the XAM profile or connect to Xbox Live. No router ports are opened. Sound and Achievements tabs remain planned.
+Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name changes the primary XAM display name while retaining the existing save folder. LAN is a separate experimental service, not an Xbox Live account. No router ports are opened automatically. Sound and Achievements tabs remain planned.
 
 Windows-owned folder dialogs and external tool diagnostics may follow the installed Windows/tool language. The launcher requests English UI resources for its process without changing Windows language settings.
 
@@ -68,3 +68,9 @@ Start-Process .\launcher\out\RedBaron_Launcher.exe -ArgumentList '--self-test','
 The launcher uses the Windows .NET Framework compiler and WPF assemblies. `redbaron_probe.exe` queries runtime/GPU flags and SDL devices without loading game files. The controller database and its license are included in installations.
 
 Validated: C++ build, routing/remapping tests, C# settings/validation/argument/shortcut tests, old-label migration without binding changes, a complete clean installation, rejection of overlapping/occupied/incompatible destinations, and Save/Play/direct launch/return via UIAutomation. The English UI was checked at normal and compact window sizes. The embedded source ZIP was checked against current sources and contains no game data. Local evidence lives in the ignored `prioridade5_launcher/` folder. Custom mappings, multiple physical controllers and higher resolutions still need gameplay testing.
+
+## DLSS modes and LAN preview
+
+DLSS exposes DLAA (native), Quality, Balanced, Performance and Ultra Performance. Saving selects the internal render scale automatically from the output size. At 4K the integer scales are 3, 2, 2, 2 and 1; Balanced/Performance can share render cost. The FPS counter shows the active HDR10/SDR output. The mouse cursor is hidden in game fullscreen.
+
+Enable experimental LAN on each installation and use Online → Player Match → Find Game with matching modes/options. An empty search creates a public match. Automatic discovery uses 255.255.255.255; joining clients can enter the host IPv4 instead. Two instances on one PC completed Team DogFight discovery, lobby and gameplay. Separate-PC testing is still pending. Internet matchmaking, invitations, ranked services and rollback are unavailable. See [setup, ports, tests and remaining work](../docs/MULTIPLAYER.md).

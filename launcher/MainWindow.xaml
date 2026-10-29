@@ -1,4 +1,4 @@
-﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RedBaron_Recomp" Width="1060" Height="820" MinWidth="920" MinHeight="680"
         WindowStartupLocation="CenterScreen" Background="#15191F" Foreground="#F1F3F7"
@@ -124,7 +124,7 @@
           <TextBlock Name="GpuSummary" Text="Detecting GPUs and available settings…" Style="{StaticResource Muted}" Margin="0,0,0,24"/>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <StackPanel><TextBlock Text="GPU" Margin="0,0,0,7"/><ComboBox Name="Gpu" AutomationProperties.Name="GPU"/><TextBlock Text="Window resolution" Margin="0,20,0,7"/><ComboBox Name="Resolution" AutomationProperties.Name="Resolution"/><TextBlock Text="Display mode" Margin="0,20,0,7"/><ComboBox Name="DisplayMode" AutomationProperties.Name="Display mode"/><TextBlock Text="Fullscreen uses the desktop resolution. The game keeps its 16:9 aspect ratio." Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/><TextBlock Text="Internal render resolution" Margin="0,20,0,7"/><ComboBox Name="RenderScale" AutomationProperties.Name="Internal render resolution"/><TextBlock Text="Higher scales improve 3D detail and use more GPU memory. Start at 1× or 2×." Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/><CheckBox Name="Vsync" Content="VSync · synchronize with the monitor" Margin="0,22,0,0"/><CheckBox Name="Hdr" Content="Use HDR output when available" Margin="0,16,0,0"/><TextBlock Name="HdrInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/></StackPanel>
-            <StackPanel Grid.Column="2"><TextBlock Text="Anisotropic filtering" Margin="0,0,0,7"/><ComboBox Name="Anisotropic" AutomationProperties.Name="Anisotropic filtering"/><TextBlock Text="Antialiasing" Margin="0,20,0,7"/><ComboBox Name="Antialiasing" AutomationProperties.Name="Antialiasing"/><TextBlock Text="Upscaling" Margin="0,20,0,7"/><ComboBox Name="Upscaling" AutomationProperties.Name="Upscaling"/><TextBlock Text="FSR sharpness" Margin="0,20,0,7"/><ComboBox Name="FsrSharpness" AutomationProperties.Name="FSR sharpness"/><TextBlock Name="UpscalingInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Text="Anisotropic filtering" Margin="0,0,0,7"/><ComboBox Name="Anisotropic" AutomationProperties.Name="Anisotropic filtering"/><TextBlock Text="Antialiasing" Margin="0,20,0,7"/><ComboBox Name="Antialiasing" AutomationProperties.Name="Antialiasing"/><TextBlock Text="Upscaling" Margin="0,20,0,7"/><ComboBox Name="Upscaling" AutomationProperties.Name="Upscaling"/><TextBlock Text="DLSS mode" Margin="0,20,0,7"/><ComboBox Name="DlssMode" AutomationProperties.Name="DLSS mode"/><TextBlock Name="DlssInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/><TextBlock Text="FSR sharpness" Margin="0,20,0,7"/><ComboBox Name="FsrSharpness" AutomationProperties.Name="FSR sharpness"/><TextBlock Name="UpscalingInfo" Style="{StaticResource Muted}" FontSize="12" Margin="0,7,0,0"/></StackPanel>
           </Grid>
           <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Margin="0,28,0,0" Padding="0,22,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="280"/></Grid.ColumnDefinitions>
             <StackPanel><TextBlock Text="FPS" FontWeight="SemiBold"/><TextBlock Text="Physics follows elapsed game time. For even VSync pacing, choose an FPS target that divides the display refresh rate. Targets above 120 FPS remain experimental." Style="{StaticResource Muted}" Margin="0,6,24,0"/><CheckBox Name="ShowFps" Content="Show in-game FPS counter" Margin="0,14,0,0"/></StackPanel>
@@ -135,7 +135,7 @@
       </TabItem>
       <TabItem Header="Controls">
         <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <StackPanel><TextBlock Text="Controllers and bindings" Style="{StaticResource Heading}"/><TextBlock Text="Actions follow the FlyingAce preset. You can configure four profiles; only player 1 is playable in this version." Style="{StaticResource Muted}" Margin="0,0,0,18"/></StackPanel>
+          <StackPanel><TextBlock Text="Controllers and bindings" Style="{StaticResource Heading}"/><TextBlock Text="Two local players are supported. For keyboard + controller, assign the keyboard to Exclusive · player 2, then press its A / Confirm binding to join. Profiles 3 and 4 are reserved for future support." Style="{StaticResource Muted}" Margin="0,0,0,18"/></StackPanel>
           <Grid Grid.Row="1" Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="12"/><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition Width="310"/><ColumnDefinition Width="100"/></Grid.ColumnDefinitions>
             <StackPanel><TextBlock Text="Profile" Margin="0,0,0,6"/><ComboBox Name="Player" AutomationProperties.Name="Player profile"/></StackPanel>
             <StackPanel Grid.Column="2"><TextBlock Text="Controller for this player" Margin="0,0,0,6"/><ComboBox Name="Device" AutomationProperties.Name="Player controller"/></StackPanel>
@@ -147,18 +147,23 @@
         </Grid>
       </TabItem>
       <TabItem Header="Online">
-        <StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Player identity" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Save your name for future online support. Multiplayer connectivity has been postponed." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
+          <TextBlock Text="Set your primary player name. Experimental LAN play uses the game's original Online menu and network gameplay." Style="{StaticResource Muted}" Margin="0,0,0,26"/>
           <TextBlock Text="Player name" Margin="0,0,0,7"/>
           <TextBox Name="PlayerName" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="Online player name"/>
           <TextBlock Name="NameValidation" Text="1–15 characters: A–Z, numbers, internal spaces, hyphens or underscores." Style="{StaticResource Muted}" Margin="0,8,0,26"/>
           <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Padding="0,24,0,0"><StackPanel>
             <TextBlock Text="Connection" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
+            <CheckBox Name="LanEnabled" Content="Enable experimental LAN play" Margin="0,0,0,14"/>
+            <TextBlock Text="Host IPv4 address" Margin="0,0,0,7"/>
+            <TextBox Name="LanPeer" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="LAN host IPv4 address"/>
+            <TextBlock Text="255.255.255.255 discovers hosts on your local network. If discovery fails, enter the host PC's IPv4 address on joining PCs." Style="{StaticResource Muted}" Margin="0,8,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
+            <TextBlock Text="In game: Online → Player Match → Find Game. Choose the same mode and options on each PC. An empty search creates a public match. Team DogFight has been tested between two local game instances; testing on separate PCs is still needed." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
             <CheckBox Content="Configure ports automatically with UPnP" IsEnabled="False"/>
-            <TextBlock Text="Unavailable until online play is implemented. This version does not open any router ports." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="640" HorizontalAlignment="Left"/>
+            <TextBlock Text="Internet matchmaking, invitations, ranked services and rollback are not available. No router ports are opened automatically. Use LAN play only on a trusted network." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
           </StackPanel></Border>
-        </StackPanel>
+        </StackPanel></ScrollViewer>
       </TabItem>
     </TabControl>
     <Border Grid.Row="2" Background="#1C2028" BorderBrush="#343E4C" BorderThickness="0,1,0,0" Padding="28,16,28,20">

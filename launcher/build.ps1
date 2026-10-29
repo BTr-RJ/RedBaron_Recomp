@@ -15,7 +15,7 @@ try {
     # Explicit source list: never embed generated code, game data or the SDK.
     $sourceFiles = @('port/CMakeLists.txt','port/snoopyflyingace_manifest.toml',
         'port/SnoopyFlyingAce_functions.toml','port/SnoopyFlyingAce_forced_landings.toml',
-        'port/generated/rexglue.cmake','scripts/build.ps1')
+        'port/generated/rexglue.cmake','scripts/build.ps1','scripts/prepare-game.ps1')
     foreach ($folder in @('port/src','port/config','port/tests')) {
         $sourceFiles += @(Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -File |
             Where-Object { $_.Extension -in @('.cpp','.h','.txt','.toml') } |

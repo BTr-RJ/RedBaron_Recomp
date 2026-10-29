@@ -1,0 +1,1903 @@
+--- a/include/rex/system/kernel_state.h
++++ b/include/rex/system/kernel_state.h
+@@ -199,7 +199,17 @@
+ 
+   xam::AppManager* app_manager() const { return app_manager_.get(); }
+   xam::ContentManager* content_manager() const { return content_manager_.get(); }
+-  xam::UserProfile* user_profile() const { return user_profile_.get(); }
++  xam::UserProfile* user_profile(uint32_t index = 0) const {
++    if (!index) return user_profile_.get();
++    return index < 4 ? local_profiles_[index - 1].get() : nullptr;
++  }
++  xam::UserProfile* user_profile_by_xuid(uint64_t xuid) const {
++    for (uint32_t i = 0; i < 4; ++i) {
++      auto* p = user_profile(i);
++      if (p && (p->xuid() == xuid || p->storage_xuid() == xuid)) return p;
++    }
++    return nullptr;
++  }
+ 
+   // Access must be guarded by the global critical region.
+   util::ObjectTable* object_table() { return &object_table_; }
+@@ -322,6 +332,8 @@
+       std::function<void()> pre_callback = nullptr, std::function<void()> post_callback = nullptr);
+ 
+   bool Save(stream::ByteStream* stream);
++  // Queue host work on the kernel-owned dispatcher; it cannot outlive the kernel.
++  void QueueHostTask(std::function<void()> task);
+   bool Restore(stream::ByteStream* stream);
+ 
+   void SetLoadedAchievements(std::vector<AchievementInfo> achievements);
+@@ -354,6 +366,7 @@
+   std::unique_ptr<xam::AppManager> app_manager_;
+   std::unique_ptr<xam::ContentManager> content_manager_;
+   std::unique_ptr<xam::UserProfile> user_profile_;
++  std::unique_ptr<xam::UserProfile> local_profiles_[3];
+ 
+   rex::thread::global_critical_region global_critical_region_;
+ 
+--- a/include/rex/system/xam/content_manager.h
++++ b/include/rex/system/xam/content_manager.h
+@@ -170,7 +170,7 @@
+   X_RESULT ReadContentHeaderFile(const std::string_view file_name, uint64_t xuid, uint32_t title_id,
+                                  XContentType content_type, XCONTENT_AGGREGATE_DATA& data) const;
+ 
+-  std::filesystem::path ResolveGameUserContentPath();
++  std::filesystem::path ResolveGameUserContentPath(uint32_t user_index = 0);
+   bool IsContentOpen(const XCONTENT_AGGREGATE_DATA& data) const;
+   void CloseOpenedFilesFromContent(const std::string_view root_name);
+ 
+--- /dev/null
++++ b/include/rex/system/xam/lan_lobby.h
+@@ -0,0 +1,35 @@
++#pragma once
++// RedBaron LAN session discovery. Gameplay packets remain owned by the title.
++#include <array>
++#include <cstdint>
++#include <map>
++#include <vector>
++
++namespace rex::system::xam {
++using LanSessionId = std::array<uint8_t, 8>;
++struct LanRecord {
++  uint32_t title = 0, owner = 0;
++  std::array<uint8_t, 60> info{};
++  uint32_t open_public = 0, open_private = 0, filled_public = 0, filled_private = 0;
++  std::map<uint32_t, uint32_t> contexts;
++  std::map<uint32_t, std::vector<uint8_t>> properties;
++};
++bool LanEnabled();
++uint32_t LanAddress();  // Host-order IPv4, suitable for a guest big-endian store.
++uint32_t LanBindAddress();
++uint64_t LanUserId(uint32_t index);
++std::array<uint8_t, 36> LanXnAddress();
++bool LanPublish(LanRecord record);
++void LanRemove(const LanSessionId& id);
++std::vector<LanRecord> LanSearch(uint32_t title);
++void LanSetContext(uint32_t user, uint32_t id, uint32_t value);
++void LanSetProperty(uint32_t user, uint32_t id, std::vector<uint8_t> value);
++struct LanQosTarget { uint32_t address = 0; LanSessionId id{}; };
++struct LanQosResult {
++  bool contacted = false, disabled = false;
++  uint16_t sent = 0, received = 0, minimum_ms = 0, median_ms = 0;
++  std::vector<uint8_t> data;
++};
++bool LanQosListen(const LanSessionId& id, uint32_t flags, std::vector<uint8_t> data);
++std::vector<LanQosResult> LanQosProbe(const std::vector<LanQosTarget>& targets, uint32_t probes);
++}
+--- a/include/rex/system/xam/user_profile.h
++++ b/include/rex/system/xam/user_profile.h
+@@ -214,11 +214,14 @@
+     }
+   };
+ 
+-  UserProfile();
+-
+-  uint64_t xuid() const { return xuid_; }
++  explicit UserProfile(uint32_t index = 0);
++
++  uint64_t xuid() const;
++  uint64_t storage_xuid() const { return xuid_; }
++  uint32_t index() const { return index_; }
++  void set_name(std::string name) { name_ = std::move(name); }
+   std::string name() const { return name_; }
+-  uint32_t signin_state() const { return 1; }
++  uint32_t signin_state() const;
+   uint32_t type() const { return 1 | 2; /* local | online profile? */ }
+ 
+   void set_kernel_state(KernelState* ks) { kernel_state_ = ks; }
+@@ -227,6 +230,7 @@
+   Setting* GetSetting(uint32_t setting_id);
+ 
+  private:
++  uint32_t index_ = 0;
+   uint64_t xuid_;
+   std::string name_;
+   std::vector<std::unique_ptr<Setting>> setting_list_;
+--- /dev/null
++++ b/include/rex/system/xsession.h
+@@ -0,0 +1,29 @@
++#pragma once
++// RedBaron: native XAM session state. ABI checked against Xenia Canary's
++// BSD-licensed xnet.h and xsession.cc; no title code or assets are embedded.
++#include <array>
++#include <map>
++#include <mutex>
++#include <optional>
++#include <rex/system/xobject.h>
++
++namespace rex::system {
++class XSession final : public XObject {
++ public:
++  static constexpr Type kObjectType = Type::Session;
++  explicit XSession(KernelState* kernel);
++  ~XSession() override;
++  X_STATUS Initialize();
++  static std::optional<X_HRESULT> Dispatch(KernelState* kernel, uint32_t message,
++                                         uint32_t buffer, uint32_t length);
++ private:
++  struct Member { uint64_t xuid; uint32_t index; bool private_slot; };
++  std::mutex mutex_;
++  bool created_ = false;
++  bool advertised_ = false;
++  uint32_t flags_ = 0, owner_ = 0, public_slots_ = 0, private_slots_ = 0, state_ = 0;
++  uint64_t nonce_ = 0;
++  std::array<uint8_t, 60> info_{};
++  std::map<uint64_t, Member> members_;
++};
++}
+--- a/src/kernel/xam/apps/xgi_app.cpp
++++ b/src/kernel/xam/apps/xgi_app.cpp
+@@ -12,6 +12,8 @@
+ #include <rex/kernel/xam/apps/xgi_app.h>
+ #include <rex/logging.h>
+ #include <rex/thread.h>
++#include <rex/system/xsession.h>
++#include <rex/system/xam/lan_lobby.h>
+ 
+ namespace rex {
+ namespace kernel {
+@@ -28,6 +30,10 @@
+ X_HRESULT XgiApp::DispatchMessageSync(uint32_t message, uint32_t buffer_ptr,
+                                       uint32_t buffer_length) {
+   // NOTE: buffer_length may be zero or valid.
++  if (auto result = XSession::Dispatch(kernel_state_, message, buffer_ptr, buffer_length)) {
++    REXKRNL_DEBUG("RedBaron session message {:X}: result={:08X}", message, uint32_t(*result));
++    return *result;
++  }
+   auto buffer = memory_->TranslateVirtual(buffer_ptr);
+   switch (message) {
+     case 0x000B0006: {
+@@ -40,6 +46,7 @@
+       uint32_t user_index = memory::load_and_swap<uint32_t>(buffer + 0);
+       uint32_t context_id = memory::load_and_swap<uint32_t>(buffer + 16);
+       uint32_t context_value = memory::load_and_swap<uint32_t>(buffer + 20);
++      LanSetContext(user_index, context_id, context_value);
+       REXKRNL_DEBUG("XGIUserSetContextEx({:08X}, {:08X}, {:08X})", user_index, context_id,
+                     context_value);
+       return X_E_SUCCESS;
+@@ -49,6 +56,13 @@
+       uint32_t property_id = memory::load_and_swap<uint32_t>(buffer + 16);
+       uint32_t value_size = memory::load_and_swap<uint32_t>(buffer + 20);
+       uint32_t value_ptr = memory::load_and_swap<uint32_t>(buffer + 24);
++      if (value_size > 1024 || (value_size && (!value_ptr ||
++          uint64_t(value_ptr) + value_size > 0x100000000ull ||
++          !memory_->LookupHeap(value_ptr) || !memory_->LookupHeap(value_ptr + value_size - 1))))
++        return X_ERROR_INVALID_PARAMETER;
++      std::vector<uint8_t> property(value_size);
++      if (value_size) std::memcpy(property.data(), memory_->TranslateVirtual(value_ptr), value_size);
++      LanSetProperty(user_index, property_id, std::move(property));
+       REXKRNL_DEBUG("XGIUserSetPropertyEx({:08X}, {:08X}, {}, {:08X})", user_index, property_id,
+                     value_size, value_ptr);
+       return X_E_SUCCESS;
+@@ -83,6 +97,11 @@
+         }
+         auto* base = memory_->TranslateVirtual(achievements_ptr);
+         for (uint32_t i = 0; i < achievement_count; ++i) {
++          const uint32_t user_index = memory::load_and_swap<uint32_t>(base + i * kEntryStride);
++          if (user_index != 0) {
++            REXKRNL_WARN("Secondary-profile achievements are not persisted yet (user {})", user_index);
++            continue;
++          }
+           uint32_t id = memory::load_and_swap<uint32_t>(base + i * kEntryStride + kEntryIdOffset);
+           REXKRNL_INFO("XGIUserWriteAchievements: id={} ({})", id, i);
+           kernel_state_->UnlockAchievement(id);
+--- a/src/kernel/xam/xam_content.cpp
++++ b/src/kernel/xam/xam_content.cpp
+@@ -76,7 +76,9 @@
+     *buffer_size_ptr = sizeof(XCONTENT_DATA) * items_per_enumerate;
+   }
+ 
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+ 
+   auto e = make_object<XStaticEnumerator<XCONTENT_DATA>>(REX_KERNEL_STATE(), items_per_enumerate);
+   auto result = e->Initialize(0xFF, 0xFE, 0x20005, 0x20007, 0);
+@@ -120,7 +122,9 @@
+                        u32 content_data_size, u32 flags, mapped_u32 disposition_ptr,
+                        mapped_u32 license_mask_ptr, u32 cache_size, u64 content_size,
+                        mapped_void overlapped_ptr) {
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+ 
+   XCONTENT_AGGREGATE_DATA content_data;
+   if (content_data_size == sizeof(XCONTENT_DATA)) {
+@@ -303,7 +307,9 @@
+                                mapped_void overlapped_ptr) {
+   auto result = X_ERROR_SUCCESS;
+ 
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+   XCONTENT_AGGREGATE_DATA content_data = *content_data_ptr.as<XCONTENT_DATA*>();
+ 
+   bool content_exists = REX_KERNEL_STATE()->content_manager()->ContentExists(xuid, content_data);
+@@ -338,7 +344,9 @@
+                                  mapped_void overlapped_ptr) {
+   assert_not_null(buffer_size_ptr);
+   uint32_t buffer_size = *buffer_size_ptr;
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+   XCONTENT_AGGREGATE_DATA content_data = *content_data_ptr.as<XCONTENT_DATA*>();
+ 
+   // Get thumbnail (if it exists).
+@@ -373,7 +381,9 @@
+ u32 XamContentSetThumbnail_entry(u32 user_index, mapped_void content_data_ptr,
+                                  mapped_void buffer_ptr, u32 buffer_size,
+                                  mapped_void overlapped_ptr) {
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+   XCONTENT_AGGREGATE_DATA content_data = *content_data_ptr.as<XCONTENT_DATA*>();
+ 
+   // Buffer is PNG data.
+@@ -391,7 +401,9 @@
+ 
+ u32 XamContentDelete_entry(u32 user_index, mapped_void content_data_ptr,
+                            mapped_void overlapped_ptr) {
+-  uint64_t xuid = REX_KERNEL_STATE()->user_profile()->xuid();
++  auto* profile = REX_KERNEL_STATE()->user_profile(user_index < 4 ? uint32_t(user_index) : 0);
++  if (!profile) return X_ERROR_NO_SUCH_USER;
++  uint64_t xuid = profile->xuid();
+   XCONTENT_AGGREGATE_DATA content_data = *content_data_ptr.as<XCONTENT_DATA*>();
+ 
+   auto result = REX_KERNEL_STATE()->content_manager()->DeleteContent(xuid, content_data);
+--- a/src/kernel/xam/xam_input.cpp
++++ b/src/kernel/xam/xam_input.cpp
+@@ -184,11 +184,13 @@
+ }
+ 
+ i32 XamUserGetDeviceContext_entry(u32 user_index, u32 unk, mapped_u32 out_ptr) {
++  if (!out_ptr) return X_E_INVALIDARG;
+   // Games check the result - usually with some masking.
+   // If this function fails they assume zero, so let's fail AND
+   // set zero just to be safe.
+   *out_ptr = 0;
+-  if (!user_index || (user_index & 0xFF) == 0xFF) {
++  if (REX_KERNEL_STATE()->user_profile(user_index) || (user_index & 0xFF) == 0xFF) {
++    *out_ptr = user_index;
+     return X_E_SUCCESS;
+   } else {
+     return X_E_DEVICE_NOT_CONNECTED;
+--- a/src/kernel/xam/xam_misc.cpp
++++ b/src/kernel/xam/xam_misc.cpp
+@@ -243,7 +243,6 @@
+ REX_EXPORT_STUB(__imp__XNetLogonGetServiceNetworkID);
+ REX_EXPORT_STUB(__imp__XNetLogonGetState);
+ REX_EXPORT_STUB(__imp__XNetLogonGetTicketOpt);
+-REX_EXPORT_STUB(__imp__XNetLogonGetTitleID);
+ REX_EXPORT_STUB(__imp__XNetLogonGetTitleVersion);
+ REX_EXPORT_STUB(__imp__XNetLogonGetUserPrivileges);
+ REX_EXPORT_STUB(__imp__XNetLogonInitOverrideInfo);
+--- a/src/kernel/xam/xam_net.cpp
++++ b/src/kernel/xam/xam_net.cpp
+@@ -13,6 +13,10 @@
+ #pragma GCC diagnostic ignored "-Wunused-parameter"
+ 
+ #include <cstring>
++#include <map>
++#include <mutex>
++#include <random>
++#include <rex/system/xam/lan_lobby.h>
+ 
+ #if REX_PLATFORM_MAC
+ #include <sys/select.h>
+@@ -49,6 +53,11 @@
+ namespace xam {
+ using namespace rex::system;
+ using namespace rex::system::xam;
++// Keep the title's well-known ports away from Windows system services. Both
++// ends of a RedBaron LAN connection apply the same reversible translation.
++uint16_t LanNativePort(uint16_t port) { return LanEnabled() && port >= 1000 && port <= 1002 ? port + 20000 : port; }
++uint16_t LanGuestPort(uint16_t port) { return LanEnabled() && port >= 21000 && port <= 21002 ? port - 20000 : port; }
++u32 XNetLogonGetTitleID_entry() { return REX_KERNEL_STATE()->title_id(); }
+ 
+ // https://github.com/G91/TitanOffLine/blob/1e692d9bb9dfac386d08045ccdadf4ae3227bb5e/xkelib/xam/xamNet.h
+ enum {
+@@ -133,7 +142,7 @@
+   switch (out_addr->sa_family) {
+     case AF_INET: {
+       auto in_addr = reinterpret_cast<sockaddr_in*>(out_addr);
+-      in_addr->sin_port = memory::load_and_swap<uint16_t>(ptr + 2);
++      std::memcpy(&in_addr->sin_port, ptr + 2, 2);
+       // Maybe? Depends on type.
+       in_addr->sin_addr.s_addr = *(uint32_t*)(ptr + 4);
+       break;
+@@ -152,9 +161,8 @@
+     case AF_INET: {
+       auto& in_addr = reinterpret_cast<const sockaddr_in&>(addr);
+       memory::store_and_swap<uint16_t>(ptr + 0, in_addr.sin_family);
+-      memory::store_and_swap<uint16_t>(ptr + 2, in_addr.sin_port);
+-      // Maybe? Depends on type.
+-      memory::store_and_swap<uint32_t>(ptr + 4, in_addr.sin_addr.s_addr);
++      std::memcpy(ptr + 2, &in_addr.sin_port, 2);
++      std::memcpy(ptr + 4, &in_addr.sin_addr.s_addr, 4);
+       break;
+     }
+     default:
+@@ -436,6 +444,12 @@
+ };
+ 
+ u32 NetDll_XNetGetTitleXnAddr_entry(u32 caller, ppc_ptr_t<XNADDR> addr_ptr) {
++  if (LanEnabled()) {
++    if (!addr_ptr) return XnAddrStatus::XNET_GET_XNADDR_NONE;
++    auto address = LanXnAddress(); std::memcpy(addr_ptr, address.data(), address.size());
++    return XnAddrStatus::XNET_GET_XNADDR_STATIC | XnAddrStatus::XNET_GET_XNADDR_ETHERNET |
++           XnAddrStatus::XNET_GET_XNADDR_ONLINE;
++  }
+   // Just return a loopback address atm.
+   addr_ptr->ina.s_addr = htonl(INADDR_LOOPBACK);
+   addr_ptr->inaOnline.s_addr = 0;
+@@ -466,28 +480,97 @@
+   return XnAddrStatus::XNET_GET_XNADDR_NONE;
+ }
+ 
+-u32 NetDll_XNetXnAddrToMachineId_entry(u32 caller, ppc_ptr_t<XNADDR> addr_ptr, mapped_u32 id_ptr) {
+-  // Tell the caller we're not signed in to live (non-zero ret)
+-  return 1;
++u32 NetDll_XNetXnAddrToMachineId_entry(u32 caller, ppc_ptr_t<XNADDR> addr_ptr, mapped_u64 id_ptr) {
++  // Derive the LAN machine identifier from the emulated Ethernet address.
++  if (!LanEnabled() || !addr_ptr || !id_ptr) return 10022;
++  uint64_t value = 0; for (auto byte : addr_ptr->abEnet) value = (value << 8) | byte;
++  memory::store_and_swap<uint64_t>(id_ptr.host_address(), value);
++  return 0;
+ }
+ 
+ void NetDll_XNetInAddrToString_entry(u32 caller, u32 in_addr, mapped_string string_out,
+                                      u32 string_size) {
+-  rex::string::copy_truncating(string_out, "666.666.666.666", string_size);
++  auto value = fmt::format("{}.{}.{}.{}", (in_addr >> 24) & 255,
++      (in_addr >> 16) & 255, (in_addr >> 8) & 255, in_addr & 255);
++  if (string_out) rex::string::copy_truncating(string_out, value.c_str(), string_size);
++}
++
++namespace {
++struct LanEndpoint { XNADDR address{}; std::array<uint8_t,8> session{}; };
++std::mutex lan_endpoint_mutex;
++std::map<uint32_t,LanEndpoint> lan_endpoints;
++std::map<std::array<uint8_t,8>,std::array<uint8_t,16>> lan_keys;
+ }
+ 
+ // This converts a XNet address to an IN_ADDR. The IN_ADDR is used for
+ // subsequent socket calls (like a handle to a XNet address)
+ u32 NetDll_XNetXnAddrToInAddr_entry(u32 caller, ppc_ptr_t<XNADDR> xn_addr, mapped_void xid,
+                                     mapped_void in_addr) {
+-  return 1;
++  if (!LanEnabled() || !xn_addr || !xid || !in_addr) return 10022;
++  uint32_t ip = ntohl(xn_addr->ina.s_addr);
++  if (!ip) ip = ntohl(xn_addr->inaOnline.s_addr);
++  if (!ip) return 10049;
++  LanEndpoint endpoint; endpoint.address = *xn_addr;
++  std::memcpy(endpoint.session.data(), xid, 8);
++  { std::lock_guard lock(lan_endpoint_mutex);
++    if (lan_endpoints.size() >= 64 && !lan_endpoints.contains(ip)) return 10055;
++    lan_endpoints[ip] = endpoint; }
++  memory::store_and_swap<uint32_t>(in_addr, ip);
++  REXKRNL_DEBUG("LAN endpoint mapped: {:08X}", ip);
++  return 0;
+ }
+ 
+ // Does the reverse of the above.
+ // FIXME: Arguments may not be correct.
+-u32 NetDll_XNetInAddrToXnAddr_entry(u32 caller, mapped_void in_addr, ppc_ptr_t<XNADDR> xn_addr,
++u32 NetDll_XNetInAddrToXnAddr_entry(u32 caller, u32 in_addr, ppc_ptr_t<XNADDR> xn_addr,
+                                     mapped_void xid) {
+-  return 1;
++  if (!LanEnabled() || !xn_addr) return 10022;
++  REXKRNL_DEBUG("LAN reverse endpoint lookup: {:08X}", in_addr);
++  std::lock_guard lock(lan_endpoint_mutex); auto found = lan_endpoints.find(in_addr);
++  if (found == lan_endpoints.end()) {
++    if (in_addr != 0x7F000001 && in_addr != LanAddress()) return 10049;
++    auto local = LanXnAddress(); std::memcpy(xn_addr, local.data(), local.size());
++    if (xid) { std::memset(xid, 0, 8); if (!lan_keys.empty()) std::memcpy(xid, lan_keys.begin()->first.data(), 8); }
++    return 0;
++  }
++  *xn_addr = found->second.address;
++  if (xid) std::memcpy(xid, found->second.session.data(), 8);
++  return 0;
++}
++
++u32 NetDll_XNetCreateKey_entry(u32 caller, mapped_void id, mapped_void key) {
++  if (!id || !key) return 10022;
++  std::random_device random;
++  auto* bytes = reinterpret_cast<uint8_t*>(id.host_address());
++  for (size_t i = 0; i < 8; ++i) bytes[i] = uint8_t(random());
++  bytes[0] &= 15;
++  bytes = reinterpret_cast<uint8_t*>(key.host_address());
++  for (size_t i = 0; i < 16; ++i) bytes[i] = uint8_t(random());
++  return 0;
++}
++u32 NetDll_XNetRegisterKey_entry(u32 caller, mapped_void id, mapped_void key) {
++  if (!id || !key) return 10022;
++  std::array<uint8_t,8> session; std::array<uint8_t,16> exchange;
++  std::memcpy(session.data(), id, 8); std::memcpy(exchange.data(), key, 16);
++  std::lock_guard lock(lan_endpoint_mutex);
++  if (lan_keys.size() >= 64 && !lan_keys.contains(session)) return 10055;
++  lan_keys[session] = exchange; return 0;
++}
++u32 NetDll_XNetUnregisterKey_entry(u32 caller, mapped_void id) {
++  if (!id) return 10022;
++  std::array<uint8_t,8> session; std::memcpy(session.data(), id, 8);
++  std::lock_guard lock(lan_endpoint_mutex); lan_keys.erase(session);
++  std::erase_if(lan_endpoints, [&](const auto& entry) { return entry.second.session == session; });
++  return 0;
++}
++u32 NetDll_XNetUnregisterInAddr_entry(u32 caller, u32 address) {
++  std::lock_guard lock(lan_endpoint_mutex); lan_endpoints.erase(address); return 0;
++}
++u32 NetDll_XNetConnect_entry(u32 caller, u32 address) {
++  std::lock_guard lock(lan_endpoint_mutex); return lan_endpoints.contains(address) ? 0 : 10049;
++}
++u32 NetDll_XNetGetConnectStatus_entry(u32 caller, u32 address) {
++  std::lock_guard lock(lan_endpoint_mutex); return lan_endpoints.contains(address) ? 2 : 0;
+ }
+ 
+ // https://www.google.com/patents/WO2008112448A1?cl=en
+@@ -506,7 +589,7 @@
+ };
+ 
+ u32 NetDll_XNetGetEthernetLinkStatus_entry(u32 caller) {
+-  return 0;
++  return LanEnabled() ? XEthernetStatus::XNET_ETHERNET_LINK_ACTIVE | XEthernetStatus::XNET_ETHERNET_LINK_FULL_DUPLEX : 0;
+ }
+ 
+ u32 NetDll_XNetDnsLookup_entry(u32 caller, mapped_string host, u32 event_handle, mapped_u32 pdns) {
+@@ -559,7 +642,56 @@
+ 
+ u32 NetDll_XNetQosListen_entry(u32 caller, mapped_void id, mapped_void data, u32 data_size, u32 r7,
+                                u32 flags) {
+-  return X_ERROR_FUNCTION_FAILED;
++  if (!LanEnabled()) return X_ERROR_FUNCTION_FAILED;
++  if (!id || data_size > 1024 || (data_size && !data)) return 10022;
++  LanSessionId session; std::memcpy(session.data(), id, 8);
++  std::vector<uint8_t> bytes(data_size); if (data_size) std::memcpy(bytes.data(), data, data_size);
++  const bool ready = LanQosListen(session, flags, std::move(bytes));
++  REXKRNL_DEBUG("LAN QoS listener: flags={} bytes={} ready={}", flags, data_size, ready);
++  return ready ? 0 : 10022;
++}
++
++u32 NetDll_XNetQosLookup_entry(u32 caller, u32 count, mapped_void addresses, mapped_void ids,
++    mapped_void keys, u32 gateways, mapped_void gateway_addresses, mapped_void services,
++    u32 probes, u32 bits_per_second, u32 flags, u32 event_handle, mapped_u32 result_ptr) {
++  if (!result_ptr) return 10014;
++  *result_ptr = 0;
++  if (!LanEnabled() || count > 32 || gateways || !count || !addresses || !ids || flags) return 10022;
++  auto* mem = REX_KERNEL_MEMORY(); std::vector<LanQosTarget> targets;
++  for (uint32_t i = 0; i < count; ++i) {
++    auto a = uint32_t(addresses.as_array<uint32_t>()[i]), id = uint32_t(ids.as_array<uint32_t>()[i]);
++    if (!a || !id || !mem->LookupHeap(a) || !mem->LookupHeap(a + 35) || !mem->LookupHeap(id) || !mem->LookupHeap(id + 7)) return 10014;
++    auto* address = mem->TranslateVirtual<XNADDR*>(a);
++    LanQosTarget target; target.address = ntohl(address->ina.s_addr);
++    if (!target.address) target.address = ntohl(address->inaOnline.s_addr);
++    std::memcpy(target.id.data(), mem->TranslateVirtual(id), 8); targets.push_back(target);
++  }
++  auto results = LanQosProbe(targets, probes);
++  uint32_t size = 8 + count * sizeof(XNQOSINFO);
++  for (const auto& result : results) size += uint32_t(result.data.size());
++  const auto allocation = mem->SystemHeapAlloc(size); if (!allocation) return 10055;
++  auto* out = mem->TranslateVirtual<XNQOS*>(allocation); std::memset(out, 0, size);
++  out->count = count; out->count_pending = 0;
++  uint32_t offset = 8 + count * sizeof(XNQOSINFO);
++  auto* info = reinterpret_cast<XNQOSINFO*>(reinterpret_cast<uint8_t*>(out) + 8);
++  for (uint32_t i = 0; i < count; ++i) {
++    const auto& result = results[i];
++    info[i].flags = 1 | (result.contacted ? 2 : 0) | (result.disabled ? 4 : 0) | (!result.data.empty() ? 8 : 0);
++    info[i].probes_xmit = result.sent; info[i].probes_recv = result.received;
++    info[i].rtt_min_in_msecs = result.minimum_ms; info[i].rtt_med_in_msecs = result.median_ms;
++    info[i].data_len = uint16_t(result.data.size());
++    if (!result.data.empty()) {
++      info[i].data_ptr = allocation + offset;
++      std::memcpy(reinterpret_cast<uint8_t*>(out) + offset, result.data.data(), result.data.size()); offset += uint32_t(result.data.size());
++    }
++    // RTT/data probes do not measure available bandwidth; leave it unknown (0).
++  }
++  *result_ptr = allocation;
++  if (event_handle) {
++    auto event = REX_KERNEL_OBJECTS()->LookupObject<XEvent>(event_handle);
++    if (event) event->Set(0, false);
++  }
++  return 0;
+ }
+ 
+ u32 NetDll_inet_addr_entry(mapped_string addr_ptr) {
+@@ -585,9 +717,8 @@
+                          XSocket::Protocol((uint32_t)protocol));
+ 
+   if (XFAILED(result)) {
++    uint32_t error = WSAGetLastError();
+     socket->Release();
+-
+-    uint32_t error = xboxkrnl::xeRtlNtStatusToDosError(result);
+     XThread::SetLastError(error);
+     return -1;
+   }
+@@ -639,7 +770,12 @@
+     return -1;
+   }
+ 
+-  X_STATUS status = socket->SetOption(level, optname, optval_ptr, optlen);
++  if (!optval_ptr) { XThread::SetLastError(10014); return ~0u; }
++  // Integer options are guest-endian, unlike sockaddr's network-order bytes.
++  uint32_t integer = optlen == 4 ? memory::load_and_swap<uint32_t>(optval_ptr) : 0;
++  X_STATUS status = socket->SetOption(level, optname, optlen == 4 ? &integer : optval_ptr.host_address(), optlen);
++  if (LanEnabled()) REXKRNL_DEBUG("LAN setsockopt: level={:X} option={:X} value={} status={:X}", level, optname, integer, status);
++  if (XFAILED(status)) XThread::SetLastError(WSAGetLastError());
+   return XSUCCEEDED(status) ? 0 : -1;
+ }
+ 
+@@ -651,13 +787,14 @@
+     return -1;
+   }
+ 
+-  X_STATUS status = socket->IOControl(cmd, arg_ptr);
++  if (!arg_ptr) { XThread::SetLastError(10014); return ~0u; }
++  uint32_t argument = memory::load_and_swap<uint32_t>(arg_ptr);
++  X_STATUS status = socket->IOControl(cmd, reinterpret_cast<uint8_t*>(&argument));
+   if (XFAILED(status)) {
+-    XThread::SetLastError(xboxkrnl::xeRtlNtStatusToDosError(status));
+-    return -1;
+-  }
+-
+-  // TODO
++    XThread::SetLastError(WSAGetLastError());
++    return -1;
++  }
++  memory::store_and_swap<uint32_t>(arg_ptr, argument);
+   return 0;
+ }
+ 
+@@ -670,12 +807,35 @@
+   }
+ 
+   N_XSOCKADDR_IN native_name(name);
++  if (LanEnabled() && !uint32_t(native_name.sin_addr)) native_name.sin_addr = LanBindAddress();
++  native_name.sin_port = LanNativePort(native_name.sin_port);
+   X_STATUS status = socket->Bind(&native_name, namelen);
++  if (LanEnabled()) REXKRNL_DEBUG("LAN bind: port={} status={:X}", uint16_t(native_name.sin_port), status);
+   if (XFAILED(status)) {
+-    XThread::SetLastError(xboxkrnl::xeRtlNtStatusToDosError(status));
+-    return -1;
+-  }
+-
++    const auto error = WSAGetLastError(); XThread::SetLastError(error);
++    if (LanEnabled()) REXKRNL_WARN("LAN socket bind failed: port={}, error={}", uint16_t(native_name.sin_port), error);
++    return -1;
++  }
++
++  return 0;
++}
++
++u32 NetDll_getsockname_entry(u32 caller, u32 socket_handle, ppc_ptr_t<XSOCKADDR_IN> name, mapped_u32 length) {
++  auto socket = REX_KERNEL_OBJECTS()->LookupObject<XSocket>(socket_handle);
++  if (!socket) { XThread::SetLastError(10038); return ~0u; }
++  if (!name || !length || *length < 16) { XThread::SetLastError(10014); return ~0u; }
++  sockaddr_in address{};
++#if REX_PLATFORM_WIN32
++  int size = sizeof(address);
++#else
++  socklen_t size = sizeof(address);
++#endif
++  if (getsockname(socket->native_handle(), reinterpret_cast<sockaddr*>(&address), &size)) {
++    XThread::SetLastError(WSAGetLastError()); return ~0u;
++  }
++  name->sin_family = address.sin_family; name->sin_port = LanGuestPort(ntohs(address.sin_port));
++  name->sin_addr = ntohl(address.sin_addr.s_addr); std::memset(name->x_sin_zero, 0, 8); *length = 16;
++  if (LanEnabled()) REXKRNL_DEBUG("LAN getsockname: address={:08X} port={}", uint32_t(name->sin_addr), uint16_t(name->sin_port));
+   return 0;
+ }
+ 
+@@ -688,9 +848,22 @@
+   }
+ 
+   N_XSOCKADDR native_name(name);
++  if (LanEnabled() && native_name.address_family == AF_INET) {
++    auto* address = reinterpret_cast<N_XSOCKADDR_IN*>(&native_name);
++    address->sin_port = LanNativePort(address->sin_port);
++    if (uint32_t(address->sin_addr) == 0x7F000001 && LanBindAddress()) address->sin_addr = LanBindAddress();
++    if (LanBindAddress()) {
++      sockaddr_in current{}; int length = sizeof(current);
++      if (getsockname(socket->native_handle(), reinterpret_cast<sockaddr*>(&current), &length) != 0 || !current.sin_port) {
++        N_XSOCKADDR_IN local{}; local.sin_family = AF_INET; local.sin_addr = LanBindAddress(); local.sin_port = 0;
++        if (XFAILED(socket->Bind(&local, sizeof(local)))) { XThread::SetLastError(WSAGetLastError()); return ~0u; }
++      }
++    }
++  }
+   X_STATUS status = socket->Connect(&native_name, namelen);
+   if (XFAILED(status)) {
+-    XThread::SetLastError(xboxkrnl::xeRtlNtStatusToDosError(status));
++    const auto error = WSAGetLastError(); XThread::SetLastError(error);
++    if (LanEnabled()) REXKRNL_DEBUG("LAN connect pending/failed: {}", error);
+     return -1;
+   }
+ 
+@@ -707,7 +880,7 @@
+ 
+   X_STATUS status = socket->Listen(backlog);
+   if (XFAILED(status)) {
+-    XThread::SetLastError(xboxkrnl::xeRtlNtStatusToDosError(status));
++    XThread::SetLastError(WSAGetLastError());
+     return -1;
+   }
+ 
+@@ -716,7 +889,8 @@
+ 
+ u32 NetDll_accept_entry(u32 caller, u32 socket_handle, ppc_ptr_t<XSOCKADDR> addr_ptr,
+                         mapped_u32 addrlen_ptr) {
+-  if (!addr_ptr) {
++  if (LanEnabled()) REXKRNL_DEBUG("LAN accept request: address={} length={}", bool(addr_ptr), addrlen_ptr ? uint32_t(*addrlen_ptr) : 0);
++  if (addr_ptr && (!addrlen_ptr || *addrlen_ptr < 16)) {
+     // WSAEFAULT
+     XThread::SetLastError(0x271E);
+     return -1;
+@@ -729,16 +903,23 @@
+     return -1;
+   }
+ 
+-  N_XSOCKADDR native_addr(addr_ptr);
+-  int native_len = *addrlen_ptr;
++  N_XSOCKADDR native_addr{};
++  int native_len = sizeof(native_addr);
+   auto new_socket = socket->Accept(&native_addr, &native_len);
+   if (new_socket) {
+-    addr_ptr->address_family = native_addr.address_family;
+-    std::memcpy(addr_ptr->sa_data, native_addr.sa_data, *addrlen_ptr - 2);
+-    *addrlen_ptr = native_len;
++    if (LanEnabled()) REXKRNL_DEBUG("LAN TCP accepted: {:08X}", new_socket->handle());
++    if (addr_ptr) {
++      auto* address = reinterpret_cast<N_XSOCKADDR_IN*>(&native_addr);
++      address->sin_port = LanGuestPort(address->sin_port);
++      if (LanEnabled() && LanBindAddress() && uint32_t(address->sin_addr) == LanBindAddress()) address->sin_addr = 0x7F000001;
++      addr_ptr->address_family = native_addr.address_family;
++      std::memcpy(addr_ptr->sa_data, native_addr.sa_data, sizeof(addr_ptr->sa_data));
++      *addrlen_ptr = native_len;
++    }
+ 
+     return new_socket->handle();
+   } else {
++    XThread::SetLastError(WSAGetLastError());
+     return -1;
+   }
+ }
+@@ -827,6 +1008,7 @@
+   }
+   int ret = select(nfds, readfds ? &native_readfds : nullptr, writefds ? &native_writefds : nullptr,
+                    exceptfds ? &native_exceptfds : nullptr, timeout_in);
++  if (ret < 0) { auto error=WSAGetLastError(); XThread::SetLastError(error); if (LanEnabled()) REXKRNL_WARN("LAN SELECT failed {}", error); return ret; }
+   if (readfds) {
+     host_readfds.UpdateFrom(&native_readfds);
+     host_readfds.Store(readfds);
+@@ -852,7 +1034,10 @@
+     return -1;
+   }
+ 
+-  return socket->Recv(buf_ptr, buf_len, flags);
++  int result = socket->Recv(buf_ptr, buf_len, flags);
++  if (result < 0) XThread::SetLastError(WSAGetLastError());
++  if (LanEnabled() && result != -1) REXKRNL_DEBUG("LAN TCP receive: socket={:08X} bytes={}", socket_handle, result);
++  return result;
+ }
+ 
+ u32 NetDll_recvfrom_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len,
+@@ -864,7 +1049,7 @@
+     return -1;
+   }
+ 
+-  N_XSOCKADDR_IN native_from;
++  N_XSOCKADDR_IN native_from{};
+   if (from_ptr) {
+     native_from = *from_ptr;
+   }
+@@ -872,13 +1057,13 @@
+   int ret =
+       socket->RecvFrom(buf_ptr, buf_len, flags, &native_from, fromlen_ptr ? &native_fromlen : 0);
+ 
+-  if (from_ptr) {
++  if (ret >= 0 && from_ptr) {
+     from_ptr->sin_family = native_from.sin_family;
+-    from_ptr->sin_port = native_from.sin_port;
+-    from_ptr->sin_addr = native_from.sin_addr;
++    from_ptr->sin_port = LanGuestPort(native_from.sin_port);
++    from_ptr->sin_addr = LanEnabled() && LanBindAddress() && uint32_t(native_from.sin_addr) == LanBindAddress() ? 0x7F000001 : uint32_t(native_from.sin_addr);
+     std::memset(from_ptr->x_sin_zero, 0, sizeof(from_ptr->x_sin_zero));
+   }
+-  if (fromlen_ptr) {
++  if (ret >= 0 && fromlen_ptr) {
+     *fromlen_ptr = native_fromlen;
+   }
+ 
+@@ -892,6 +1077,8 @@
+ #endif
+   }
+ 
++  if (LanEnabled() && ret > 0) REXKRNL_DEBUG("LAN UDP receive {:08X} from {:08X}:{} bytes={}", socket_handle, uint32_t(native_from.sin_addr), uint16_t(native_from.sin_port), ret);
++
+   return ret;
+ }
+ 
+@@ -903,7 +1090,10 @@
+     return -1;
+   }
+ 
+-  return socket->Send(buf_ptr, buf_len, flags);
++  int result = socket->Send(buf_ptr, buf_len, flags);
++  if (result < 0) XThread::SetLastError(WSAGetLastError());
++  if (LanEnabled()) REXKRNL_DEBUG("LAN TCP send: socket={:08X} bytes={}", socket_handle, result);
++  return result;
+ }
+ 
+ u32 NetDll_sendto_entry(u32 caller, u32 socket_handle, mapped_void buf_ptr, u32 buf_len, u32 flags,
+@@ -915,8 +1105,15 @@
+     return -1;
+   }
+ 
+-  N_XSOCKADDR_IN native_to(to_ptr);
+-  return socket->SendTo(buf_ptr, buf_len, flags, &native_to, to_len);
++  N_XSOCKADDR_IN native_to{}; if (to_ptr) native_to = *to_ptr;
++  if (to_ptr) {
++    native_to.sin_port = LanNativePort(native_to.sin_port);
++    if (LanEnabled() && LanBindAddress() && uint32_t(native_to.sin_addr) == 0x7F000001) native_to.sin_addr = LanBindAddress();
++  }
++  int result = socket->SendTo(buf_ptr, buf_len, flags, to_ptr ? &native_to : nullptr, to_len);
++  if (LanEnabled()) REXKRNL_DEBUG("LAN UDP send {:08X} to {:08X}:{} bytes={}", socket_handle, uint32_t(native_to.sin_addr), uint16_t(native_to.sin_port), result);
++  if (result < 0) XThread::SetLastError(WSAGetLastError());
++  return result;
+ }
+ 
+ u32 NetDll___WSAFDIsSet_entry(u32 socket_handle, ppc_ptr_t<x_fd_set> fd_set) {
+@@ -938,6 +1135,7 @@
+ }  // namespace rex
+ 
+ REX_EXPORT(__imp__NetDll_XNetStartup, rex::kernel::xam::NetDll_XNetStartup_entry)
++REX_EXPORT(__imp__XNetLogonGetTitleID, rex::kernel::xam::XNetLogonGetTitleID_entry)
+ REX_EXPORT(__imp__NetDll_XNetCleanup, rex::kernel::xam::NetDll_XNetCleanup_entry)
+ REX_EXPORT(__imp__NetDll_XNetGetOpt, rex::kernel::xam::NetDll_XNetGetOpt_entry)
+ REX_EXPORT(__imp__NetDll_XNetRandom, rex::kernel::xam::NetDll_XNetRandom_entry)
+@@ -1030,25 +1228,25 @@
+ REX_EXPORT_STUB(__imp__NetDll_XHttpShutdown);
+ REX_EXPORT_STUB(__imp__NetDll_XHttpStartup);
+ REX_EXPORT_STUB(__imp__NetDll_XHttpWriteData);
+-REX_EXPORT_STUB(__imp__NetDll_XNetConnect);
+-REX_EXPORT_STUB(__imp__NetDll_XNetCreateKey);
++REX_EXPORT(__imp__NetDll_XNetConnect, rex::kernel::xam::NetDll_XNetConnect_entry)
++REX_EXPORT(__imp__NetDll_XNetCreateKey, rex::kernel::xam::NetDll_XNetCreateKey_entry)
+ REX_EXPORT_STUB(__imp__NetDll_XNetDnsReverseLookup);
+ REX_EXPORT_STUB(__imp__NetDll_XNetDnsReverseRelease);
+ REX_EXPORT_STUB(__imp__NetDll_XNetGetBroadcastVersionStatus);
+-REX_EXPORT_STUB(__imp__NetDll_XNetGetConnectStatus);
++REX_EXPORT(__imp__NetDll_XNetGetConnectStatus, rex::kernel::xam::NetDll_XNetGetConnectStatus_entry)
+ REX_EXPORT_STUB(__imp__NetDll_XNetGetSystemLinkPort);
+ REX_EXPORT_STUB(__imp__NetDll_XNetGetXnAddrPlatform);
+ REX_EXPORT_STUB(__imp__NetDll_XNetInAddrToServer);
+ REX_EXPORT_STUB(__imp__NetDll_XNetQosGetListenStats);
+-REX_EXPORT_STUB(__imp__NetDll_XNetQosLookup);
+-REX_EXPORT_STUB(__imp__NetDll_XNetRegisterKey);
++REX_EXPORT(__imp__NetDll_XNetQosLookup, rex::kernel::xam::NetDll_XNetQosLookup_entry)
++REX_EXPORT(__imp__NetDll_XNetRegisterKey, rex::kernel::xam::NetDll_XNetRegisterKey_entry)
+ REX_EXPORT_STUB(__imp__NetDll_XNetReplaceKey);
+ REX_EXPORT_STUB(__imp__NetDll_XNetServerToInAddr);
+ REX_EXPORT_STUB(__imp__NetDll_XNetSetOpt);
+ REX_EXPORT_STUB(__imp__NetDll_XNetStartupEx);
+ REX_EXPORT_STUB(__imp__NetDll_XNetTsAddrToInAddr);
+-REX_EXPORT_STUB(__imp__NetDll_XNetUnregisterInAddr);
+-REX_EXPORT_STUB(__imp__NetDll_XNetUnregisterKey);
++REX_EXPORT(__imp__NetDll_XNetUnregisterInAddr, rex::kernel::xam::NetDll_XNetUnregisterInAddr_entry)
++REX_EXPORT(__imp__NetDll_XNetUnregisterKey, rex::kernel::xam::NetDll_XNetUnregisterKey_entry)
+ REX_EXPORT_STUB(__imp__NetDll_XmlDownloadContinue);
+ REX_EXPORT_STUB(__imp__NetDll_XmlDownloadGetParseTime);
+ REX_EXPORT_STUB(__imp__NetDll_XmlDownloadGetReceivedDataSize);
+@@ -1098,5 +1296,5 @@
+ REX_EXPORT_STUB(__imp__NetDll_XnpUnregisterKeyForCallerType);
+ REX_EXPORT_STUB(__imp__NetDll_XnpUpdateConfigParams);
+ REX_EXPORT_STUB(__imp__NetDll_getpeername);
+-REX_EXPORT_STUB(__imp__NetDll_getsockname);
++REX_EXPORT(__imp__NetDll_getsockname, rex::kernel::xam::NetDll_getsockname_entry)
+ REX_EXPORT_STUB(__imp__NetDll_getsockopt);
+--- a/src/kernel/xam/xam_user.cpp
++++ b/src/kernel/xam/xam_user.cpp
+@@ -26,6 +26,8 @@
+ #include <rex/system/xenumerator.h>
+ #include <rex/system/xio.h>
+ #include <rex/system/xthread.h>
++#include <rex/system/xsession.h>
++#include <rex/system/xam/lan_lobby.h>
+ #include <rex/system/xtypes.h>
+ 
+ REXCVAR_DEFINE_UINT32(user_language, 1, "Kernel", "User's language ID");
+@@ -45,8 +47,8 @@
+   uint32_t result = X_E_NO_SUCH_USER;
+   uint64_t xuid = 0;
+   if (user_index < 4) {
+-    if (user_index == 0) {
+-      const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++    if (REX_KERNEL_STATE()->user_profile(user_index)) {
++      const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+       auto type = user_profile->type() & type_mask;
+       if (type & (2 | 4)) {
+         // maybe online profile?
+@@ -68,8 +70,8 @@
+ u32 XamUserGetSigninState_entry(u32 user_index) {
+   uint32_t signin_state = 0;
+   if (user_index < 4) {
+-    if (user_index == 0) {
+-      const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++    if (REX_KERNEL_STATE()->user_profile(user_index)) {
++      const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+       signin_state = user_profile->signin_state();
+     }
+   }
+@@ -92,13 +94,14 @@
+   }
+ 
+   std::memset(info, 0, sizeof(X_USER_SIGNIN_INFO));
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_E_NO_SUCH_USER;
+   }
+ 
+-  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++  const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+   info->xuid = user_profile->xuid();
+   info->signin_state = user_profile->signin_state();
++  info->unk08 = LanEnabled() ? 1 : 0; // X_USER_INFO_FLAG_LIVE_ENABLED
+   rex::string::copy_truncating(info->name, user_profile->name(), rex::countof(info->name));
+   return X_E_SUCCESS;
+ }
+@@ -108,11 +111,11 @@
+     return X_E_INVALIDARG;
+   }
+ 
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_E_NO_SUCH_USER;
+   }
+ 
+-  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++  const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+   const auto& user_name = user_profile->name();
+   rex::string::copy_truncating(buffer, user_name, std::min(buffer_len, uint32_t(16)));
+   return X_E_SUCCESS;
+@@ -123,7 +126,7 @@
+     return X_E_INVALIDARG;
+   }
+ 
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_E_NO_SUCH_USER;
+   }
+ 
+@@ -131,7 +134,7 @@
+     return X_E_INVALIDARG;
+   }
+ 
+-  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++  const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+   auto user_name = rex::string::to_utf16(user_profile->name());
+   rex::string::copy_and_swap_truncating(buffer, user_name, std::min(buffer_len, uint32_t(16)));
+   return X_E_SUCCESS;
+@@ -149,18 +152,12 @@
+                                       be<uint32_t>* setting_ids, uint32_t unk,
+                                       be<uint32_t>* buffer_size_ptr, uint8_t* buffer,
+                                       XAM_OVERLAPPED* overlapped) {
+-  if (!xuid_count) {
+-    assert_null(xuids);
+-  } else {
+-    assert_true(xuid_count == 1);
+-    assert_not_null(xuids);
+-    // TODO(gibbed): allow proper lookup of arbitrary XUIDs
+-    const auto& user_profile = REX_KERNEL_STATE()->user_profile();
+-    assert_true(static_cast<uint64_t>(xuids[0]) == user_profile->xuid());
+-    // TODO(gibbed): we assert here, but in case a title passes xuid_count > 1
+-    // until it's implemented for release builds...
+-    xuid_count = 1;
+-  }
++  REXLOG_DEBUG("Profile read: user={} settings={} size={} overlap={}", user_index, setting_count,
++              buffer_size_ptr ? uint32_t(*buffer_size_ptr) : 0, overlapped != nullptr);
++  if (xuid_count > 1 || (xuid_count && !xuids)) return X_ERROR_INVALID_PARAMETER;
++  auto* selected_profile = xuid_count
++      ? REX_KERNEL_STATE()->user_profile_by_xuid(xuids[0])
++      : REX_KERNEL_STATE()->user_profile(user_index);
+   assert_zero(unk);  // probably flags
+ 
+   // must have at least 1 to 32 settings
+@@ -211,8 +208,7 @@
+   // Title ID = 0 means us.
+   // 0xfffe07d1 = profile?
+ 
+-  if (!xuids && user_index) {
+-    // Only support user 0.
++  if (!selected_profile) {
+     if (overlapped) {
+       REX_KERNEL_STATE()->CompleteOverlappedImmediate(
+           REX_KERNEL_MEMORY()->HostToGuestVirtual(overlapped), X_ERROR_NO_SUCH_USER);
+@@ -221,7 +217,7 @@
+     return X_ERROR_NO_SUCH_USER;
+   }
+ 
+-  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++  auto* user_profile = selected_profile;
+ 
+   // First call asks for size (fill buffer_size_ptr).
+   // Second call asks for buffer contents with that size.
+@@ -304,12 +300,12 @@
+ u32 XamUserWriteProfileSettings_entry(u32 title_id, u32 user_index, u32 setting_count,
+                                       ppc_ptr_t<X_USER_PROFILE_SETTING> settings,
+                                       ppc_ptr_t<XAM_OVERLAPPED> overlapped) {
++  REXLOG_DEBUG("Profile write: user={} settings={}", uint32_t(user_index), uint32_t(setting_count));
+   if (!setting_count || !settings) {
+     return X_ERROR_INVALID_PARAMETER;
+   }
+ 
+-  if (user_index) {
+-    // Only support user 0.
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     if (overlapped) {
+       REX_KERNEL_STATE()->CompleteOverlappedImmediate(overlapped.guest_address(),
+                                                       X_ERROR_NO_SUCH_USER);
+@@ -319,7 +315,7 @@
+   }
+ 
+   // Update and save settings.
+-  const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++  const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+ 
+   for (uint32_t n = 0; n < setting_count; ++n) {
+     const X_USER_PROFILE_SETTING& setting = settings[n];
+@@ -377,18 +373,20 @@
+       return X_ERROR_INVALID_PARAMETER;
+     }
+ 
+-    if (user_index) {
++    if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+       return X_ERROR_NO_SUCH_USER;
+     }
+   }
+ 
+-  // If we deny everything, games should hopefully not try to do stuff.
+-  *out_value = 0;
++  if (!out_value) return X_ERROR_INVALID_PARAMETER;
++  if (LanEnabled()) REXKRNL_DEBUG("RedBaron LAN privilege request: user={} privilege={}", user_index, mask);
++  // Only supported local network features are enabled by the LAN opt-in.
++  *out_value = LanEnabled() && (mask == 254 || mask == 252 || mask == 251 || mask == 189) ? 1 : 0;
+   return X_ERROR_SUCCESS;
+ }
+ 
+ u32 XamUserContentRestrictionGetFlags_entry(u32 user_index, mapped_u32 out_flags) {
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_ERROR_NO_SUCH_USER;
+   }
+ 
+@@ -399,7 +397,7 @@
+ 
+ u32 XamUserContentRestrictionGetRating_entry(u32 user_index, u32 unk1, mapped_u32 out_unk2,
+                                              mapped_u32 out_unk3) {
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_ERROR_NO_SUCH_USER;
+   }
+ 
+@@ -430,7 +428,7 @@
+   if (user_index >= 4) {
+     return X_ERROR_INVALID_PARAMETER;
+   }
+-  if (user_index) {
++  if (!REX_KERNEL_STATE()->user_profile(user_index)) {
+     return X_ERROR_NO_SUCH_USER;
+   }
+   return 6 /* 6 appears to be Gold */;
+@@ -444,8 +442,8 @@
+   if (user_index >= 4) {
+     result = X_ERROR_INVALID_PARAMETER;
+   } else {
+-    if (user_index == 0) {
+-      const auto& user_profile = REX_KERNEL_STATE()->user_profile();
++    if (REX_KERNEL_STATE()->user_profile(user_index)) {
++      const auto& user_profile = REX_KERNEL_STATE()->user_profile(user_index);
+       if (user_profile->signin_state() == 0) {
+         result = X_ERROR_NOT_LOGGED_ON;
+       } else {
+@@ -454,8 +452,7 @@
+         result = X_ERROR_SUCCESS;
+       }
+     } else {
+-      // Only support user 0.
+-      result = X_ERROR_NO_SUCH_USER;  // if user is local -> X_ERROR_NOT_LOGGED_ON
++        result = X_ERROR_NO_SUCH_USER;  // if user is local -> X_ERROR_NOT_LOGGED_ON
+     }
+   }
+ 
+@@ -476,15 +473,24 @@
+ }
+ 
+ u32 XamShowSigninUI_entry(u32 unk, u32 unk_mask) {
++  REXLOG_INFO("Local sign-in request: users={} flags={:08X}", uint32_t(unk), uint32_t(unk_mask));
+   // Mask values vary. Probably matching user types? Local/remote?
+ 
+   // To fix game modes that display a 4 profile signin UI (even if playing
+   // alone):
+   // XN_SYS_SIGNINCHANGED
+-  REX_KERNEL_STATE()->BroadcastNotification(0x0000000A, 1);
+-  // Games seem to sit and loop until we trigger this notification:
+-  // XN_SYS_UI (off)
+-  REX_KERNEL_STATE()->BroadcastNotification(0x00000009, 0);
++  uint32_t mask = 0;
++  for (uint32_t i = 0; i < 4; ++i)
++    if (REX_KERNEL_STATE()->user_profile(i)) mask |= 1u << i;
++  auto* kernel = REX_KERNEL_STATE();
++  kernel->BroadcastNotification(0x00000009, 1);
++  // The title enters its waiting state AFTER this call returns. Deliver closing
++  // notifications asynchronously, as a real sign-in dialog would.
++  kernel->QueueHostTask([kernel, mask] {
++    rex::thread::Sleep(std::chrono::milliseconds(150));
++    kernel->BroadcastNotification(0x0000000A, mask);
++    kernel->BroadcastNotification(0x00000009, 0);
++  });
+   return X_ERROR_SUCCESS;
+ }
+ 
+@@ -625,8 +631,11 @@
+   // ACHIEVED | ACHIEVED_ONLINE flags the game checks to consider an achievement earned.
+   constexpr uint32_t kAchievedFlags = 0x00030000;
+ 
+-  auto fill_unlock = [](XStaticAchievementEnumerator::AchievementDetails& item, uint32_t id,
++  auto fill_unlock = [user_index](XStaticAchievementEnumerator::AchievementDetails& item, uint32_t id,
+                         const rex::system::KernelState* ks) {
++    // The runtime achievement store belongs to player 1. Until secondary stores
++    // exist, never report another player's unlocks as this profile's achievements.
++    if (user_index != 0) { item.flags &= ~kAchievedFlags; return; }
+     uint64_t ft = ks->GetAchievementUnlockTime(id);
+     if (ft) {
+       item.flags |= kAchievedFlags;
+@@ -713,15 +722,20 @@
+ }
+ 
+ u32 XamSessionCreateHandle_entry(mapped_u32 handle_ptr) {
+-  *handle_ptr = 0xCAFEDEAD;
++  if (!handle_ptr) return X_ERROR_INVALID_PARAMETER;
++  auto session = object_ref<XSession>(new XSession(REX_KERNEL_STATE()));
++  const auto status = session->Initialize();
++  if (XFAILED(status)) return status;
++  *handle_ptr = session->handle();
+   return X_ERROR_SUCCESS;
+ }
+ 
+ u32 XamSessionRefObjByHandle_entry(u32 handle, mapped_u32 obj_ptr) {
+-  assert_true(handle == 0xCAFEDEAD);
+-  // TODO(PermaNull): Implement this properly,
+-  // For the time being returning 0xDEADF00D will prevent crashing.
+-  *obj_ptr = 0xDEADF00D;
++  if (!obj_ptr) return X_ERROR_INVALID_PARAMETER;
++  auto session = REX_KERNEL_STATE()->object_table()->LookupObject<XSession>(handle);
++  if (!session) return X_ERROR_INVALID_HANDLE;
++  session->RetainHandle();
++  *obj_ptr = session->guest_object();
+   return X_ERROR_SUCCESS;
+ }
+ 
+--- a/src/system/CMakeLists.txt
++++ b/src/system/CMakeLists.txt
+@@ -17,6 +17,7 @@
+     xnotifylistener.cpp
+     xenumerator.cpp
+     xsocket.cpp
++    xsession.cpp
+     xsymboliclink.cpp
+     xobject.cpp
+     xmodule.cpp
+@@ -32,6 +33,7 @@
+     xam/app_manager.cpp
+     xam/content_manager.cpp
+     xam/user_profile.cpp
++    xam/lan_lobby.cpp
+ 
+     ppc_types.cpp
+     elf_module.cpp
+--- a/src/system/kernel_state.cpp
++++ b/src/system/kernel_state.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include <fmt/format.h>
+ #include <rex/assert.h>
++#include <rex/cvar.h>
+ #include <rex/image_info.h>
+ #include <rex/logging.h>
+ #include <rex/math.h>
+@@ -43,6 +44,9 @@
+ #include <rex/system/xthread.h>
+ #include <rex/system/xtimer.h>
+ 
++REXCVAR_DEFINE_UINT32(redbaron_local_profiles, 1, "Input", "Local profiles with independent save storage")
++    .range(1, 4).lifecycle(rex::cvar::Lifecycle::kInitOnly);
++
+ namespace rex::system {
+ 
+ constexpr uint32_t kDeferredOverlappedDelayMillis = 100;
+@@ -67,6 +71,10 @@
+   app_manager_ = std::make_unique<xam::AppManager>();
+   user_profile_ = std::make_unique<xam::UserProfile>();
+   user_profile_->set_kernel_state(this);
++  for (uint32_t i = 1; i < REXCVAR_GET(redbaron_local_profiles); ++i) {
++    local_profiles_[i - 1] = std::make_unique<xam::UserProfile>(i);
++    local_profiles_[i - 1]->set_kernel_state(this);
++  }
+ 
+   auto user_data_root = emulator_->user_data_root();
+   if (!user_data_root.empty()) {
+@@ -225,7 +233,8 @@
+ }
+ 
+ uint32_t KernelState::title_id() const {
+-  assert_not_null(executable_module_);
++  // Tool-mode runtime services may be queried before a title is loaded.
++  if (!executable_module_) return 0;
+ 
+   xex2_opt_execution_info* exec_info = 0;
+   executable_module_->GetOptHeader(XEX_HEADER_EXECUTION_INFO, &exec_info);
+@@ -1141,6 +1150,12 @@
+   }
+ }
+ 
++void KernelState::QueueHostTask(std::function<void()> task) {
++  auto lock = global_critical_region_.Acquire();
++  dispatch_queue_.push_back(std::move(task));
++  dispatch_cond_.notify_all();
++}
++
+ void KernelState::BroadcastNotification(XNotificationID id, uint32_t data) {
+   std::vector<object_ref<XNotifyListener>> snapshot;
+   {
+--- a/src/system/xam/content_manager.cpp
++++ b/src/system/xam/content_manager.cpp
+@@ -90,6 +90,11 @@
+   if (title_id == kCurrentlyRunningTitleId) {
+     title_id = kernel_state_->title_id();
+   }
++  // Network identity is separate from the existing on-disk save identity.
++  for (uint32_t index = 0; index < 4; ++index) {
++    auto* profile = kernel_state_->user_profile(index);
++    if (profile && profile->xuid() == xuid) { xuid = profile->storage_xuid(); break; }
++  }
+   auto xuid_str = fmt::format("{:016X}", xuid);
+   auto title_id_str = fmt::format("{:08X}", title_id);
+   auto content_type_str = fmt::format("{:08X}", uint32_t(content_type));
+@@ -125,6 +130,10 @@
+     xuid = 0;
+   }
+ 
++  for (uint32_t index = 0; index < 4; ++index) {
++    auto* profile = kernel_state_->user_profile(index);
++    if (profile && profile->xuid() == xuid) { xuid = profile->storage_xuid(); break; }
++  }
+   auto xuid_str = fmt::format("{:016X}", xuid);
+   auto title_id_str = fmt::format("{:08X}", title_id);
+   auto content_type_str = fmt::format("{:08X}", uint32_t(content_type));
+@@ -190,6 +199,8 @@
+ 
+ X_RESULT ContentManager::WriteContentHeaderFile(uint64_t xuid, XCONTENT_AGGREGATE_DATA data,
+                                                 uint32_t license_mask) {
++  if (auto* profile = kernel_state_->user_profile_by_xuid(xuid)) xuid = profile->storage_xuid();
++  if (auto* profile = kernel_state_->user_profile_by_xuid(data.xuid)) data.xuid = profile->storage_xuid();
+   if (data.title_id == uint32_t(-1)) {
+     data.title_id = kernel_state_->title_id();
+   }
+@@ -440,9 +451,10 @@
+   return X_ERROR_FILE_NOT_FOUND;
+ }
+ 
+-std::filesystem::path ContentManager::ResolveGameUserContentPath() {
++std::filesystem::path ContentManager::ResolveGameUserContentPath(uint32_t user_index) {
+   auto title_id = fmt::format("{:08X}", kernel_state_->title_id());
+-  auto user_name = rex::to_path(kernel_state_->user_profile()->name());
++  // Stable storage keys: display-name changes must never move existing saves.
++  auto user_name = rex::to_path(user_index ? "Player" + std::to_string(user_index + 1) : "User");
+ 
+   // Per-game per-profile data location:
+   // content_root/title_id/profile/user_name
+--- /dev/null
++++ b/src/system/xam/lan_lobby.cpp
+@@ -0,0 +1,291 @@
++#include <rex/system/xam/lan_lobby.h>
++#include <rex/cvar.h>
++#include <rex/logging.h>
++#include <rex/runtime.h>
++#include <WinSock2.h>
++#include <WS2tcpip.h>
++#include <algorithm>
++#include <chrono>
++#include <cstring>
++#include <fstream>
++#include <mutex>
++#include <random>
++#include <thread>
++
++REXCVAR_DEFINE_BOOL(redbaron_lan, false, "Network", "Experimental LAN session transport")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DEFINE_STRING(redbaron_lan_peer, "255.255.255.255", "Network", "LAN host IPv4 or broadcast address")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++REXCVAR_DEFINE_STRING(redbaron_lan_bind, "0.0.0.0", "Network", "Local IPv4 interface for LAN sockets")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++
++namespace rex::system::xam {
++namespace {
++constexpr uint16_t kDiscoveryPort = 43821;
++constexpr size_t kMaxPacket = 8192;
++using Bytes = std::vector<uint8_t>;
++void Put(Bytes& out, uint32_t value) {
++  for (int shift = 24; shift >= 0; shift -= 8) out.push_back(uint8_t(value >> shift));
++}
++struct Reader {
++  const uint8_t* at; size_t left;
++  bool Take(void* dest, size_t n) {
++    if (n > left) return false;
++    std::memcpy(dest, at, n); at += n; left -= n; return true;
++  }
++  bool Get(uint32_t& value) {
++    if (left < 4) return false;
++    value = (uint32_t(at[0]) << 24) | (uint32_t(at[1]) << 16) | (uint32_t(at[2]) << 8) | at[3];
++    at += 4; left -= 4; return true;
++  }
++};
++struct Socket {
++  SOCKET value = INVALID_SOCKET;
++  ~Socket() { if (value != INVALID_SOCKET) closesocket(value); }
++};
++bool InitSockets() {
++  static const bool ready = [] { WSADATA data{}; return WSAStartup(MAKEWORD(2,2), &data) == 0; }();
++  return ready;
++}
++uint32_t ParseIp(const std::string& text) {
++  in_addr address{};
++  return inet_pton(AF_INET, text.c_str(), &address) == 1 ? ntohl(address.s_addr) : 0;
++}
++sockaddr_in Address(uint32_t ip, uint16_t port) {
++  sockaddr_in out{}; out.sin_family = AF_INET; out.sin_addr.s_addr = htonl(ip); out.sin_port = htons(port); return out;
++}
++LanSessionId Id(const LanRecord& record) {
++  LanSessionId id; std::copy_n(record.info.begin(), 8, id.begin()); return id;
++}
++Bytes Encode(const LanRecord& record, const uint8_t* query) {
++  Bytes data(query, query + 16); data[7] = 2;
++  Put(data, record.title); data.insert(data.end(), record.info.begin(), record.info.end());
++  for (auto slots : {record.open_public, record.open_private, record.filled_public, record.filled_private}) Put(data, slots);
++  Put(data, uint32_t(record.contexts.size())); Put(data, uint32_t(record.properties.size()));
++  for (auto [key, value] : record.contexts) { Put(data, key); Put(data, value); }
++  for (const auto& [key, value] : record.properties) {
++    Put(data, key); Put(data, uint32_t(value.size())); data.insert(data.end(), value.begin(), value.end());
++  }
++  return data;
++}
++bool Decode(const uint8_t* data, size_t size, const uint8_t* query, LanRecord& out) {
++  if (size < 16 || std::memcmp(data, query, 7) || data[7] != 2 || std::memcmp(data + 8, query + 8, 8)) return false;
++  Reader r{data + 16, size - 16}; uint32_t contexts, properties;
++  if (!r.Get(out.title) || !r.Take(out.info.data(), 60) || !r.Get(out.open_public) || !r.Get(out.open_private) ||
++      !r.Get(out.filled_public) || !r.Get(out.filled_private) || !r.Get(contexts) || !r.Get(properties) || contexts > 32 || properties > 32) return false;
++  if (uint64_t(out.open_public) + out.open_private + out.filled_public + out.filled_private > 32) return false;
++  for (uint32_t i = 0, key, value; i < contexts; ++i) {
++    if (!r.Get(key) || !r.Get(value) || !out.contexts.emplace(key, value).second) return false;
++  }
++  for (uint32_t i = 0, key, length; i < properties; ++i) {
++    if (!r.Get(key) || !r.Get(length) || length > 1024 || out.properties.contains(key)) return false;
++    auto& value = out.properties[key]; value.resize(length);
++    if (!r.Take(value.data(), length)) return false;
++  }
++  return r.left == 0;
++}
++class Lobby {
++ public:
++  struct Qos { bool enabled = false; Bytes data; };
++  std::mutex mutex;
++  std::map<LanSessionId, LanRecord> records;
++  std::map<LanSessionId, Qos> qos;
++  std::array<LanRecord, 4> attributes;
++  Socket listener;
++  std::jthread thread;
++  bool Start() {
++    if (listener.value != INVALID_SOCKET) return true;
++    listener.value = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
++    auto address = Address(ParseIp(REXCVAR_GET(redbaron_lan_bind)), kDiscoveryPort);
++    if (listener.value == INVALID_SOCKET || bind(listener.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
++      REXLOG_ERROR("LAN discovery could not bind UDP {}: {}", kDiscoveryPort, WSAGetLastError());
++      if (listener.value != INVALID_SOCKET) closesocket(listener.value);
++      listener.value = INVALID_SOCKET; return false;
++    }
++    thread = std::jthread([this](std::stop_token stop) {
++      auto window = std::chrono::steady_clock::now(); unsigned queries = 0;
++      while (!stop.stop_requested()) {
++        fd_set read; FD_ZERO(&read); FD_SET(listener.value, &read); timeval timeout{0, 50000};
++        if (select(0, &read, nullptr, nullptr, &timeout) <= 0) continue;
++        uint8_t query[32]{}; sockaddr_in sender{}; int length = sizeof(sender);
++        int count = recvfrom(listener.value, reinterpret_cast<char*>(query), sizeof(query), 0, reinterpret_cast<sockaddr*>(&sender), &length);
++        if (count < 20 || std::memcmp(query, "RBLAN01", 7)) continue;
++        const auto now = std::chrono::steady_clock::now();
++        if (now - window >= std::chrono::seconds(1)) { queries = 0; window = now; }
++        if (++queries > 128) continue;
++        if (query[7] == 3 && count == 24) {
++          LanSessionId id; std::copy_n(query + 16, 8, id.begin());
++          Bytes response(query, query + 24); response[7] = 4;
++          { std::lock_guard lock(mutex); auto found = qos.find(id);
++            if (found == qos.end()) continue;
++            Put(response, found->second.enabled ? 1 : 0);
++            const auto& data = found->second.data;
++            Put(response, found->second.enabled ? uint32_t(data.size()) : 0);
++            if (found->second.enabled) response.insert(response.end(), data.begin(), data.end());
++          }
++          sendto(listener.value, reinterpret_cast<const char*>(response.data()), int(response.size()), 0, reinterpret_cast<sockaddr*>(&sender), length);
++          continue;
++        }
++        if (query[7] != 1 || count != 20) continue;
++        uint32_t title = 0; Reader{query + 16, 4}.Get(title);
++        std::vector<LanRecord> snapshot;
++        { std::lock_guard lock(mutex); for (const auto& [id, saved] : records) {
++            if (saved.title != title) continue;
++            auto copy = saved; copy.contexts = attributes[copy.owner].contexts; copy.properties = attributes[copy.owner].properties;
++            snapshot.push_back(std::move(copy));
++        } }
++        for (const auto& record : snapshot) {
++          auto data = Encode(record, query);
++          if (data.size() <= kMaxPacket) sendto(listener.value, reinterpret_cast<const char*>(data.data()), int(data.size()), 0, reinterpret_cast<sockaddr*>(&sender), length);
++        }
++      }
++    });
++    return true;
++  }
++};
++Lobby& State() { static Lobby lobby; return lobby; }
++}
++bool LanEnabled() { return REXCVAR_GET(redbaron_lan) && InitSockets(); }
++uint32_t LanBindAddress() { return ParseIp(REXCVAR_GET(redbaron_lan_bind)); }
++uint32_t LanAddress() {
++  uint32_t configured = ParseIp(REXCVAR_GET(redbaron_lan_bind));
++  if (configured) return configured;
++  if (!InitSockets()) return 0;
++  // Route selection does not send a packet. It selects the interface for the peer.
++  Socket probe; probe.value = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
++  auto peer = Address(ParseIp(REXCVAR_GET(redbaron_lan_peer)), kDiscoveryPort);
++  int yes = 1; setsockopt(probe.value, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char*>(&yes), sizeof(yes));
++  if (connect(probe.value, reinterpret_cast<sockaddr*>(&peer), sizeof(peer)) == 0) {
++    sockaddr_in local{}; int length = sizeof(local);
++    if (getsockname(probe.value, reinterpret_cast<sockaddr*>(&local), &length) == 0) return ntohl(local.sin_addr.s_addr);
++  }
++  return 0;
++}
++uint64_t LanUserId(uint32_t index) {
++  static const uint64_t machine = [] {
++    auto path = Runtime::instance()->user_data_root() / "redbaron-network-id.bin";
++    uint64_t identity = 0; std::ifstream input(path, std::ios::binary); input.read(reinterpret_cast<char*>(&identity), 8);
++    if (!input || (identity & 0xFF) || (identity >> 48) != 9) {
++      // XAM validates the online-shaped XUID prefix, even for our LAN service.
++      // This is a locally generated identity, not an Xbox Live account.
++      std::random_device random; identity = 0x0009000000000000ull | (((uint64_t(random()) << 32) | random()) & 0x0000FFFFFFFFFF00ull);
++      std::filesystem::create_directories(path.parent_path());
++      std::ofstream output(path, std::ios::binary); output.write(reinterpret_cast<const char*>(&identity), 8);
++    }
++    return identity;
++  }();
++  return machine + index;
++}
++std::array<uint8_t,36> LanXnAddress() {
++  std::array<uint8_t,36> out{}; uint32_t ip = LanAddress();
++  for (unsigned i = 0; i < 4; ++i) out[i] = out[i+4] = uint8_t(ip >> (24 - i*8));
++  out[8] = 12; out[9] = 2; // UDP 3074, Xbox system-link default.
++  uint64_t id = LanUserId(0);
++  for (unsigned i = 0; i < 6; ++i) out[10+i] = uint8_t(id >> (8 + i*8));
++  out[10] = (out[10] & 0xFC) | 2; // Locally administered unicast identifier.
++  std::copy_n(out.begin()+10, 6, out.begin()+16);
++  return out;
++}
++bool LanPublish(LanRecord record) {
++  if (!LanEnabled() || record.owner >= 4) return false;
++  auto& lobby = State(); std::lock_guard lock(lobby.mutex);
++  if (lobby.records.size() >= 8 && !lobby.records.contains(Id(record))) return false;
++  if (!lobby.Start()) return false;
++  lobby.records[Id(record)] = std::move(record); return true;
++}
++void LanRemove(const LanSessionId& id) { auto& s = State(); std::lock_guard lock(s.mutex); s.records.erase(id); }
++bool LanQosListen(const LanSessionId& id, uint32_t flags, std::vector<uint8_t> data) {
++  if (!LanEnabled() || (flags & ~31u) || ((flags & 3) == 3) || data.size() > 1024) return false;
++  auto& s = State(); std::lock_guard lock(s.mutex);
++  if (flags & 16) { s.qos.erase(id); return true; }
++  if (s.qos.size() >= 16 && !s.qos.contains(id)) return false;
++  if (!s.Start()) return false;
++  auto& entry = s.qos[id];
++  if (flags & 1) entry.enabled = true;
++  if (flags & 2) entry.enabled = false;
++  if (flags & 4) entry.data = std::move(data);
++  return true;
++}
++std::vector<LanQosResult> LanQosProbe(const std::vector<LanQosTarget>& targets, uint32_t probes) {
++  std::vector<LanQosResult> results(targets.size());
++  if (!LanEnabled() || targets.empty() || targets.size() > 32) return results;
++  Socket socket; socket.value = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
++  auto local = Address(LanBindAddress(), 0);
++  if (socket.value == INVALID_SOCKET || bind(socket.value, reinterpret_cast<sockaddr*>(&local), sizeof(local))) return results;
++  struct Pending { size_t target; std::chrono::steady_clock::time_point start; };
++  std::map<uint64_t, Pending> pending;
++  std::vector<std::vector<uint16_t>> times(targets.size());
++  std::random_device random;
++  probes = std::clamp(probes, 1u, 8u);
++  for (uint32_t round = 0; round < probes; ++round) {
++    for (size_t i = 0; i < targets.size(); ++i) {
++      const uint64_t nonce = (uint64_t(random()) << 32) | random();
++      Bytes packet{'R','B','L','A','N','0','1',3}; Put(packet, uint32_t(nonce >> 32)); Put(packet, uint32_t(nonce));
++      packet.insert(packet.end(), targets[i].id.begin(), targets[i].id.end());
++      auto peer = Address(targets[i].address, kDiscoveryPort);
++      pending.emplace(nonce, Pending{i, std::chrono::steady_clock::now()});
++      if (sendto(socket.value, reinterpret_cast<const char*>(packet.data()), int(packet.size()), 0, reinterpret_cast<sockaddr*>(&peer), sizeof(peer)) == int(packet.size())) ++results[i].sent;
++    }
++    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(round + 1 == probes ? 250 : 25);
++    while (std::chrono::steady_clock::now() < until) {
++      fd_set read; FD_ZERO(&read); FD_SET(socket.value, &read); timeval timeout{0, 10000};
++      if (select(0, &read, nullptr, nullptr, &timeout) <= 0) continue;
++      std::array<uint8_t, 1056> bytes{}; sockaddr_in sender{}; int length = sizeof(sender);
++      const int size = recvfrom(socket.value, reinterpret_cast<char*>(bytes.data()), int(bytes.size()), 0, reinterpret_cast<sockaddr*>(&sender), &length);
++      if (size < 32 || std::memcmp(bytes.data(), "RBLAN01", 7) || bytes[7] != 4) continue;
++      Reader reader{bytes.data() + 8, size_t(size - 8)}; uint32_t high, low, enabled, data_size;
++      if (!reader.Get(high) || !reader.Get(low)) continue;
++      auto found = pending.find((uint64_t(high) << 32) | low); if (found == pending.end()) continue;
++      const size_t i = found->second.target; LanSessionId id;
++      if (ntohl(sender.sin_addr.s_addr) != targets[i].address || ntohs(sender.sin_port) != kDiscoveryPort || !reader.Take(id.data(), 8) || id != targets[i].id ||
++          !reader.Get(enabled) || enabled > 1 || !reader.Get(data_size) || data_size > 1024 || reader.left != data_size) continue;
++      auto& result = results[i]; result.contacted = true; result.disabled = !enabled;
++      result.data.assign(reader.at, reader.at + data_size); ++result.received;
++      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - found->second.start).count();
++      times[i].push_back(uint16_t(std::clamp<int64_t>(ms, 1, 65535))); pending.erase(found);
++    }
++  }
++  for (size_t i = 0; i < results.size(); ++i) if (!times[i].empty()) {
++    std::sort(times[i].begin(), times[i].end()); results[i].minimum_ms = times[i][0]; results[i].median_ms = times[i][times[i].size()/2];
++  }
++  return results;
++}
++void LanSetContext(uint32_t user, uint32_t id, uint32_t value) {
++  if (user >= 4) return;
++  auto& s = State(); std::lock_guard lock(s.mutex); auto& map = s.attributes[user].contexts;
++  if (map.size() < 32 || map.contains(id)) map[id] = value;
++}
++void LanSetProperty(uint32_t user, uint32_t id, std::vector<uint8_t> value) {
++  if (user >= 4 || value.size() > 1024) return;
++  auto& s = State(); std::lock_guard lock(s.mutex); auto& map = s.attributes[user].properties;
++  size_t total = value.size();
++  for (const auto& [key, existing] : map) if (key != id) total += existing.size();
++  if (total > 4096) return;
++  if (value.empty()) map.erase(id); else if (map.size() < 32 || map.contains(id)) map[id] = std::move(value);
++}
++std::vector<LanRecord> LanSearch(uint32_t title) {
++  std::vector<LanRecord> result;
++  if (!LanEnabled()) return result;
++  Socket query; query.value = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
++  auto local = Address(ParseIp(REXCVAR_GET(redbaron_lan_bind)), 0);
++  if (bind(query.value, reinterpret_cast<sockaddr*>(&local), sizeof(local))) return result;
++  int yes = 1; setsockopt(query.value, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char*>(&yes), sizeof(yes));
++  auto peer = Address(ParseIp(REXCVAR_GET(redbaron_lan_peer)), kDiscoveryPort);
++  Bytes packet{'R','B','L','A','N','0','1',1}; std::random_device random; Put(packet, random()); Put(packet, random()); Put(packet, title);
++  sendto(query.value, reinterpret_cast<char*>(packet.data()), int(packet.size()), 0, reinterpret_cast<sockaddr*>(&peer), sizeof(peer));
++  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(350);
++  while (std::chrono::steady_clock::now() < deadline && result.size() < 32) {
++    fd_set read; FD_ZERO(&read); FD_SET(query.value, &read); timeval timeout{0, 50000};
++    if (select(0, &read, nullptr, nullptr, &timeout) <= 0) continue;
++    std::array<uint8_t,kMaxPacket> bytes{}; sockaddr_in sender{}; int length = sizeof(sender);
++    int size = recvfrom(query.value, reinterpret_cast<char*>(bytes.data()), int(bytes.size()), 0, reinterpret_cast<sockaddr*>(&sender), &length);
++    LanRecord record;
++    if (size <= 0 || !Decode(bytes.data(), size, packet.data(), record) || record.title != title) continue;
++    // The responder's actual address is authoritative, including VPN/loopback routes.
++    std::memcpy(record.info.data()+8, &sender.sin_addr.s_addr, 4);
++    std::memcpy(record.info.data()+12, &sender.sin_addr.s_addr, 4);
++    if (std::none_of(result.begin(), result.end(), [&](const auto& old) { return Id(old) == Id(record); })) result.push_back(std::move(record));
++  }
++  return result;
++}
++}
+--- a/src/system/xam/user_profile.cpp
++++ b/src/system/xam/user_profile.cpp
+@@ -16,17 +16,31 @@
+ #include <rex/logging.h>
+ #include <rex/system/kernel_state.h>
+ #include <rex/system/xam/user_profile.h>
++#include <rex/system/xam/lan_lobby.h>
++#include <rex/cvar.h>
++
++REXCVAR_DEFINE_STRING(redbaron_player_name, "User", "Network", "Primary local and LAN player name")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ 
+ namespace rex {
+ namespace system {
+ namespace xam {
+ 
+-UserProfile::UserProfile() {
++uint64_t UserProfile::xuid() const { return LanEnabled() ? LanUserId(index_) : xuid_; }
++uint32_t UserProfile::signin_state() const { return LanEnabled() ? 2 : 1; }
++
++UserProfile::UserProfile(uint32_t index) : index_(index) {
+   // 58410A1F checks the user XUID against a mask of 0x00C0000000000000 (3<<54),
+   // if non-zero, it prevents the user from playing the game.
+   // "You do not have permissions to perform this operation."
+-  xuid_ = 0xB13EBABEBABEBABE;
+-  name_ = "User";
++  xuid_ = 0xB13EBABEBABEBABE + index;
++  name_ = index ? "Player " + std::to_string(index + 1) : "User";
++  const auto& name = REXCVAR_GET(redbaron_player_name);
++  if (!index && !name.empty() && name.size() <= 15 &&
++      std::all_of(name.begin(), name.end(), [](unsigned char c) {
++        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
++               (c >= '0' && c <= '9') || c == ' ' || c == '-' || c == '_';
++      })) name_ = name;
+ 
+   // https://cs.rin.ru/forum/viewtopic.php?f=38&t=60668&hilit=gfwl+live&start=195
+   // https://github.com/arkem/py360/blob/master/py360/constants.py
+@@ -133,7 +147,7 @@
+ 
+ void UserProfile::LoadSetting(UserProfile::Setting* setting) {
+   if (setting->is_title_specific()) {
+-    auto content_dir = kernel_state_->content_manager()->ResolveGameUserContentPath();
++    auto content_dir = kernel_state_->content_manager()->ResolveGameUserContentPath(index_);
+     auto setting_id = fmt::format("{:08X}", setting->setting_id);
+     auto file_path = content_dir / setting_id;
+     auto file = rex::filesystem::OpenFile(file_path, "rb");
+@@ -158,7 +172,7 @@
+ void UserProfile::SaveSetting(UserProfile::Setting* setting) {
+   if (setting->is_title_specific()) {
+     auto serialized_setting = setting->Serialize();
+-    auto content_dir = kernel_state_->content_manager()->ResolveGameUserContentPath();
++    auto content_dir = kernel_state_->content_manager()->ResolveGameUserContentPath(index_);
+     std::filesystem::create_directories(content_dir);
+     auto setting_id = fmt::format("{:08X}", setting->setting_id);
+     auto file_path = content_dir / setting_id;
+--- /dev/null
++++ b/src/system/xsession.cpp
+@@ -0,0 +1,254 @@
++#include <rex/system/xsession.h>
++#include <rex/system/kernel_state.h>
++#include <rex/system/xam/user_profile.h>
++#include <rex/system/xam/lan_lobby.h>
++#include <rex/system/util/object_table.h>
++#include <rex/logging.h>
++#include <algorithm>
++#include <cstring>
++#include <random>
++
++namespace rex::system {
++namespace {
++constexpr uint32_t kWrongState = 0x80155206;
++// Use explicit offsets: XSESSION_LOCAL_DETAILS has 8-byte alignment for Nonce.
++uint32_t Read32(const uint8_t* p) { return memory::load_and_swap<uint32_t>(p); }
++void Write32(uint8_t* p, uint32_t v) { memory::store_and_swap<uint32_t>(p, v); }
++void Write64(uint8_t* p, uint64_t v) { memory::store_and_swap<uint64_t>(p, v); }
++uint8_t* Guest(memory::Memory* mem, uint32_t address, size_t bytes) {
++  if (!address || !bytes || bytes > 0x100000 || uint64_t(address) + bytes > 0x100000000ull ||
++      !mem->LookupHeap(address) || !mem->LookupHeap(address + uint32_t(bytes) - 1)) return nullptr;
++  return mem->TranslateVirtual(address);
++}
++X_HRESULT Search(KernelState* kernel, uint32_t message, uint32_t buffer, uint32_t length) {
++  auto* mem = kernel->memory(); const bool extended = message == 0xB001C;
++  auto* data = Guest(mem, buffer, extended ? 36 : 32);
++  if (!data || (length && length < (extended ? 36u : 32u))) return X_ERROR_INVALID_PARAMETER;
++  const uint32_t limit = Read32(data + 8);
++  const uint32_t context_count = memory::load_and_swap<uint16_t>(data + 14);
++  const uint32_t property_count = memory::load_and_swap<uint16_t>(data + 12);
++  if (!kernel->user_profile(Read32(data + 4)) || limit > 32 || context_count > 32 || property_count > 32)
++    return X_ERROR_INVALID_PARAMETER;
++  auto* contexts = context_count ? Guest(mem, Read32(data + 20), context_count * 8) : nullptr;
++  auto* properties = property_count ? Guest(mem, Read32(data + 16), property_count * 24) : nullptr;
++  if ((context_count && !contexts) || (property_count && !properties)) return X_ERROR_INVALID_PARAMETER;
++  // XGI receives the size by value; the guest XSession wrapper handles its
++  // public API's size pointer before dispatching this message.
++  const uint32_t capacity = Read32(data + 24), address = Read32(data + 28);
++  if (!address || capacity < 8) return 0x80155207;
++  auto records = xam::LanSearch(kernel->title_id());
++  if (!records.empty()) {
++    REXKRNL_DEBUG("LAN search procedure={} contexts={} properties={} users={} found={}", Read32(data), context_count, property_count, extended ? Read32(data + 32) : 0, records.size());
++    for (uint32_t i=0;i<context_count;++i) REXKRNL_DEBUG("LAN query context {:08X}={:08X}", Read32(contexts+i*8),Read32(contexts+i*8+4));
++    for (uint32_t i=0;i<property_count;++i) REXKRNL_DEBUG("LAN query property {:08X} type={} value={:08X}",Read32(properties+i*24),properties[i*24+8],Read32(properties+i*24+16));
++  }
++  std::erase_if(records, [&](const auto& record) {
++    if (extended && record.open_public + record.open_private < Read32(data + 32)) return true;
++    for (uint32_t i = 0; i < context_count; ++i) {
++      const auto id = Read32(contexts + i * 8), value = Read32(contexts + i * 8 + 4);
++      auto found = record.contexts.find(id);
++      if (found == record.contexts.end() || found->second != value) return true;
++    }
++    for (uint32_t i = 0; i < property_count; ++i) {
++      auto* property = properties + i * 24; auto found = record.properties.find(Read32(property));
++      if (found == record.properties.end()) return true;
++      const auto type = property[8]; const size_t count = type == 1 || type == 5 ? 4 : type == 2 || type == 3 || type == 7 ? 8 : 0;
++      // Flying Ace search procedure 1 requests capacity for the joining party
++      // in property 0x10000033 (1 for a solo search, versus 8 advertised). Treat
++      // it as a lower bound; exact equality makes every non-full party miss.
++      if (kernel->title_id() == 0x584109B5 && Read32(property) == 0x10000033 && type == 1 && found->second.size() == 4) {
++        if (Read32(found->second.data()) < Read32(property + 16)) return true;
++        continue;
++      }
++      if (!count || found->second.size() != count || std::memcmp(found->second.data(), property + 16, count)) return true;
++    }
++    return false;
++  });
++  if (records.size() > limit) records.resize(limit);
++  uint32_t required = 8 + uint32_t(records.size()) * 92;
++  for (const auto& record : records) {
++    required += uint32_t(record.contexts.size()) * 8 + uint32_t(record.properties.size()) * 24;
++    for (const auto& [id, bytes] : record.properties) if ((id >> 28) == 4 || (id >> 28) == 6) required += (uint32_t(bytes.size()) + 7) & ~7u;
++  }
++  if (capacity < required) return 0x80155207;
++  auto* out = Guest(mem, address, required); if (!out) return X_ERROR_INVALID_PARAMETER;
++  std::memset(out, 0, required); Write32(out, uint32_t(records.size())); Write32(out + 4, address + 8);
++  uint32_t cursor = 8 + uint32_t(records.size()) * 92;
++  for (size_t i = 0; i < records.size(); ++i) {
++    const auto& r = records[i]; auto* entry = out + 8 + i * 92;
++    std::copy(r.info.begin(), r.info.end(), entry);
++    Write32(entry + 60, r.open_public); Write32(entry + 64, r.open_private);
++    Write32(entry + 68, r.filled_public); Write32(entry + 72, r.filled_private);
++    Write32(entry + 76, uint32_t(r.properties.size())); Write32(entry + 80, uint32_t(r.contexts.size()));
++    Write32(entry + 84, r.properties.empty() ? 0 : address + cursor);
++    const uint32_t property_start = cursor; cursor += uint32_t(r.properties.size()) * 24;
++    size_t j = 0;
++    for (const auto& [id, bytes] : r.properties) {
++      auto* property = out + property_start + j++ * 24; Write32(property, id); property[8] = uint8_t(id >> 28);
++      if (property[8] == 4 || property[8] == 6) {
++        Write32(property + 16, uint32_t(bytes.size())); Write32(property + 20, address + cursor);
++        std::copy(bytes.begin(), bytes.end(), out + cursor); cursor += (uint32_t(bytes.size()) + 7) & ~7u;
++      } else std::copy_n(bytes.begin(), std::min<size_t>(8, bytes.size()), property + 16);
++    }
++    Write32(entry + 88, r.contexts.empty() ? 0 : address + cursor);
++    for (auto [id, value] : r.contexts) { Write32(out + cursor, id); Write32(out + cursor + 4, value); cursor += 8; }
++  }
++  REXKRNL_INFO("RedBaron LAN search: {} matching sessions", records.size());
++  return X_ERROR_SUCCESS;
++}
++}
++XSession::XSession(KernelState* kernel) : XObject(kernel, kObjectType) {}
++XSession::~XSession() {
++  xam::LanSessionId id; std::copy_n(info_.begin(), 8, id.begin());
++  if (advertised_) xam::LanRemove(id);
++  if (created_ && (flags_ & 1)) xam::LanQosListen(id, 16, {});
++}
++X_STATUS XSession::Initialize() {
++  auto* object = CreateNative(4);
++  if (!object) return X_STATUS_NO_MEMORY;
++  Write32(object, handle());
++  return X_STATUS_SUCCESS;
++}
++
++std::optional<X_HRESULT> XSession::Dispatch(KernelState* kernel, uint32_t message,
++                                           uint32_t buffer, uint32_t length) {
++  if (message == 0xB0016 || message == 0xB001C) return Search(kernel, message, buffer, length);
++  const bool session_message = message == 0xB0010 || message == 0xB0011 ||
++      message == 0xB0012 || message == 0xB0013 || message == 0xB0014 ||
++      message == 0xB0015 || message == 0xB0018 || message == 0xB001D;
++  if (!session_message) return std::nullopt;
++  auto* mem = kernel->memory();
++  const auto translate = [&](uint32_t address, size_t bytes) -> uint8_t* {
++    if (!address || !bytes || bytes > 0x100000 || uint64_t(address) + bytes > 0x100000000ull ||
++        !mem->LookupHeap(address) || !mem->LookupHeap(address + uint32_t(bytes) - 1)) return nullptr;
++    return mem->TranslateVirtual(address);
++  };
++  const uint32_t need = message == 0xB0010 ? 28 :
++      (message == 0xB0012 || message == 0xB0013) ? 20 : message == 0xB001D ? 24 : 16;
++  auto* data = translate(buffer, need);
++  if (!data || (length && length < need)) return X_ERROR_INVALID_PARAMETER;
++  auto* native = translate(Read32(data), 4);
++  if (!native) return X_ERROR_INVALID_HANDLE;
++  auto session = kernel->object_table()->LookupObject<XSession>(Read32(native));
++  if (!session) return X_ERROR_INVALID_HANDLE;
++  std::lock_guard lock(session->mutex_);
++  auto& s = *session;
++  const auto used = [&](bool priv) {
++    return uint32_t(std::count_if(s.members_.begin(), s.members_.end(),
++        [priv](const auto& m) { return m.second.private_slot == priv; }));
++  };
++  const auto publish = [&] {
++    xam::LanSessionId id; std::copy_n(s.info_.begin(), 8, id.begin());
++    // Only public matchmaking games (0x08), not private games/presence parties,
++    // are returned by discovery. Gameplay transport uses peer networking (0x20).
++    if (!xam::LanEnabled() || !(s.flags_ & 1) || !(s.flags_ & 0x20) ||
++        !(s.flags_ & 8) || !s.public_slots_ || s.state_ == 4 || (s.state_ == 2 && (s.flags_ & 0x400))) {
++      if (s.advertised_) xam::LanRemove(id);
++      s.advertised_ = false; return;
++    }
++    xam::LanRecord record;
++    record.title = kernel->title_id(); record.owner = s.owner_; record.info = s.info_;
++    record.filled_public = used(false); record.filled_private = used(true);
++    record.open_public = s.public_slots_ - record.filled_public;
++    record.open_private = s.private_slots_ - record.filled_private;
++    s.advertised_ = xam::LanPublish(std::move(record));
++  };
++  if (message == 0xB0010) {
++    if (s.created_) return kWrongState;
++    const auto owner = Read32(data + 16);
++    auto profile = kernel->user_profile(owner);
++    if (!profile) return X_ERROR_NO_SUCH_USER;
++    const uint32_t pub = Read32(data + 8), priv = Read32(data + 12);
++    if (pub > 32 || priv > 32 || pub + priv > 32) return X_ERROR_INVALID_PARAMETER;
++    auto* info = translate(Read32(data + 20), s.info_.size());
++    auto* nonce = translate(Read32(data + 24), 8);
++    if (!info || !nonce) return X_ERROR_INVALID_PARAMETER;
++    s.flags_ = Read32(data + 4); s.owner_ = owner; s.public_slots_ = pub; s.private_slots_ = priv;
++    std::random_device random;
++    s.nonce_ = (s.flags_ & 1) ? (uint64_t(random()) << 32) | random() : memory::load_and_swap<uint64_t>(nonce);
++    if (s.flags_ & 1) {
++      for (auto& byte : s.info_) byte = uint8_t(random());
++      s.info_[0] = uint8_t((s.info_[0] & 15) | 0x80);
++      std::fill(s.info_.begin() + 8, s.info_.begin() + 44, 0);
++      if (xam::LanEnabled()) {
++        auto address = xam::LanXnAddress(); std::copy(address.begin(), address.end(), s.info_.begin() + 8);
++      } else {
++        s.info_[8] = 127; s.info_[11] = 1;
++        std::copy_n(s.info_.data(), 6, s.info_.data() + 18);
++      }
++      std::copy(s.info_.begin(), s.info_.end(), info);
++    } else std::copy_n(info, s.info_.size(), s.info_.begin());
++    Write64(nonce, s.nonce_);
++    s.created_ = true; s.state_ = 0;
++    publish();
++    REXKRNL_INFO("RedBaron session created: user={}, flags={:08X}, slots={}/{}", owner, s.flags_, pub, priv);
++    return X_ERROR_SUCCESS;
++  }
++  if (!s.created_ || s.state_ == 4) return kWrongState;
++  if (message == 0xB0011) {
++    if (s.flags_ & 1) { xam::LanSessionId id; std::copy_n(s.info_.begin(), 8, id.begin()); xam::LanQosListen(id, 16, {}); }
++    s.state_ = 4; s.members_.clear(); publish(); return X_ERROR_SUCCESS;
++  }
++  if (message == 0xB0012 || message == 0xB0013) {
++    uint32_t count = Read32(data + 4);
++    if (count > 32) return X_ERROR_INVALID_PARAMETER;
++    const bool remote = Read32(data + 8) != 0;
++    auto* users = count ? translate(Read32(data + (remote ? 8 : 12)), count * (remote ? 8 : 4)) : nullptr;
++    auto* priv = count ? translate(Read32(data + 16), count * 4) : nullptr;
++    if (count && (!users || (message == 0xB0012 && !priv))) return X_ERROR_INVALID_PARAMETER;
++    auto members = s.members_;
++    for (uint32_t i = 0; i < count; ++i) {
++      uint32_t index = remote ? 0xFE : Read32(users + i * 4);
++      auto* profile = remote ? nullptr : kernel->user_profile(index);
++      if (!remote && !profile) return X_ERROR_NO_SUCH_USER;
++      uint64_t xuid = remote ? memory::load_and_swap<uint64_t>(users + i * 8) : profile->xuid();
++      if (message == 0xB0013) members.erase(xuid);
++      else members[xuid] = Member{xuid, index, Read32(priv + i * 4) != 0};
++    }
++    uint32_t private_count = uint32_t(std::count_if(members.begin(), members.end(),
++        [](const auto& m) { return m.second.private_slot; }));
++    if (private_count > s.private_slots_ || members.size() - private_count > s.public_slots_) return X_ERROR_INSUFFICIENT_BUFFER;
++    s.members_ = std::move(members);
++    publish();
++    REXKRNL_INFO("RedBaron session membership: {} local/remote participants", s.members_.size());
++    return X_ERROR_SUCCESS;
++  }
++  if (message == 0xB0014) {
++    if (s.state_ != 0 && s.state_ != 1) return kWrongState;
++    s.state_ = 2; publish(); return X_ERROR_SUCCESS;
++  }
++  if (message == 0xB0015) {
++    if (s.state_ != 2) return kWrongState;
++    s.state_ = 0; publish(); return X_ERROR_SUCCESS;
++  }
++  if (message == 0xB0018) {
++    uint32_t pub = Read32(data + 8), priv = Read32(data + 12);
++    if (pub + uint64_t(priv) > 32 || pub < used(false) || priv < used(true)) return X_ERROR_INVALID_PARAMETER;
++    s.flags_ = Read32(data + 4); s.public_slots_ = pub; s.private_slots_ = priv;
++    REXKRNL_INFO("RedBaron session modify: flags={:08X} public={} private={}", s.flags_, pub, priv);
++    publish();
++    return X_ERROR_SUCCESS;
++  }
++  // As with search, XGI gets a buffer size value, not the public API's pointer.
++  const uint32_t required = 128 + uint32_t(s.members_.size()) * 16;
++  const uint32_t capacity = Read32(data + 4);
++  if (capacity < required || !Read32(data + 8)) return 0x80155207;
++  auto* out = translate(Read32(data + 8), required);
++  if (!out) return X_ERROR_INVALID_PARAMETER;
++  std::memset(out, 0, required);
++  Write32(out, s.owner_); Write32(out + 12, s.flags_);
++  Write32(out + 16, s.public_slots_); Write32(out + 20, s.private_slots_);
++  Write32(out + 24, s.public_slots_ - used(false)); Write32(out + 28, s.private_slots_ - used(true));
++  Write32(out + 32, uint32_t(s.members_.size())); Write32(out + 36, uint32_t(s.members_.size()));
++  Write32(out + 40, s.state_); Write64(out + 48, s.nonce_);
++  std::copy(s.info_.begin(), s.info_.end(), out + 56);
++  std::copy_n(s.info_.begin(), 8, out + 116);
++  Write32(out + 124, Read32(data + 8) + 128);
++  size_t i = 0;
++  for (const auto& [xuid, member] : s.members_) {
++    auto* entry = out + 128 + i++ * 16;
++    Write64(entry, xuid); Write32(entry + 8, member.index); Write32(entry + 12, member.private_slot ? 1 : 0);
++  }
++  return X_ERROR_SUCCESS;
++}
++}
+--- a/src/system/xsocket.cpp
++++ b/src/system/xsocket.cpp
+@@ -61,11 +61,13 @@
+ }
+ 
+ X_STATUS XSocket::Close() {
++  if (native_handle_ == uint64_t(-1)) return X_STATUS_SUCCESS;
+   int ret = rex::net::socket_close(native_handle_);
+   if (ret != 0) {
+     return X_STATUS_UNSUCCESSFUL;
+   }
+ 
++  native_handle_ = uint64_t(-1);
+   return X_STATUS_SUCCESS;
+ }
+ 
+@@ -186,18 +188,18 @@
+   }
+   */
+ 
+-  sockaddr_in nfrom;
++  sockaddr_in nfrom{};
+   socklen_t nfromlen = sizeof(sockaddr_in);
+   int ret = recvfrom(native_handle_, reinterpret_cast<char*>(buf), buf_len, flags,
+                      (sockaddr*)&nfrom, &nfromlen);
+-  if (from) {
++  if (ret >= 0 && from) {
+     from->sin_family = nfrom.sin_family;
+     from->sin_addr = ntohl(nfrom.sin_addr.s_addr);  // BE <- BE
+-    from->sin_port = nfrom.sin_port;
++    from->sin_port = ntohs(nfrom.sin_port);
+     std::memset(from->x_sin_zero, 0, sizeof(from->x_sin_zero));
+   }
+ 
+-  if (from_len) {
++  if (ret >= 0 && from_len) {
+     *from_len = nfromlen;
+   }
+ 
+@@ -221,11 +223,11 @@
+   }
+   */
+ 
+-  sockaddr_in nto;
++  sockaddr_in nto{};
+   if (to) {
+-    nto.sin_addr.s_addr = to->sin_addr;
++    nto.sin_addr.s_addr = htonl(to->sin_addr);
+     nto.sin_family = to->sin_family;
+-    nto.sin_port = to->sin_port;
++    nto.sin_port = htons(to->sin_port);
+   }
+ 
+   return sendto(native_handle_, reinterpret_cast<char*>(buf), buf_len, flags,
+--- a/src/ui/window.cpp
++++ b/src/ui/window.cpp
+@@ -35,6 +35,7 @@
+ // change callback registered in ReXApp::SetupPresentation keeps the window
+ // in sync whenever this cvar is changed at runtime.
+ REXCVAR_DEFINE_BOOL(fullscreen, true, "UI/Window", "Start the window in fullscreen mode");
++REXCVAR_DEFINE_BOOL(hide_cursor_fullscreen, false, "UI/Window", "Hide the cursor in fullscreen");
+ 
+ REXCVAR_DEFINE_INT32(monitor, 0, "UI/Window",
+                      "Monitor index to display on (0 = default, 1 = primary, 2 = "
+@@ -277,6 +278,9 @@
+     return;
+   }
+   fullscreen_ = new_fullscreen;
++  if (REXCVAR_GET(hide_cursor_fullscreen)) {
++    SetCursorVisibility(new_fullscreen ? CursorVisibility::kHidden : CursorVisibility::kVisible);
++  }
+   if (!CanApplyState()) {
+     return;
+   }

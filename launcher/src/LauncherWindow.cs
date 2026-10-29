@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -67,11 +67,12 @@ namespace RedBaron {
             Choices("Resolution",Settings.Resolutions.Select(r=>new Choice(r.Replace("x"," × "),r)),s.Resolution);
             Choices("DisplayMode",new[]{new Choice("Borderless fullscreen",1),new Choice("Windowed",0)},s.Fullscreen?1:0);
             Choices("RenderScale",Enumerable.Range(1,6).Select(i=>new Choice(i+"× · "+(1280*i)+" × "+(720*i),i)),s.Scale);
+            Choices("DlssMode",new[]{new Choice("DLAA · native","native_aa"),new Choice("Quality","quality"),new Choice("Balanced","balanced"),new Choice("Performance","performance"),new Choice("Ultra Performance","ultra_performance")},s.DlssMode);
             Choices("FsrSharpness",new[]{new Choice("Soft",0),new Choice("Medium",50),new Choice("Sharp (default)",90),new Choice("Maximum",100)},s.FsrSharpness);
             Choices("Anisotropic",new[]{new Choice("Game default",-1),new Choice("Off",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
             ApplySettings();
-            foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
-            foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
+            foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName","LanPeer"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
+            foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","DlssMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             Combo("Gpu").SelectionChanged+=(sender,e)=> {
                 if(loading || caps.flags.Count==0) return;
                 var selected=Val(Combo("Upscaling"));
@@ -80,8 +81,8 @@ namespace RedBaron {
                 var updated=effects.Select(c=>new Choice(c.Label,c.Value,c.Value.ToString()=="dlss"?caps.Supports("present_effect","dlss") && caps.DlssAvailable(Number(Combo("Gpu"))):c.Enabled)).ToArray();
                 Choices("Upscaling",updated,selected);
             };
-            Combo("Upscaling").SelectionChanged+=(sender,e)=>{Combo("FsrSharpness").IsEnabled=Val(Combo("Upscaling"))=="fsr" || Val(Combo("Upscaling"))=="fsr3";};
-            foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut","ShowFps","Hdr"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
+            foreach(var name in new[]{"Upscaling","DlssMode","Resolution","DisplayMode"}) Combo(name).SelectionChanged+=(sender,e)=>UpdateDlssControls();
+            foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut","ShowFps","Hdr","LanEnabled"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
             Combo("Player").SelectionChanged+=(sender,e)=>{if(loading)return;CommitGrid();playerIndex=Number(Combo("Player"));ShowPlayer();};
             Combo("Device").SelectionChanged+=(sender,e)=>{if(loading)return;settings.Players[playerIndex].Device=Val(Combo("Device"));Changed();};
             Button("BrowseSource").Click+=(sender,e)=>Browse("SourcePath");
@@ -113,13 +114,21 @@ namespace RedBaron {
             loading=true;
             Text("SourcePath").Text=settings.Source;Text("DestinationPath").Text=settings.Destination;Text("SdkPath").Text=settings.Sdk;
             Text("PlayerName").Text=settings.PlayerName;
+            Text("LanPeer").Text=settings.LanPeer; Check("LanEnabled").IsChecked=settings.LanEnabled;
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;Check("ShowFps").IsChecked=settings.ShowFps;Check("Hdr").IsChecked=settings.Hdr;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
-            Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);
+            Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);Select("DlssMode",settings.DlssMode);
             Select("Anisotropic",settings.Anisotropic);Select("KeyboardPlayer",settings.KeyboardPlayer);
             Label("HeaderStatus").Text=File.Exists(settings.Exe)?"Installation found":"Installation required";
             Label("InstallState").Text=File.Exists(settings.Exe)?"Current installation: "+settings.Root:"Select the source and destination folders to begin.";
             ShowPlayer();loading=false;
+        }
+        void UpdateDlssControls() {
+            bool dlss=Val(Combo("Upscaling"))=="dlss";
+            Combo("DlssMode").IsEnabled=dlss;
+            Combo("RenderScale").IsEnabled=!dlss;
+            Combo("FsrSharpness").IsEnabled=Val(Combo("Upscaling"))=="fsr" || Val(Combo("Upscaling"))=="fsr3";
+            Label("DlssInfo").Text=dlss?"Render scale is selected automatically. Quality is recommended at 4K. Lower modes trade detail for speed; Balanced and Performance may share a render scale.":"Select NVIDIA DLSS to choose its quality mode.";
         }
         void Select(string name,object value) {
             foreach(Choice choice in Combo(name).Items) if(Convert.ToString(choice.Value)==Convert.ToString(value)) {Combo(name).SelectedItem=choice;return;}
@@ -155,14 +164,15 @@ namespace RedBaron {
             CommitGrid();
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
+            settings.LanEnabled=Check("LanEnabled").IsChecked==true;settings.LanPeer=Text("LanPeer").Text.Trim();
             settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;settings.Vsync=Check("Vsync").IsChecked==true;settings.ShowFps=Check("ShowFps").IsChecked==true;settings.Hdr=Check("Hdr").IsChecked==true;
             settings.Resolution=Val(Combo("Resolution"));settings.Fullscreen=Number(Combo("DisplayMode"))==1;
-            settings.Scale=Number(Combo("RenderScale"));settings.Fps=Number(Combo("FrameRate"));settings.FsrSharpness=Number(Combo("FsrSharpness"));
+            settings.DlssMode=Val(Combo("DlssMode"));settings.Scale=Number(Combo("RenderScale"));settings.Fps=Number(Combo("FrameRate"));settings.FsrSharpness=Number(Combo("FsrSharpness"));
             settings.Anisotropic=Number(Combo("Anisotropic"));settings.KeyboardPlayer=Number(Combo("KeyboardPlayer"));
             settings.Antialiasing=Val(Combo("Antialiasing"));settings.Upscaling=Val(Combo("Upscaling"));settings.Adapter=Number(Combo("Gpu"));
         }
         bool Save() {
-            try {ReadSettings();Services.Save(settings,caps);dirty=false;Status("Settings saved. They will apply the next time you start the game.");return true;}
+            try {ReadSettings();Services.Save(settings,caps);Select("RenderScale",settings.Scale);dirty=false;Status("Settings saved. They will apply the next time you start the game.");return true;}
             catch(Exception error) {Status(error.Message,true);return false;}
         }
         void Play() {
@@ -186,10 +196,11 @@ namespace RedBaron {
                 Label("GpuSummary").Text=caps.gpus.Count>0?String.Join(" · ",caps.gpus.Select(g=>g.name)):"No physical GPU detected.";
                 Check("ShowFps").IsEnabled=caps.flags.ContainsKey("redbaron_show_fps");
                 Check("Hdr").IsEnabled=caps.flags.ContainsKey("present_hdr");
-                Label("HdrInfo").Text=(caps.hdrActive?"Windows HDR is active on a connected display.":"Windows HDR is off or unavailable. SDR will be used until HDR is active on the game's display.")+" HDR10 output maps the original SDR image to 200-nit white.";
+                Check("LanEnabled").IsEnabled=caps.flags.ContainsKey("redbaron_lan");
+                Label("HdrInfo").Text=(caps.hdrActive?"Windows HDR is active on a connected display.":"Windows HDR is off or unavailable. SDR will be used until HDR is active on the game's display.")+" The FPS counter reports the actual HDR10 / SDR output. HDR10 maps the original SDR image to 200-nit white; it does not add HDR lighting.";
                 Label("GpuSummary").Text += caps.refreshHz>0?" · Connected displays: up to "+caps.refreshHz+" Hz":"";
                 Label("UpscalingInfo").Text="FSR 3.1.5 and DLSS are temporal previews. Moving objects and HUD may leave trails; use FSR 1 or bilinear for stable image quality. No frame generation.";
-                ShowPlayer();loading=previous;
+                ShowPlayer();UpdateDlssControls();loading=previous;
                 Status(dirty?"Unsaved changes.":"Ready. "+caps.devices.Count+" controller(s) detected.");
                 if(!String.IsNullOrEmpty(caps.inputError)) Status("Controller detection failed: "+caps.inputError,true);
                 Button("Save").IsEnabled=true;Button("Play").IsEnabled=File.Exists(settings.Exe);

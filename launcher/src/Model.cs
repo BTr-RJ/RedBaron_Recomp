@@ -28,6 +28,8 @@ namespace RedBaron {
         public bool ShowLauncher { get; set; }
         public bool DesktopShortcut { get; set; }
         public string PlayerName { get; set; }
+        public bool LanEnabled { get; set; }
+        public string LanPeer { get; set; }
         public string Resolution { get; set; }
         public bool Fullscreen { get; set; }
         public bool Vsync { get; set; }
@@ -40,13 +42,16 @@ namespace RedBaron {
         public int FsrSharpness { get; set; }
         public string Antialiasing { get; set; }
         public string Upscaling { get; set; }
+        public string DlssMode { get; set; }
         public int KeyboardPlayer { get; set; }
         public List<Player> Players { get; set; }
         public Settings() {
             Version = 1; ShowLauncher = true; PlayerName = "Player";
+            LanPeer = "255.255.255.255";
             Resolution = "1280x720"; Fullscreen = true; Vsync = true;
             Anisotropic = 3; Adapter = -1; Scale = 1;
             FsrSharpness = 90;
+            DlssMode = "quality";
             Antialiasing = "none"; Upscaling = "bilinear"; KeyboardPlayer = 0;
             Players = Enumerable.Range(0, 4).Select(i => new Player()).ToList();
         }
@@ -82,6 +87,9 @@ namespace RedBaron {
                 s.Vsync = t.Bool("present_vsync", s.Vsync);
                 s.ShowFps = t.Bool("redbaron_show_fps", s.ShowFps);
                 s.Hdr = t.Bool("present_hdr", s.Hdr);
+                s.PlayerName = t.String("redbaron_player_name", s.PlayerName);
+                s.LanEnabled = t.Bool("redbaron_lan", s.LanEnabled);
+                s.LanPeer = t.String("redbaron_lan_peer", s.LanPeer);
                 s.Anisotropic = t.Int("anisotropic_override", s.Anisotropic);
                 s.Adapter = t.Int("d3d12_adapter", s.Adapter);
                 s.Scale = t.Int("resolution_scale", s.Scale);
@@ -89,6 +97,8 @@ namespace RedBaron {
                 s.FsrSharpness = (int)Math.Round(100 - 50 * t.Number("present_fsr_sharpness_reduction", (100-s.FsrSharpness)/50.0));
                 s.Antialiasing = t.String("swap_post_effect", s.Antialiasing);
                 s.Upscaling = t.String("present_effect", s.Upscaling);
+                string temporalMode = t.String("present_fsr_quality_mode", "auto");
+                if (s.Upscaling == "dlss" && DlssModes.Contains(temporalMode)) s.DlssMode = temporalMode;
                 s.KeyboardPlayer = t.Bool("mnk_mode", true) ? t.Int("redbaron_keyboard_player", 0) : -1;
                 int keyboardIndex = Math.Max(0, s.KeyboardPlayer - 1);
                 foreach (var b in s.Players[keyboardIndex].Bindings) b.Keyboard = t.String(b.Key, b.Keyboard);
@@ -106,6 +116,11 @@ namespace RedBaron {
             return s;
         }
         public void Validate() {
+            string[] octets = (LanPeer ?? "").Split('.');
+            byte octet;
+            if (octets.Length != 4 || octets.Any(part => !Regex.IsMatch(part, @"\A(0|[1-9][0-9]{0,2})\z") || !Byte.TryParse(part, out octet)) || LanPeer == "0.0.0.0")
+                throw new InvalidDataException("LAN host: enter an IPv4 address, or 255.255.255.255 for automatic discovery.");
+            if (!DlssModes.Contains(DlssMode)) throw new InvalidDataException("Choose a DLSS quality mode from the list.");
             if (!Regex.IsMatch(PlayerName ?? "", @"^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,13}[A-Za-z0-9_-])?$"))
                 throw new InvalidDataException("Name: use 1–15 characters; letters A–Z, numbers, internal spaces, hyphens or underscores.");
             if (!Resolutions.Contains(Resolution))
@@ -146,12 +161,14 @@ namespace RedBaron {
                 // Keep the title's original 16:9 layout; scale its render targets separately.
                 {"video_mode_width","1280"}, {"video_mode_height","720"},
                 {"present_fsr_sharpness_reduction", ((100-FsrSharpness)/50.0).ToString("0.00",CultureInfo.InvariantCulture)},
-                {"present_fsr_quality_mode", "\"auto\""},
+                {"present_fsr_quality_mode", Json.Quote(Upscaling == "dlss" ? DlssMode : "auto")},
                 {"d3d12_adapter",Adapter.ToString()},
                 {"swap_post_effect",Json.Quote(Antialiasing)}, {"present_effect",Json.Quote(Upscaling)},
                 {"render_target_path_d3d12","\"rov\""}, {"input_backend","\"sdl\""},
                 {"mnk_mode", Bool(KeyboardPlayer >= 0)}, {"mnk_mouse","false"},
                 {"redbaron_keyboard_player",Math.Max(0,KeyboardPlayer).ToString()},
+                {"redbaron_player_name",Json.Quote(PlayerName)},
+                {"redbaron_lan", Bool(LanEnabled)}, {"redbaron_lan_peer",Json.Quote(LanPeer)},
                 {"redbaron_pad_slots",Json.Quote(String.Join(";",Players.Select(p => p.Device))) }
             };
             for (int p = 0; p < 4; p++) values["redbaron_pad_map_p"+(p+1)] = Json.Quote(String.Join(",", Players[p].Bindings.Select(b=>b.Pad.ToString())));
@@ -159,6 +176,16 @@ namespace RedBaron {
             return t.Patch(values);
         }
         static string Bool(bool value) { return value ? "true" : "false"; }
+        public static readonly string[] DlssModes = {"native_aa","quality","balanced","performance","ultra_performance"};
+        public int DlssRenderScale(int width, int height) {
+            // The emulated render targets support integer multiples of 720p.
+            // Render the smallest sufficient target, then filter to the NGX input size.
+            double[] ratios = {1.0, 1.5, 1.7, 2.0, 3.0};
+            int mode = Array.IndexOf(DlssModes, DlssMode);
+            if (mode < 0 || width < 1 || height < 1) throw new InvalidDataException("Cannot determine the DLSS render resolution.");
+            double sceneHeight = Math.Min(height, width * 9.0 / 16.0);
+            return Math.Max(1, Math.Min(6, (int)Math.Ceiling(sceneHeight / ratios[mode] / 720.0)));
+        }
         public static readonly string[] Resolutions = {"1280x720","1600x900","1920x1080","2560x1440","3440x1440","3840x2160","5120x1440","5120x2880","7680x4320"};
         public static readonly int[] FrameRates = {0,30,60,90,120,144,165,240};
     }

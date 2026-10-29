@@ -186,8 +186,14 @@ applies separately; review its distribution conditions before a future release.
 
 The native probe asks NGX about each adapter/driver. The launcher enables DLSS
 only for a compatible selected GPU. Runtime failure falls back to spatial FSR.
-Quality mode follows the actual render/output ratio, with DLAA at equal
-resolution; render scale remains explicit in Video.
+The launcher offers DLAA (native), Quality, Balanced, Performance and Ultra
+Performance, mapped to explicit NGX modes. Saving selects an integer render
+scale from the output dimensions: at 4K the scales are 3, 2, 2, 2 and 1.
+Balanced and Performance therefore share the 1440p scene-render cost at 4K,
+though NGX input dimensions differ. This avoids rendering a full 4K scene
+before upscaling in Quality mode. A tutorial run measured 120.03–120.10 FPS
+at 2560×1440 → 3840×2160 with a 120 FPS target on the RTX 5070 Ti; this is
+not a controlled comparison with the user’s reported 85 FPS in another scene.
 
 Local tests confirmed successful initialization at **1280×720 → 1920×1080**,
 thousands of evaluated frames and the 3D tutorial at a 120 FPS target. DLSS also
@@ -198,7 +204,7 @@ or bilinear remain available. No FSR/DLSS frame generation.
 
 ## Validation and release status
 
-- The three SDK patches reproduce all modified SDK sources from the original checkout.
+- The five SDK patches reproduce all modified SDK sources from the original checkout.
 - UIAutomation saved DLSS, 120 FPS, VSync, FPS counter and HDR and captured normal/fullscreen layouts.
 - SDK runtime/GPU builds, final C++ executable/probe build and existing input CTest passed.
 - Native probe reports spatial FSR/CAS, the FSR 3.1.5/DLSS previews, FPS/HDR flags and actual NGX/display capabilities.
@@ -217,4 +223,9 @@ No official Release is published. Before packaging the launcher as the official
 installer, finish and validate the agreed video features, package extraction and
 tool preparation, and test installation/play on a clean Windows environment.
 The installer currently requires extracted game files and an installed compatible
-SDK/toolchain. Multiplayer and online are explicitly outside this immediate milestone.
+SDK/toolchain. Online and local multiplayer have become the current priority; see MULTIPLAYER.md.
+
+The FPS overlay now includes the actual HDR10/SDR output state, taken from
+successful swap-chain color-space negotiation. The preference alone does not
+prove HDR is active. It remains a conversion of SDR content, not native HDR
+lighting. The game cursor is hidden in fullscreen and restored in windowed mode.

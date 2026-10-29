@@ -9,6 +9,9 @@
 #include <rex/input/sdl/sdl_input_driver.h>
 #include <rex/input/flags.h>
 #include <rex/runtime.h>
+#ifdef REDBARON_INPUT_FEED
+#include "../tests/input_feed.h"
+#endif
 
 REXCVAR_DEFINE_UINT32(redbaron_keyboard_player, 0, "Input",
                      "Keyboard/mouse player: 0 shares player 1; 1..4 reserves a slot")
@@ -98,6 +101,18 @@ std::unique_ptr<LocalDeviceAssignment> MakeRouting() {
 } // namespace
 
 void ConfigureLauncherInput(rex::RuntimeConfig& config) {
+#ifdef REDBARON_INPUT_FEED
+  const auto feed = REXCVAR_GET(redbaron_test_input);
+  if (!feed.empty()) {
+    config.input_factory = [feed](bool) -> std::unique_ptr<rex::system::IInputSystem> {
+      auto input = std::make_unique<rex::input::InputSystem>(nullptr);
+      input->AddDriver(std::make_unique<TestInputFeed>(feed));
+      input->SetDeviceAssignment(std::make_unique<LocalDeviceAssignment>(0));
+      return input;
+    };
+    return;
+  }
+#endif
   // The launcher selects SDL. Existing manually selected XInput remains intact.
   if(REXCVAR_GET(input_backend)!="sdl") return;
   config.input_factory=[](bool tool_mode)->std::unique_ptr<rex::system::IInputSystem> {
@@ -117,7 +132,7 @@ void ConfigureLauncherInput(rex::RuntimeConfig& config) {
     }
     input->AddDriver(std::make_unique<rex::input::nop::NopInputDriver>(nullptr,tool_mode?0:1));
     input->SetDeviceAssignment(std::move(routing));
-    REXLOG_INFO("RedBaron launcher mappings active (SDL); additional game profiles remain pending");
+    REXLOG_INFO("RedBaron launcher mappings active (SDL), with separate local profiles");
     return input;
   };
 }
@@ -129,8 +144,7 @@ void ConfigureLocalInput(rex::input::InputSystem& input) {
     REXLOG_WARN("RedBaron input: keyboard slot ignored because mnk_mode is disabled");
     keyboard_player = 0;
   }
-  REXLOG_INFO("RedBaron input: keyboard_player={} (0=shared); routing only, "
-              "additional local profiles are not implemented yet", keyboard_player);
+  REXLOG_INFO("RedBaron input: keyboard_player={} (0=shared)", keyboard_player);
   input.SetDeviceAssignment(std::make_unique<LocalDeviceAssignment>(
       keyboard_player, [](const rex::input::DeviceInfo& device, uint32_t slot) {
         if (slot < rex::input::kMaxGuestUsers) {

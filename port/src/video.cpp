@@ -53,16 +53,20 @@ private:
       previous_ = frames;
       start_ = now;
     }
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 14, 14), ImGuiCond_Always,
-                            ImVec2(1, 0));
+    // Keep the original player names and split-screen timers unobstructed.
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * .5f, io.DisplaySize.y - 8),
+                            ImGuiCond_Always, ImVec2(.5f, 1));
     ImGui::SetNextWindowBgAlpha(.75f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.f);
     constexpr auto flags = ImGuiWindowFlags_NoDecoration |
                            ImGuiWindowFlags_AlwaysAutoResize |
                            ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                            ImGuiWindowFlags_NoSavedSettings;
-    if (ImGui::Begin("##redbaron_fps", nullptr, flags))
-      ImGui::Text("%.0f FPS  |  %.1f ms", fps_, fps_ > 0 ? 1000.f / fps_ : 0.f);
+    if (ImGui::Begin("##redbaron_fps", nullptr, flags)) {
+      const bool hdr = rex::cvar::GetFlagByName("redbaron_hdr_active") == "true";
+      ImGui::Text("%.0f FPS  |  %.1f ms  |  %s", fps_, fps_ > 0 ? 1000.f / fps_ : 0.f,
+                  hdr ? "HDR10" : "SDR");
+    }
     ImGui::End();
     ImGui::PopStyleVar();
   }

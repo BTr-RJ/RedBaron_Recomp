@@ -49,7 +49,13 @@ try {
         $videoPatch=Join-Path $project 'patches/rexglue-video-pacing-hdr-dlss.patch'
         Native 'git' @('apply','--check','--ignore-space-change',$videoPatch)
         Native 'git' @('apply','--ignore-space-change',$videoPatch)
+        $modesPatch=Join-Path $project 'patches/rexglue-dlss-modes-hdr-cursor.patch'
+        Native 'git' @('apply','--check','--ignore-space-change',$modesPatch)
+        Native 'git' @('apply','--ignore-space-change',$modesPatch)
     }
+    $profilesPatch=Join-Path $project 'patches/rexglue-local-profiles-lan.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$profilesPatch)
+    Native 'git' @('apply','--ignore-space-change',$profilesPatch)
 } finally {Pop-Location}
 Native 'cmake' @('-S',$source,'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
     '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++','-DCMAKE_C_FLAGS=-march=x86-64-v2',

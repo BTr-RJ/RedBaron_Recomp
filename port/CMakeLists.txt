@@ -40,6 +40,19 @@ if(REDBARON_BUILD_INPUT_TESTS)
 endif()
 
 rexglue_setup_target(snoopyflyingace)
+option(REDBARON_INPUT_FEED "Enable scripted controllers in a diagnostic build only" OFF)
+if(REDBARON_INPUT_FEED)
+    target_compile_definitions(snoopyflyingace PRIVATE REDBARON_INPUT_FEED=1)
+endif()
+option(REDBARON_BUILD_RUNTIME_TESTS "Build runtime integration tests (no game assets)" OFF)
+if(REDBARON_BUILD_RUNTIME_TESTS)
+    enable_testing()
+    add_executable(redbaron_runtime_tests tests/runtime_services_test.cpp)
+    target_link_libraries(redbaron_runtime_tests PRIVATE rex::runtime ws2_32)
+    add_test(NAME redbaron_runtime_services COMMAND redbaron_runtime_tests
+        "${CMAKE_CURRENT_BINARY_DIR}/runtime-test-userdata")
+    set_tests_properties(redbaron_runtime_services PROPERTIES TIMEOUT 30)
+endif()
 
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
@@ -48,10 +61,14 @@ if(WIN32)
     # Keep the runtime/plugin pair and optional upscalers together for both
     # hosts, including direct CMake builds (not just scripts/build.ps1).
     get_filename_component(REDBARON_SDK_ROOT "${rexglue_DIR}/../../.." ABSOLUTE)
+    set(REDBARON_RUNTIME_HOSTS snoopyflyingace redbaron_probe)
+    if(TARGET redbaron_runtime_tests)
+        list(APPEND REDBARON_RUNTIME_HOSTS redbaron_runtime_tests)
+    endif()
     foreach(runtime_asset rexruntime.dll rexgpu-xenos.dll amd_fidelityfx_upscaler_dx12.dll FidelityFX-LICENSE.txt nvngx_dlss.dll NVIDIA-DLSS-LICENSE.txt)
         set(runtime_source "${REDBARON_SDK_ROOT}/bin/${runtime_asset}")
         if(EXISTS "${runtime_source}")
-            foreach(host snoopyflyingace redbaron_probe)
+            foreach(host IN LISTS REDBARON_RUNTIME_HOSTS)
                 add_custom_command(TARGET ${host} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
                         "${runtime_source}" "$<TARGET_FILE_DIR:${host}>" VERBATIM)

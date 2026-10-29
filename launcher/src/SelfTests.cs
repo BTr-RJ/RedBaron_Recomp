@@ -68,6 +68,19 @@ namespace RedBaron {
                 Assert(File.ReadAllText(s.Toml)==original,"Failed save modified runtime config");
                 s.Upscaling="bilinear";Services.Save(s,caps);
                 var loaded=Settings.Load(s.Root);
+                Assert(loaded.PlayerName=="Player 2" && new Toml(File.ReadAllText(s.Toml)).String("redbaron_player_name","")=="Player 2","Player name did not reach runtime settings");
+                loaded.LanEnabled=true;loaded.LanPeer="192.168.1.20";
+                string beforeLan=File.ReadAllText(s.Toml);
+                Reject(()=>Services.Save(loaded,caps),"Old runtime accepted LAN play");
+                Assert(File.ReadAllText(s.Toml)==beforeLan,"Rejected LAN save changed the configuration");
+                caps.flags["redbaron_lan"]=new Flag();caps.flags["redbaron_lan_peer"]=new Flag();
+                Services.Save(loaded,caps);
+                Assert(Settings.Load(s.Root).LanEnabled && Settings.Load(s.Root).LanPeer=="192.168.1.20","LAN settings did not roundtrip");
+                foreach(string invalid in new[]{"localhost","1.2.3","999.1.2.3","1.02.3.4","0.0.0.0","1.2.3.4\n"}) {
+                    loaded.LanPeer=invalid;Reject(()=>loaded.Validate(),"Invalid LAN IPv4 accepted");
+                }
+                loaded.LanPeer="255.255.255.255";loaded.LanEnabled=false;Services.Save(loaded,caps);
+                results.Add("LAN: runtime gating, IPv4 validation, persistence and rejected-save preservation");
                 Assert(loaded.Scale==2 && loaded.Resolution=="7680x4320" && !loaded.Vsync && loaded.FsrSharpness==50,"Video settings did not roundtrip");
                 loaded.Fps=120;Reject(()=>Services.Save(loaded,caps),"Old game build accepted an unsupported FPS target");
                 caps.flags["redbaron_fps"]=new Flag{allowed=Settings.FrameRates.Select(fps=>fps.ToString()).ToArray()};
@@ -108,8 +121,20 @@ namespace RedBaron {
                 string beforeDlss=File.ReadAllText(s.Toml);
                 Reject(()=>Services.Save(loaded,caps),"Unsupported GPU accepted DLSS");
                 Assert(File.ReadAllText(s.Toml)==beforeDlss,"Rejected DLSS save modified settings");
-                loaded.Adapter=1;Services.Save(loaded,caps);
+                caps.flags["present_fsr_quality_mode"]=new Flag{allowed=Settings.DlssModes};
+                caps.desktopWidth=3840;caps.desktopHeight=2160;
+                loaded.Adapter=1;loaded.Fullscreen=true;Services.Save(loaded,caps);
                 Assert(Settings.Load(s.Root).Upscaling=="dlss","DLSS selection did not roundtrip");
+                int[] expectedScales={3,2,2,2,1};
+                for(int mode=0;mode<Settings.DlssModes.Length;mode++) {
+                    loaded.DlssMode=Settings.DlssModes[mode];Services.Save(loaded,caps);
+                    var dlss=Settings.Load(s.Root);
+                    Assert(dlss.Scale==expectedScales[mode] && dlss.DlssMode==loaded.DlssMode,"DLSS mode or render resolution did not roundtrip");
+                }
+                loaded.Fullscreen=false;loaded.Resolution="1920x1080";loaded.DlssMode="quality";
+                Services.Save(loaded,caps);Assert(Settings.Load(s.Root).Scale==1,"Windowed DLSS used desktop dimensions");
+                loaded.DlssMode="invalid";Reject(()=>loaded.Validate(),"Invalid DLSS mode accepted");loaded.DlssMode="quality";
+                results.Add("DLSS: five NGX modes, automatic 4K render scales and windowed resolution selection");
                 loaded.Upscaling="bilinear";loaded.Adapter=-1;Services.Save(loaded,caps);
                 results.Add("FPS overlay/HDR: capability gating and persistence; DLSS: actual GPU capability selection and rejected-save preservation");
                 Assert(loaded.Players[0].Bindings[0].Keyboard=="J,LMB","Load did not roundtrip mappings");
