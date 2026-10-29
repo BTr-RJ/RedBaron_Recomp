@@ -141,6 +141,7 @@ namespace RedBaron {
                 // Keep the title's original 16:9 layout; scale its render targets separately.
                 {"video_mode_width","1280"}, {"video_mode_height","720"},
                 {"present_fsr_sharpness_reduction", ((100-FsrSharpness)/50.0).ToString("0.00",CultureInfo.InvariantCulture)},
+                {"present_fsr_quality_mode", "\"auto\""},
                 {"d3d12_adapter",Adapter.ToString()},
                 {"swap_post_effect",Json.Quote(Antialiasing)}, {"present_effect",Json.Quote(Upscaling)},
                 {"render_target_path_d3d12","\"rov\""}, {"input_backend","\"sdl\""},

@@ -79,6 +79,18 @@ namespace RedBaron {
                 loaded.Fps=0;Services.Save(loaded,caps);
                 Assert(new Toml(File.ReadAllText(s.Toml)).Int("video_mode_refresh_rate",0)==60,"Original virtual refresh not restored");
                 results.Add("FPS: capability gating, persistence, virtual display timing and default restoration");
+                loaded.Upscaling="fsr3";
+                string beforeFsr=File.ReadAllText(s.Toml);
+                Reject(()=>Services.Save(loaded,caps),"Spatial-only runtime accepted temporal FSR");
+                Assert(File.ReadAllText(s.Toml)==beforeFsr,"Rejected FSR save modified settings");
+                caps.flags["present_effect"].allowed=new[]{"bilinear","fsr","fsr3"};
+                File.WriteAllText(s.Toml,new Toml(beforeFsr).Patch(new Dictionary<string,string>{{"present_fsr_quality_mode","\"performance\""}}));
+                Services.Save(loaded,caps);
+                var temporal=new Toml(File.ReadAllText(s.Toml));
+                Assert(temporal.String("present_effect","")=="fsr3" && temporal.String("present_fsr_quality_mode","")=="auto","Temporal FSR did not preserve explicit render scale");
+                Assert(Settings.Load(s.Root).Upscaling=="fsr3","FSR 3.1.5 did not roundtrip");
+                loaded.Upscaling="bilinear";Services.Save(loaded,caps);
+                results.Add("FSR 3.1.5: runtime gating, rejected-save preservation, render scale selection and settings roundtrip");
                 Assert(loaded.Players[0].Bindings[0].Keyboard=="J,LMB","Load did not roundtrip mappings");
                 Assert(Directory.GetFiles(s.Build,"*.backup-*").Length>0,"No backup created");
                 Assert(loaded.ShowLauncher,"Show launcher preference lost");

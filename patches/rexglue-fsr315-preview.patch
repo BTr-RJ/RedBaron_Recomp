@@ -1,0 +1,955 @@
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -41,6 +41,7 @@
+ #include <rex/ui/d3d12/d3d12_provider.h>
+ #include <rex/ui/d3d12/d3d12_upload_buffer_pool.h>
+ #include <rex/ui/d3d12/d3d12_util.h>
++#include <rex/ui/d3d12/temporal_frame.h>
+ 
+ namespace rex::graphics::d3d12 {
+ 
+@@ -437,6 +438,15 @@
+   ID3D12Fence* queue_operations_since_submission_fence_ = nullptr;
+   uint64_t queue_operations_since_submission_fence_last_ = 0;
+   bool queue_operations_done_since_submission_signal_ = false;
++
++  struct TemporalCaptureState {
++    std::shared_ptr<std::atomic_bool> disabled = std::make_shared<std::atomic_bool>(false);
++    bool active = false, captured = false, jitter_draw = false;
++    ui::d3d12::TemporalFrame scene;
++    std::shared_ptr<ui::d3d12::TemporalFrame> snapshot;
++    std::vector<std::shared_ptr<ui::d3d12::TemporalFrame>> pool;
++  };
++  TemporalCaptureState temporal_capture_;
+ 
+   bool frame_open_ = false;
+   // Guest frame index, since some transient resources can be reused across
+--- a/include/rex/graphics/d3d12/render_target_cache.h
++++ b/include/rex/graphics/d3d12/render_target_cache.h
+@@ -66,6 +66,11 @@
+   bool msaa_2x_supported() const { return msaa_2x_supported_; }
+ 
+   void WriteEdramRawSRVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle);
++  ID3D12Resource* UseEdramAsCopySource() {
++    TransitionEdramBuffer(D3D12_RESOURCE_STATE_COPY_SOURCE);
++    return edram_buffer_;
++  }
++  void RestoreEdramForRendering() { TransitionEdramBuffer(D3D12_RESOURCE_STATE_UNORDERED_ACCESS); }
+   void WriteEdramRawUAVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle);
+   void WriteEdramUintPow2SRVDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle,
+                                        uint32_t element_size_bytes_pow2);
+--- a/include/rex/ui/d3d12/d3d12_presenter.h
++++ b/include/rex/ui/d3d12/d3d12_presenter.h
+@@ -18,10 +18,12 @@
+ #include <rex/math.h>
+ #include <rex/ui/d3d12/d3d12_provider.h>
+ #include <rex/ui/d3d12/d3d12_submission_tracker.h>
++#include <rex/ui/d3d12/temporal_frame.h>
+ #include <rex/ui/presenter.h>
+ #include <rex/ui/surface.h>
+ 
+ namespace rex::ui::d3d12 {
++class Fsr315;
+ 
+ class D3D12UIDrawContext final : public UIDrawContext {
+  public:
+@@ -64,6 +66,7 @@
+     // kGuestOutputInternalState, and the callback must also transition it back
+     // to kGuestOutputInternalState before finishing.
+     ID3D12Resource* resource_uav_capable() const { return resource_.Get(); }
++    std::shared_ptr<TemporalFrame> temporal_frame;
+ 
+    private:
+     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
+@@ -262,9 +265,7 @@
+ 
+   bool InitializeSurfaceIndependent();
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+-  bool EnsureTemporalUpscalerContext(uint32_t render_width, uint32_t render_height,
+-                                     uint32_t output_width, uint32_t output_height);
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+   bool DispatchTemporalUpscaler(ID3D12GraphicsCommandList* command_list,
+                                 ID3D12Resource* input_resource, uint32_t input_width,
+                                 uint32_t input_height, ID3D12Resource* output_resource,
+@@ -274,6 +275,11 @@
+ #endif
+ 
+   const D3D12Provider& provider_;
++  std::array<std::shared_ptr<TemporalFrame>, kGuestOutputMailboxSize> temporal_frames_;
++  std::shared_ptr<TemporalFrame> temporal_paint_frame_;
++  std::shared_ptr<TemporalFrame> temporal_last_frame_;
++  std::shared_ptr<Fsr315> fsr315_;
++  uint64_t temporal_last_submission_ = 0;
+ 
+   // Whether DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING is supported by DXGI (depends in
+   // particular on the Windows 10 version and hardware support), primarily for
+@@ -311,15 +317,6 @@
+   // DisconnectPaintingFromSurfaceFromUIThreadImpl) by the thread doing it, as
+   // well as by presenter initialization and shutdown.
+   PaintContext paint_context_;
+-
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+-  void* temporal_upscaler_context_ = nullptr;
+-  uint32_t temporal_upscaler_max_render_width_ = 0;
+-  uint32_t temporal_upscaler_max_render_height_ = 0;
+-  uint32_t temporal_upscaler_max_output_width_ = 0;
+-  uint32_t temporal_upscaler_max_output_height_ = 0;
+-  bool temporal_upscaler_provider_logged_ = false;
+-#endif
+ };
+ 
+ }  // namespace rex::ui::d3d12
+--- /dev/null
++++ b/include/rex/ui/d3d12/temporal_frame.h
+@@ -0,0 +1,20 @@
++#pragma once
++#include <array>
++#include <atomic>
++#include <memory>
++#include <rex/ui/d3d12/d3d12_api.h>
++
++namespace rex::ui::d3d12 {
++// A snapshot belongs to exactly one guest frame. The color mailbox carries
++// this reference with its color resource so CPU and presentation rates may differ.
++struct TemporalFrame {
++  // Shared between the producer and presenter, including across the DLL boundary.
++  std::shared_ptr<std::atomic_bool> disabled;
++  Microsoft::WRL::ComPtr<ID3D12Resource> edram;
++  std::array<float, 16> view_projection{};
++  uint32_t width = 0, height = 0, pitch = 0, depth_base = 0, scale_x = 1, scale_y = 1;
++  uint64_t id = 0;
++  double seconds = 0;
++  float jitter_x = 0, jitter_y = 0;
++};
++}  // namespace rex::ui::d3d12
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -12,6 +12,8 @@
+ #include <algorithm>
+ #include <cstdarg>
+ #include <cstring>
++#include <cmath>
++#include <rex/chrono/clock.h>
+ #include <sstream>
+ #include <utility>
+ 
+@@ -48,6 +50,16 @@
+     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+ 
+ namespace rex::graphics::d3d12 {
++
++static float TemporalHalton(uint32_t index, uint32_t radix) {
++  float result = 0, f = 1;
++  while (index) {
++    f /= radix;
++    result += f * (index % radix);
++    index /= radix;
++  }
++  return result - .5f;
++}
+ 
+ // Generated with `xb buildshaders`.
+ namespace shaders {
+@@ -1893,6 +1905,9 @@
+ 
+ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbuffer_width,
+                                       uint32_t frontbuffer_height) {
++  auto temporal_snapshot = temporal_capture_.snapshot;
++  temporal_capture_.snapshot.reset();
++  temporal_capture_.active = temporal_capture_.captured = temporal_capture_.jitter_draw = false;
+   SCOPE_profile_cpu_f("gpu");
+   vertex_buffers_in_sync_[0] = 0;
+   vertex_buffers_in_sync_[1] = 0;
+@@ -1988,7 +2003,10 @@
+   presenter->RefreshGuestOutput(
+       guest_output_width, guest_output_height, display_width, display_height,
+       [this, &swap_texture_srv_desc, frontbuffer_format, swap_texture_resource, guest_output_width,
+-       guest_output_height](ui::Presenter::GuestOutputRefreshContext& context) -> bool {
++       guest_output_height,
++       temporal_snapshot](ui::Presenter::GuestOutputRefreshContext& context) -> bool {
++        static_cast<ui::d3d12::D3D12Presenter::D3D12GuestOutputRefreshContext&>(context)
++            .temporal_frame = temporal_snapshot;
+         const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
+         ID3D12Device* device = provider.GetDevice();
+ 
+@@ -2342,6 +2360,84 @@
+   }
+ 
+   reg::RB_DEPTHCONTROL normalized_depth_control = draw_util::GetNormalizedDepthControl(regs);
++  // RedBaron-specific scene convention: VS c14-c17 contain the main camera VP.
++  // Capture D24FS8 before post-processing reuses EDRAM; never capture shadows.
++  static const bool temporal_enabled = rex::cvar::GetFlagByName("present_effect") == "fsr3";
++  temporal_capture_.jitter_draw = false;
++  if (temporal_enabled && !temporal_capture_.disabled->load() &&
++      render_target_cache_->GetPath() == RenderTargetCache::Path::kPixelShaderInterlock) {
++    float vp[16];
++    std::memcpy(vp, &regs[XE_GPU_REG_SHADER_CONSTANT_000_X + 14 * 4], sizeof(vp));
++    const float norm = vp[12] * vp[12] + vp[13] * vp[13] + vp[14] * vp[14];
++    const uint32_t width = uint32_t(
++        std::abs(rex::memory::Reinterpret<float>(regs[XE_GPU_REG_PA_CL_VPORT_XSCALE])) * 2);
++    const uint32_t height = uint32_t(
++        std::abs(rex::memory::Reinterpret<float>(regs[XE_GPU_REG_PA_CL_VPORT_YSCALE])) * 2);
++    auto& capture = temporal_capture_;
++    if (capture.active && !capture.captured &&
++        (width != capture.scene.width || height != capture.scene.height)) {
++      std::shared_ptr<ui::d3d12::TemporalFrame> snapshot;
++      for (auto& item : capture.pool)
++        if (item.use_count() == 1) {
++          snapshot = item;
++          break;
++        }
++      if (!snapshot && capture.pool.size() < 12) {
++        snapshot = std::make_shared<ui::d3d12::TemporalFrame>();
++        capture.pool.push_back(snapshot);
++      }
++      if (snapshot) {
++        auto* source = render_target_cache_->UseEdramAsCopySource();
++        auto desc = source->GetDesc();
++        desc.Flags = D3D12_RESOURCE_FLAG_NONE;
++        if (snapshot->edram && snapshot->edram->GetDesc().Width != desc.Width)
++          snapshot->edram.Reset();
++        if (!snapshot->edram)
++          device->CreateCommittedResource(&ui::d3d12::util::kHeapPropertiesDefault,
++                                          D3D12_HEAP_FLAG_NONE, &desc,
++                                          D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
++                                          IID_PPV_ARGS(&snapshot->edram));
++        if (snapshot->edram) {
++          auto buffer = snapshot->edram;
++          *snapshot = capture.scene;
++          snapshot->edram = buffer;
++          PushTransitionBarrier(buffer.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
++                                D3D12_RESOURCE_STATE_COPY_DEST);
++          SubmitBarriers();
++          deferred_command_list_.D3DCopyBufferRegion(buffer.Get(), 0, source, 0, desc.Width);
++          PushTransitionBarrier(buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST,
++                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
++          capture.snapshot = snapshot;
++        }
++        render_target_cache_->RestoreEdramForRendering();
++      }
++      capture.captured = true;
++    }
++    const auto surface = regs.Get<reg::RB_SURFACE_INFO>();
++    const auto depth = regs.Get<reg::RB_DEPTH_INFO>();
++    const bool main_scene = width >= 1000 && height >= 600 && norm > .5f && norm < 1.5f &&
++                            normalized_depth_control.z_enable &&
++                            surface.msaa_samples == xenos::MsaaSamples::k1X &&
++                            depth.depth_format == xenos::DepthRenderTargetFormat::kD24FS8;
++    if (!capture.active && !capture.captured && main_scene) {
++      capture.active = true;
++      auto& scene = capture.scene;
++      scene.disabled = capture.disabled;
++      scene.width = width;
++      scene.height = height;
++      scene.pitch = surface.surface_pitch;
++      scene.depth_base = depth.depth_base;
++      scene.scale_x = texture_cache_->draw_resolution_scale_x();
++      scene.scale_y = texture_cache_->draw_resolution_scale_y();
++      scene.id = GetCurrentFrame();
++      scene.seconds = double(rex::chrono::Clock::QueryHostTickCount()) /
++                      rex::chrono::Clock::QueryHostTickFrequency();
++      std::memcpy(scene.view_projection.data(), vp, sizeof(vp));
++      scene.jitter_x = TemporalHalton(uint32_t(scene.id % 16) + 1, 2);
++      scene.jitter_y = TemporalHalton(uint32_t(scene.id % 16) + 1, 3);
++    }
++    capture.jitter_draw = main_scene && capture.active && !capture.captured;
++  }
+ 
+   // Shader modifications.
+   uint32_t ps_param_gen_pos = UINT32_MAX;
+@@ -3776,10 +3872,15 @@
+ 
+   // Conversion to Direct3D 12 normalized device coordinates.
+   for (uint32_t i = 0; i < 3; ++i) {
++    float temporal_offset = viewport_info.ndc_offset[i];
++    if (temporal_capture_.jitter_draw && i < 2)
++      temporal_offset +=
++          i == 0 ? 2 * temporal_capture_.scene.jitter_x / temporal_capture_.scene.width
++                 : -2 * temporal_capture_.scene.jitter_y / temporal_capture_.scene.height;
+     dirty |= system_constants_.ndc_scale[i] != viewport_info.ndc_scale[i];
+-    dirty |= system_constants_.ndc_offset[i] != viewport_info.ndc_offset[i];
++    dirty |= system_constants_.ndc_offset[i] != temporal_offset;
+     system_constants_.ndc_scale[i] = viewport_info.ndc_scale[i];
+-    system_constants_.ndc_offset[i] = viewport_info.ndc_offset[i];
++    system_constants_.ndc_offset[i] = temporal_offset;
+   }
+ 
+   // Point size.
+--- a/src/ui/CMakeLists.txt
++++ b/src/ui/CMakeLists.txt
+@@ -130,6 +130,15 @@
+ endif()
+ 
+ set(REXUI_HAS_FIDELITYFX_RUNTIME OFF)
++set(REDBARON_FFX315_ROOT "" CACHE PATH "Optional FidelityFX SDK 2.0 Kits/FidelityFX path for RedBaron FSR 3.1.5 preview")
++if(REDBARON_FFX315_ROOT)
++    if(NOT WIN32 OR NOT EXISTS "${REDBARON_FFX315_ROOT}/signedbin/amd_fidelityfx_upscaler_dx12.lib")
++        message(FATAL_ERROR "RedBaron FSR 3.1.5 requires Windows and the official FidelityFX SDK 2.0 signed DX12 provider")
++    endif()
++    target_compile_definitions(rexui PRIVATE REDBARON_HAS_FSR315=1)
++    target_include_directories(rexui PRIVATE "${REDBARON_FFX315_ROOT}/api/include" "${REDBARON_FFX315_ROOT}/upscalers/include")
++    target_link_libraries(rexui PUBLIC "${REDBARON_FFX315_ROOT}/signedbin/amd_fidelityfx_upscaler_dx12.lib" d3dcompiler d3d12)
++endif()
+ if(TARGET amd_fidelityfx_vk)
+     target_link_libraries(rexui PRIVATE amd_fidelityfx_vk)
+     set(REXUI_HAS_FIDELITYFX_RUNTIME ON)
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -21,9 +21,9 @@
+ #include <rex/ui/presenter.h>
+ #include <rex/ui/window.h>
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+-#include <ffx_api/ffx_api.h>
+-#include <ffx_api/ffx_upscale.h>
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
++#include <ffx_api.h>
++#include <ffx_upscale.h>
+ #endif
+ 
+ REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
+@@ -41,11 +41,16 @@
+     .range(0, 100);
+ 
+ #if defined(REX_HAS_FIDELITYFX_SDK)
+-// Temporal effects require real depth/motion data from the title before they
+-// can be advertised. The bundled spatial effects need only the color image.
+-REXCVAR_DEFINE_STRING(present_effect, "bilinear", "UI/Presenter",
+-                      "Guest output effect: bilinear, cas, fsr (spatial FSR 1)")
++// Temporal support is opt-in and specific to the RedBaron scene capture path.
++// Spatial effects remain available without the external upscaler dependency.
++REXCVAR_DEFINE_STRING(
++    present_effect, "bilinear", "UI/Presenter",
++    "Guest output effect: bilinear, cas, fsr (spatial), fsr3 (experimental temporal)")
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
++    .allowed({"bilinear", "cas", "fsr", "fsr3"})
++#else
+     .allowed({"bilinear", "cas", "fsr"})
++#endif
+     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+ 
+ REXCVAR_DEFINE_DOUBLE(present_cas_additional_sharpness,
+@@ -147,35 +152,35 @@
+     case GuestOutputPaintConfig::FsrQualityMode::kAuto:
+       return false;
+     case GuestOutputPaintConfig::FsrQualityMode::kNativeAa:
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       api_mode_out = FFX_UPSCALE_QUALITY_MODE_NATIVEAA;
+ #else
+       api_mode_out = 0;
+ #endif
+       return true;
+     case GuestOutputPaintConfig::FsrQualityMode::kQuality:
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       api_mode_out = FFX_UPSCALE_QUALITY_MODE_QUALITY;
+ #else
+       api_mode_out = 1;
+ #endif
+       return true;
+     case GuestOutputPaintConfig::FsrQualityMode::kBalanced:
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       api_mode_out = FFX_UPSCALE_QUALITY_MODE_BALANCED;
+ #else
+       api_mode_out = 2;
+ #endif
+       return true;
+     case GuestOutputPaintConfig::FsrQualityMode::kPerformance:
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       api_mode_out = FFX_UPSCALE_QUALITY_MODE_PERFORMANCE;
+ #else
+       api_mode_out = 3;
+ #endif
+       return true;
+     case GuestOutputPaintConfig::FsrQualityMode::kUltraPerformance:
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       api_mode_out = FFX_UPSCALE_QUALITY_MODE_ULTRA_PERFORMANCE;
+ #else
+       api_mode_out = 4;
+@@ -213,7 +218,7 @@
+     return false;
+   }
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+   ffxQueryDescUpscaleGetRenderResolutionFromQualityMode query_desc = {};
+   query_desc.header.type = FFX_API_QUERY_DESC_TYPE_UPSCALE_GETRENDERRESOLUTIONFROMQUALITYMODE;
+   query_desc.header.pNext = nullptr;
+@@ -238,8 +243,9 @@
+   static std::atomic<bool> temporal_fsr_compatibility_logged = false;
+   if (!temporal_fsr_compatibility_logged.exchange(true)) {
+     REXLOG_WARN(
+-        "present_effect=fsr2/fsr3 uses an experimental temporal upscaler path "
+-        "with synthesized depth/motion inputs and may fall back to spatial FSR");
++        "present_effect=fsr3 uses an experimental temporal upscaler path "
++        "with captured ROV depth and camera motion; object velocity/HUD handling remain "
++        "experimental");
+   }
+ }
+ 
+@@ -1066,7 +1072,7 @@
+     if ((config.GetEffect() == GuestOutputPaintConfig::Effect::kFsr || is_temporal_effect) &&
+         ((ffx_last_size.first < output_width_clamped ||
+           ffx_last_size.second < output_height_clamped) ||
+-         temporal_quality_mode_forced)) {
++         temporal_quality_mode_forced || is_temporal_effect)) {
+       // AMD FidelityFX Super Resolution - upsample along at least one axis.
+       // Using the output size clamped to the maximum render target size here as
+       // EASU will always write to intermediate images, and RCAS supports only
+--- a/src/ui/d3d12/d3d12_presenter.cpp
++++ b/src/ui/d3d12/d3d12_presenter.cpp
+@@ -24,10 +24,8 @@
+ #include <rex/ui/d3d12/d3d12_util.h>
+ #include <rex/ui/surface_win.h>
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
+-#include <ffx_api/dx12/ffx_api_dx12.h>
+-#include <ffx_api/ffx_api.h>
+-#include <ffx_api/ffx_upscale.h>
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
++#include "fsr315.h"
+ #endif
+ 
+ REXCVAR_DEFINE_BOOL(present_vsync, false, "UI/D3D12",
+@@ -62,77 +60,14 @@
+   paint_context_.AwaitSwapChainUsageCompletion();
+   guest_output_resource_refresher_submission_tracker_.Shutdown();
+   ui_submission_tracker_.Shutdown();
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+   DestroyTemporalUpscalerContext();
+ #endif
+ }
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+ void D3D12Presenter::DestroyTemporalUpscalerContext() {
+-  if (!temporal_upscaler_context_) {
+-    return;
+-  }
+-  ffxContext* context = reinterpret_cast<ffxContext*>(&temporal_upscaler_context_);
+-  ffxDestroyContext(context, nullptr);
+-  temporal_upscaler_context_ = nullptr;
+-  temporal_upscaler_max_render_width_ = 0;
+-  temporal_upscaler_max_render_height_ = 0;
+-  temporal_upscaler_max_output_width_ = 0;
+-  temporal_upscaler_max_output_height_ = 0;
+-}
+-
+-bool D3D12Presenter::EnsureTemporalUpscalerContext(uint32_t render_width, uint32_t render_height,
+-                                                   uint32_t output_width, uint32_t output_height) {
+-  if (!temporal_upscaler_context_ || temporal_upscaler_max_render_width_ != render_width ||
+-      temporal_upscaler_max_render_height_ != render_height ||
+-      temporal_upscaler_max_output_width_ != output_width ||
+-      temporal_upscaler_max_output_height_ != output_height) {
+-    DestroyTemporalUpscalerContext();
+-
+-    ffxCreateContextDescUpscale create_desc = {};
+-    create_desc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+-    create_desc.header.pNext = nullptr;
+-    create_desc.flags = FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE | FFX_UPSCALE_ENABLE_AUTO_EXPOSURE;
+-    create_desc.maxRenderSize.width = render_width;
+-    create_desc.maxRenderSize.height = render_height;
+-    create_desc.maxUpscaleSize.width = output_width;
+-    create_desc.maxUpscaleSize.height = output_height;
+-    create_desc.fpMessage = nullptr;
+-
+-    ffxCreateBackendDX12Desc backend_desc = {};
+-    backend_desc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
+-    backend_desc.header.pNext = nullptr;
+-    backend_desc.device = provider_.GetDevice();
+-
+-    create_desc.header.pNext = &backend_desc.header;
+-
+-    ffxContext* context = reinterpret_cast<ffxContext*>(&temporal_upscaler_context_);
+-    if (ffxCreateContext(context, &create_desc.header, nullptr) != FFX_API_RETURN_OK) {
+-      REXLOG_WARN("D3D12Presenter: Failed to create FidelityFX temporal upscaler context");
+-      temporal_upscaler_context_ = nullptr;
+-      return false;
+-    }
+-
+-    temporal_upscaler_max_render_width_ = render_width;
+-    temporal_upscaler_max_render_height_ = render_height;
+-    temporal_upscaler_max_output_width_ = output_width;
+-    temporal_upscaler_max_output_height_ = output_height;
+-    temporal_upscaler_provider_logged_ = false;
+-  }
+-
+-  if (!temporal_upscaler_provider_logged_) {
+-    ffxQueryGetProviderVersion provider_version = {};
+-    provider_version.header.type = FFX_API_QUERY_DESC_TYPE_GET_PROVIDER_VERSION;
+-    provider_version.header.pNext = nullptr;
+-    ffxContext* context = reinterpret_cast<ffxContext*>(&temporal_upscaler_context_);
+-    if (ffxQuery(context, &provider_version.header) == FFX_API_RETURN_OK &&
+-        provider_version.versionName) {
+-      REXLOG_INFO("D3D12Presenter: FidelityFX upscaler provider {}", provider_version.versionName);
+-    }
+-    temporal_upscaler_provider_logged_ = true;
+-  }
+-
+-  return temporal_upscaler_context_ != nullptr;
++  fsr315_.reset();
+ }
+ 
+ bool D3D12Presenter::DispatchTemporalUpscaler(ID3D12GraphicsCommandList* command_list,
+@@ -141,61 +76,21 @@
+                                               ID3D12Resource* output_resource,
+                                               uint32_t output_width, uint32_t output_height,
+                                               const GuestOutputPaintConfig& config) {
+-  if (!command_list || !input_resource || !output_resource || !input_width || !input_height ||
+-      !output_width || !output_height) {
++  if (!temporal_paint_frame_ || !temporal_paint_frame_->edram)
+     return false;
+-  }
+-  if (!EnsureTemporalUpscalerContext(input_width, input_height, output_width, output_height)) {
+-    return false;
+-  }
+-
+-  ffxDispatchDescUpscale dispatch_desc = {};
+-  dispatch_desc.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
+-  dispatch_desc.header.pNext = nullptr;
+-  dispatch_desc.commandList = command_list;
+-  dispatch_desc.color =
+-      ffxApiGetResourceDX12(input_resource, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+-  dispatch_desc.depth =
+-      ffxApiGetResourceDX12(input_resource, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ,
+-                            FFX_API_RESOURCE_USAGE_DEPTHTARGET);
+-  dispatch_desc.motionVectors =
+-      ffxApiGetResourceDX12(input_resource, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+-  dispatch_desc.exposure =
+-      ffxApiGetResourceDX12(nullptr, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+-  dispatch_desc.reactive =
+-      ffxApiGetResourceDX12(nullptr, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+-  dispatch_desc.transparencyAndComposition =
+-      ffxApiGetResourceDX12(nullptr, FFX_API_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+-  dispatch_desc.output = ffxApiGetResourceDX12(
+-      output_resource, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS, FFX_API_RESOURCE_USAGE_UAV);
+-  dispatch_desc.jitterOffset.x = 0.0f;
+-  dispatch_desc.jitterOffset.y = 0.0f;
+-  dispatch_desc.motionVectorScale.x = float(input_width);
+-  dispatch_desc.motionVectorScale.y = float(input_height);
+-  dispatch_desc.renderSize.width = input_width;
+-  dispatch_desc.renderSize.height = input_height;
+-  dispatch_desc.upscaleSize.width = output_width;
+-  dispatch_desc.upscaleSize.height = output_height;
+-  dispatch_desc.enableSharpening = true;
+-  dispatch_desc.sharpness = std::clamp(1.0f - config.GetFsrSharpnessReduction() * 0.5f, 0.0f, 1.0f);
+-  // The presenter path doesn't currently provide accurate temporal inputs,
+-  // so run in reset mode each frame to avoid history artifacts.
+-  dispatch_desc.reset = true;
+-  dispatch_desc.frameTimeDelta = 16.666f;
+-  dispatch_desc.preExposure = 1.0f;
+-  dispatch_desc.cameraNear = 0.1f;
+-  dispatch_desc.cameraFar = 1000.0f;
+-  dispatch_desc.cameraFovAngleVertical = 1.0472f;
+-  dispatch_desc.viewSpaceToMetersFactor = 1.0f;
+-  dispatch_desc.flags = 0;
+-
+-  ffxContext* context = reinterpret_cast<ffxContext*>(&temporal_upscaler_context_);
+-  if (ffxDispatch(context, &dispatch_desc.header) != FFX_API_RETURN_OK) {
+-    return false;
+-  }
+-
+-  return true;
++  // One auxiliary descriptor heap is reused only after its last GPU use.
++  if (temporal_last_submission_)
++    paint_context_.paint_submission_tracker.AwaitSubmissionCompletion(temporal_last_submission_);
++  temporal_last_frame_ = temporal_paint_frame_;
++  if (!fsr315_)
++    fsr315_ = std::make_shared<Fsr315>();
++  const bool result = fsr315_->Run(
++      provider_.GetDevice(), command_list, input_resource, output_resource, *temporal_paint_frame_,
++      std::clamp(1.0f - config.GetFsrSharpnessReduction() * .5f, 0.0f, 1.0f));
++  temporal_last_submission_ = paint_context_.paint_submission_tracker.GetCurrentSubmission();
++  return result;
+ }
++
+ #endif
+ 
+ Surface::TypeFlags D3D12Presenter::GetSupportedSurfaceTypes() const {
+@@ -534,6 +429,7 @@
+   }
+   D3D12GuestOutputRefreshContext context(is_8bpc_out_ref, guest_output_resource_ref.second.Get());
+   bool refresher_succeeded = refresher(context);
++  temporal_frames_[mailbox_index] = context.temporal_frame;
+   // Even if the refresher has returned false, it still might have submitted
+   // some commands referencing the resource. It's better to put an excessive
+   // signal and wait slightly longer, for nothing important, while shutting down
+@@ -598,6 +494,7 @@
+         guest_output_mailbox_index, &guest_output_properties, &guest_output_paint_config));
+     if (guest_output_mailbox_index != UINT32_MAX) {
+       guest_output_resource = guest_output_resources_[guest_output_mailbox_index].second;
++      temporal_paint_frame_ = temporal_frames_[guest_output_mailbox_index];
+     }
+     // Incremented the reference count of the guest output resource - safe to
+     // leave the consumer critical section now as everything here either will be
+@@ -794,7 +691,7 @@
+       D3D12_GPU_DESCRIPTOR_HANDLE view_heap_gpu_start =
+           view_heap->GetGPUDescriptorHandleForHeapStart();
+       bool temporal_effect_selected = false;
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+       temporal_effect_selected =
+           guest_output_paint_config.GetEffect() == GuestOutputPaintConfig::Effect::kFsr2 ||
+           guest_output_paint_config.GetEffect() == GuestOutputPaintConfig::Effect::kFsr3;
+@@ -811,7 +708,7 @@
+         bool is_final_effect = i + 1 >= guest_output_flow.effect_count;
+ 
+         GuestOutputPaintEffect effect = guest_output_flow.effects[i];
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+         bool use_temporal_upscaler = is_temporal_easu_effect(i);
+ #else
+         bool use_temporal_upscaler = false;
+@@ -859,7 +756,7 @@
+           effect_rect_y = 0;
+         }
+ 
+-#if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
++#if defined(REDBARON_HAS_FSR315) && REDBARON_HAS_FSR315
+         bool temporal_dispatch_done = false;
+         if (use_temporal_upscaler) {
+           uint32_t effect_input_width = 0, effect_input_height = 0;
+@@ -871,6 +768,7 @@
+               command_list, effect_source_resource, effect_input_width, effect_input_height,
+               effect_dest_resource, guest_output_flow.effect_output_sizes[i].first,
+               guest_output_flow.effect_output_sizes[i].second, guest_output_paint_config);
++          command_list->SetDescriptorHeaps(1, &view_heap);
+           if (!temporal_dispatch_done) {
+             D3D12_RESOURCE_BARRIER barrier_uav_to_rtv;
+             barrier_uav_to_rtv.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+--- /dev/null
++++ b/src/ui/d3d12/fsr315.h
+@@ -0,0 +1,327 @@
++#pragma once
++#include <algorithm>
++#include <array>
++#include <vector>
++#include <cmath>
++#include <cstring>
++#include <limits>
++#include <d3dcompiler.h>
++#include <ffx_api.h>
++#include <dx12/ffx_api_dx12.h>
++#include <ffx_upscale.h>
++#include <rex/ui/d3d12/temporal_frame.h>
++#include <rex/ui/d3d12/d3d12_util.h>
++#include <rex/logging.h>
++
++namespace rex::ui::d3d12 {
++// Local development integration. Camera reprojection is available; per-object
++// velocity and exact HUD composition remain necessary before production use.
++class Fsr315 {
++ public:
++  ~Fsr315() {
++    if (context_)
++      ffxDestroyContext(&context_, nullptr);
++  }
++  bool Run(ID3D12Device* device, ID3D12GraphicsCommandList* cmd, ID3D12Resource* color,
++           ID3D12Resource* output, const TemporalFrame& frame, float sharpness) {
++    if (failed_)
++      return false;
++    if (!frame.width || !frame.height || !frame.pitch || !frame.edram)
++      return false;
++    const auto in = color->GetDesc(), out = output->GetDesc();
++    const uint32_t width = uint32_t(in.Width), height = in.Height;
++    if (!context_ || width != width_ || height != height_ || out.Width != out_width_ ||
++        out.Height != out_height_) {
++      if (context_) {
++        ffxDestroyContext(&context_, nullptr);
++        context_ = nullptr;
++      }
++      if (!Initialize(device, width, height, uint32_t(out.Width), out.Height))
++        return Fail(frame, "initialization");
++    }
++    if (frame.id == last_id_)
++      return true;
++    Constants constants{};
++    if (!Inverse(frame.view_projection.data(), constants.inverse))
++      return Fail(frame, "camera matrix");
++    const bool reset = !last_id_ || frame.id > last_id_ + 8 || frame.seconds - last_seconds_ > .25;
++    std::memcpy(constants.previous, reset ? frame.view_projection.data() : previous_.data(), 64);
++    constants.size[0] = width;
++    constants.size[1] = height;
++    constants.scene[0] = frame.width * frame.scale_x;
++    constants.scene[1] = frame.height * frame.scale_y;
++    constants.layout[0] = frame.pitch;
++    constants.layout[1] = frame.scale_x;
++    constants.layout[2] = frame.scale_y;
++    constants.layout[3] = frame.depth_base;
++    constants.jitter[0] = frame.jitter_x / float(frame.width);
++    constants.jitter[1] = frame.jitter_y / float(frame.height);
++    auto cpu = heap_->GetCPUDescriptorHandleForHeapStart();
++    D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
++    srv.Format = DXGI_FORMAT_R32_TYPELESS;
++    srv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
++    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
++    srv.Buffer.NumElements = UINT(frame.edram->GetDesc().Width / 4);
++    srv.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
++    device->CreateShaderResourceView(frame.edram.Get(), &srv, cpu);
++    for (auto& texture : aux_)
++      Barrier(cmd, texture.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
++              D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
++    ID3D12DescriptorHeap* heaps[] = {heap_.Get()};
++    cmd->SetDescriptorHeaps(1, heaps);
++    cmd->SetComputeRootSignature(root_.Get());
++    cmd->SetPipelineState(pipeline_.Get());
++    cmd->SetComputeRoot32BitConstants(0, sizeof(constants) / 4, &constants, 0);
++    cmd->SetComputeRootDescriptorTable(1, heap_->GetGPUDescriptorHandleForHeapStart());
++    cmd->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
++    for (auto& texture : aux_)
++      Barrier(cmd, texture.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
++              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
++    ffxDispatchDescUpscale dispatch{};
++    dispatch.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
++    dispatch.commandList = cmd;
++    dispatch.color = ffxApiGetResourceDX12(color, FFX_API_RESOURCE_STATE_PIXEL_READ);
++    dispatch.depth = ffxApiGetResourceDX12(aux_[0].Get(), FFX_API_RESOURCE_STATE_COMPUTE_READ,
++                                           FFX_API_RESOURCE_USAGE_DEPTHTARGET);
++    dispatch.motionVectors =
++        ffxApiGetResourceDX12(aux_[1].Get(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
++    dispatch.reactive = ffxApiGetResourceDX12(aux_[2].Get(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
++    dispatch.output = ffxApiGetResourceDX12(output, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS,
++                                            FFX_API_RESOURCE_USAGE_UAV);
++    dispatch.renderSize = {width, height};
++    dispatch.upscaleSize = {uint32_t(out.Width), out.Height};
++    dispatch.jitterOffset = {frame.jitter_x * float(width) / frame.width,
++                             frame.jitter_y * float(height) / frame.height};
++    dispatch.motionVectorScale = {float(width), float(height)};
++    dispatch.frameTimeDelta = reset ? 16.666f : float((frame.seconds - last_seconds_) * 1000.0);
++    dispatch.preExposure = 1;
++    dispatch.reset = reset;
++    const auto& m = frame.view_projection;
++    // The title projects forward depth, then the viewport reverses it. Recover
++    // the physical near plane from VP and use AMD's inverted/infinite convention.
++    const float a = (m[8] * m[12] + m[9] * m[13] + m[10] * m[14]) /
++                    (m[12] * m[12] + m[13] * m[13] + m[14] * m[14]);
++    dispatch.cameraNear = std::numeric_limits<float>::max();
++    dispatch.cameraFar = std::clamp(std::abs((m[11] - a * m[15]) / a), .0001f, 1000.f);
++    dispatch.cameraFovAngleVertical =
++        2 * std::atan(1 / std::sqrt(m[4] * m[4] + m[5] * m[5] + m[6] * m[6]));
++    dispatch.viewSpaceToMetersFactor = 1;
++    dispatch.enableSharpening = false;
++    dispatch.sharpness = sharpness;
++    dispatch.flags = FFX_UPSCALE_FLAG_NON_LINEAR_COLOR_SRGB;
++    const auto result = ffxDispatch(&context_, &dispatch.header);
++    if (result != FFX_API_RETURN_OK) {
++      REXLOG_ERROR("FSR 3.1.5 dispatch status: {}", result);
++      return Fail(frame, "dispatch");
++    }
++    previous_ = frame.view_projection;
++    last_id_ = frame.id;
++    last_seconds_ = frame.seconds;
++    if (++dispatches_ % 300 == 1)
++      REXLOG_INFO(
++          "FSR 3.1.5 dispatch: frame {}, {}x{} -> {}x{}, reset={}, dt={} ms (camera-motion "
++          "prototype)",
++          frame.id, width, height, out.Width, out.Height, reset, dispatch.frameTimeDelta);
++    return true;
++  }
++
++ private:
++  bool Fail(const TemporalFrame& frame, const char* operation) {
++    failed_ = true;
++    if (frame.disabled)
++      frame.disabled->store(true);
++    REXLOG_ERROR(
++        "FSR 3.1.5 {} failed; disabling temporal jitter and using spatial FSR until restart",
++        operation);
++    return false;
++  }
++  struct Constants {
++    float inverse[16], previous[16];
++    uint32_t size[2], scene[2], layout[4];
++    float jitter[4];
++  };
++  static bool Inverse(const float* matrix, float* result) {
++    for (int i = 0; i < 16; i++)
++      if (!std::isfinite(matrix[i]))
++        return false;
++    double a[4][8]{};
++    for (int r = 0; r < 4; r++)
++      for (int c = 0; c < 4; c++) {
++        a[r][c] = matrix[r * 4 + c];
++        a[r][c + 4] = r == c;
++      }
++    for (int c = 0; c < 4; c++) {
++      int pivot = c;
++      for (int r = c + 1; r < 4; r++)
++        if (std::abs(a[r][c]) > std::abs(a[pivot][c]))
++          pivot = r;
++      if (std::abs(a[pivot][c]) < 1e-10)
++        return false;
++      for (int k = 0; k < 8; k++)
++        std::swap(a[c][k], a[pivot][k]);
++      double v = a[c][c];
++      for (double& x : a[c])
++        x /= v;
++      for (int r = 0; r < 4; r++)
++        if (r != c) {
++          v = a[r][c];
++          for (int k = 0; k < 8; k++)
++            a[r][k] -= v * a[c][k];
++        }
++    }
++    for (int r = 0; r < 4; r++)
++      for (int c = 0; c < 4; c++)
++        result[r * 4 + c] = float(a[r][c + 4]);
++    return true;
++  }
++  static void Barrier(ID3D12GraphicsCommandList* cmd, ID3D12Resource* resource,
++                      D3D12_RESOURCE_STATES from, D3D12_RESOURCE_STATES to) {
++    D3D12_RESOURCE_BARRIER b{};
++    b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++    b.Transition = {resource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, from, to};
++    cmd->ResourceBarrier(1, &b);
++  }
++  bool Initialize(ID3D12Device* device, uint32_t w, uint32_t h, uint32_t ow, uint32_t oh) {
++    uint64_t count = 0;
++    ffxQueryDescGetVersions query{};
++    query.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
++    query.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
++    query.device = device;
++    query.outputCount = &count;
++    if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK || !count)
++      return false;
++    std::vector<uint64_t> ids(count);
++    std::vector<const char*> names(count);
++    query.versionIds = ids.data();
++    query.versionNames = names.data();
++    if (ffxQuery(nullptr, &query.header) != FFX_API_RETURN_OK)
++      return false;
++    uint64_t selected = 0;
++    for (size_t i = 0; i < count; i++)
++      if (names[i] && std::strcmp(names[i], "3.1.5") == 0)
++        selected = ids[i];
++    if (!selected)
++      return false;
++    ffxCreateBackendDX12Desc backend{};
++    backend.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
++    backend.device = device;
++    ffxOverrideVersion version{};
++    version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
++    version.versionId = selected;
++    version.header.pNext = &backend.header;
++    ffxCreateContextDescUpscale desc{};
++    desc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
++    desc.header.pNext = &version.header;
++    desc.flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE | FFX_UPSCALE_ENABLE_DEPTH_INVERTED |
++                 FFX_UPSCALE_ENABLE_DEPTH_INFINITE | FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE;
++    desc.maxRenderSize = {w, h};
++    desc.maxUpscaleSize = {ow, oh};
++    if (ffxCreateContext(&context_, &desc.header, nullptr) != FFX_API_RETURN_OK)
++      return false;
++    D3D12_DESCRIPTOR_HEAP_DESC heap{};
++    heap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
++    heap.NumDescriptors = 4;
++    heap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
++    if (FAILED(device->CreateDescriptorHeap(&heap, IID_PPV_ARGS(&heap_))))
++      return false;
++    const DXGI_FORMAT formats[] = {DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R16G16_FLOAT,
++                                   DXGI_FORMAT_R8_UNORM};
++    auto handle = heap_->GetCPUDescriptorHandleForHeapStart();
++    const auto stride = device->GetDescriptorHandleIncrementSize(heap.Type);
++    for (int i = 0; i < 3; i++) {
++      D3D12_RESOURCE_DESC tex{};
++      tex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
++      tex.Width = w;
++      tex.Height = h;
++      tex.DepthOrArraySize = tex.MipLevels = 1;
++      tex.Format = formats[i];
++      tex.SampleDesc.Count = 1;
++      tex.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
++      if (FAILED(device->CreateCommittedResource(
++              &util::kHeapPropertiesDefault, D3D12_HEAP_FLAG_NONE, &tex,
++              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&aux_[i]))))
++        return false;
++      D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
++      uav.Format = formats[i];
++      uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
++      handle.ptr += stride;
++      device->CreateUnorderedAccessView(aux_[i].Get(), nullptr, &uav, handle);
++    }
++    if (!pipeline_) {
++      D3D12_DESCRIPTOR_RANGE ranges[2]{};
++      ranges[0] = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, 0};
++      ranges[1] = {D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 0, 1};
++      D3D12_ROOT_PARAMETER params[2]{};
++      params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
++      params[0].Constants = {0, 0, sizeof(Constants) / 4};
++      params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
++      params[1].DescriptorTable = {2, ranges};
++      D3D12_ROOT_SIGNATURE_DESC root{};
++      root.NumParameters = 2;
++      root.pParameters = params;
++      Microsoft::WRL::ComPtr<ID3DBlob> blob, error, shader;
++      if (FAILED(D3D12SerializeRootSignature(&root, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error)))
++        return false;
++      if (FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
++                                             IID_PPV_ARGS(&root_))))
++        return false;
++      const char* source = R"hlsl(
++cbuffer C : register(b0) { row_major float4x4 inverseVP; row_major float4x4 previousVP; uint2 size; uint2 scene; uint4 layout; float4 jitter; }
++ByteAddressBuffer edram : register(t0);
++RWTexture2D<float> depth : register(u0);
++RWTexture2D<float2> motion : register(u1);
++RWTexture2D<float> reactive : register(u2);
++[numthreads(8,8,1)] void main(uint3 tid:SV_DispatchThreadID) {
++  if(any(tid.xy>=size))return;
++  float2 uv=(tid.xy+.5)/size;
++  uint2 p=min(uint2(uv*scene),scene-1);
++  uint tw=80*layout.y,th=16*layout.z;
++  uint localX=p.x%tw;localX=localX<tw/2?localX+tw/2:localX-tw/2;
++  uint tile=(p.y/th)*((layout.x+79)/80)+p.x/tw;
++  uint offset=((tile+layout.w)*tw*th+(p.y%th)*tw+localX)*4;
++  uint packed=edram.Load(offset)>>8;uint exponent=packed>>20,mantissa=packed&0xfffff;
++  float z=exponent?asfloat(((exponent+112)<<23)|(mantissa<<3)):float(mantissa)*(1.0/17179869184.0);
++  depth[tid.xy]=z;
++  float2 stableUV=uv-jitter.xy;
++  float4 world=mul(inverseVP,float4(stableUV.x*2-1,1-stableUV.y*2,1-z,1));
++  float4 previous=mul(previousVP,world);
++  float safeW=abs(previous.w)>1e-6?previous.w:1e-6;
++  float2 previousUV=float2(previous.x/safeW*.5+.5,.5-previous.y/safeW*.5);
++  motion[tid.xy]=previousUV-stableUV;
++  // Foreground has unresolved object motion in this development path.
++  reactive[tid.xy]=saturate((z-.003)*500);
++}
++)hlsl";
++      if (FAILED(D3DCompile(source, std::strlen(source), "redbaron_temporal_inputs", nullptr,
++                            nullptr, "main", "cs_5_1", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &shader,
++                            &error))) {
++        REXLOG_ERROR("Temporal input shader failed: {}",
++                     error ? static_cast<const char*>(error->GetBufferPointer()) : "unknown");
++        return false;
++      }
++      D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
++      pso.pRootSignature = root_.Get();
++      pso.CS = {shader->GetBufferPointer(), shader->GetBufferSize()};
++      if (FAILED(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&pipeline_))))
++        return false;
++    }
++    width_ = w;
++    height_ = h;
++    out_width_ = ow;
++    out_height_ = oh;
++    last_id_ = 0;
++    REXLOG_INFO("FSR provider 3.1.5 initialized with ROV depth and camera motion");
++    return true;
++  }
++  bool failed_ = false;
++  ffxContext context_{};
++  uint32_t width_ = 0, height_ = 0, out_width_ = 0, out_height_ = 0;
++  uint64_t last_id_ = 0, dispatches_ = 0;
++  double last_seconds_ = 0;
++  std::array<float, 16> previous_{};
++  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
++  Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
++  Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline_;
++  std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, 3> aux_;
++};
++}  // namespace rex::ui::d3d12

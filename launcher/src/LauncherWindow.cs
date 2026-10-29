@@ -72,7 +72,7 @@ namespace RedBaron {
             ApplySettings();
             foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
             foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
-            Combo("Upscaling").SelectionChanged+=(sender,e)=>{Combo("FsrSharpness").IsEnabled=Val(Combo("Upscaling"))=="fsr";};
+            Combo("Upscaling").SelectionChanged+=(sender,e)=>{Combo("FsrSharpness").IsEnabled=Val(Combo("Upscaling"))=="fsr" || Val(Combo("Upscaling"))=="fsr3";};
             foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
             Combo("Player").SelectionChanged+=(sender,e)=>{if(loading)return;CommitGrid();playerIndex=Number(Combo("Player"));ShowPlayer();};
             Combo("Device").SelectionChanged+=(sender,e)=>{if(loading)return;settings.Players[playerIndex].Device=Val(Combo("Device"));Changed();};
@@ -172,11 +172,11 @@ namespace RedBaron {
                 bool previous=loading;loading=true;
                 var gpus=new List<Choice>{new Choice("Automatic (recommended)",-1)};gpus.AddRange(caps.gpus.Select(g=>new Choice(g.name,g.index)));Choices("Gpu",gpus,settings.Adapter);
                 var aa=new[]{new Choice("Off","none"),new Choice("FXAA","fxaa",caps.Supports("swap_post_effect","fxaa")),new Choice("FXAA extreme","fxaa_extreme",caps.Supports("swap_post_effect","fxaa_extreme"))};Choices("Antialiasing",aa,settings.Antialiasing);
-                var effects=new[]{new Choice("Default · bilinear","bilinear"),new Choice("AMD FSR 1 · spatial","fsr",caps.Supports("present_effect","fsr")),new Choice("AMD CAS · sharpen","cas",caps.Supports("present_effect","cas")),new Choice("DLSS · not integrated","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
+                var effects=new[]{new Choice("Default · bilinear","bilinear"),new Choice("AMD FSR 1 · spatial","fsr",caps.Supports("present_effect","fsr")),new Choice("AMD FSR 3.1.5 · experimental","fsr3",caps.Supports("present_effect","fsr3")),new Choice("AMD CAS · sharpen","cas",caps.Supports("present_effect","cas")),new Choice("DLSS · not integrated","dlss",false)};Choices("Upscaling",effects,settings.Upscaling);
                 Choices("FrameRate",Settings.FrameRates.Select(fps=>new Choice(fps==0?"Game default":fps+" FPS"+(fps>120?" · experimental":""),fps,fps==0||caps.Supports("redbaron_fps",fps.ToString()))),settings.Fps);
                 Check("Vsync").IsEnabled=caps.flags.ContainsKey("present_vsync");
                 Label("GpuSummary").Text=caps.gpus.Count>0?String.Join(" · ",caps.gpus.Select(g=>g.name)):"No physical GPU detected.";
-                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr")?"FSR 1 reconstructs the final image, including the HUD. Choose a render scale below your output resolution. DLSS and temporal FSR are not integrated yet.":"Update the runtime to enable FSR 1, CAS and monitor VSync. DLSS is not integrated yet.";
+                Label("UpscalingInfo").Text=caps.Supports("present_effect","fsr3")?"FSR 3.1.5 preview uses camera motion. Moving objects and HUD may leave trails. Super Resolution only; no frame generation or DLSS. For 4K output, try internal 2×.":caps.Supports("present_effect","fsr")?"FSR 1 includes the HUD. Use a render scale below the output resolution. Update the SDK to enable the FSR 3.1.5 preview. DLSS is not integrated.":"Update the runtime to enable FSR, CAS and monitor VSync. DLSS is not integrated.";
                 ShowPlayer();loading=previous;
                 Status(dirty?"Unsaved changes.":"Ready. "+caps.devices.Count+" controller(s) detected.");
                 if(!String.IsNullOrEmpty(caps.inputError)) Status("Controller detection failed: "+caps.inputError,true);

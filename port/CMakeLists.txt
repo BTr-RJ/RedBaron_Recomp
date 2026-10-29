@@ -44,6 +44,19 @@ rexglue_setup_target(snoopyflyingace)
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
     target_link_libraries(redbaron_probe PRIVATE rex::runtime)
+    # The opt-in FSR 3.1.5 SDK imports AMD's signed provider. Stage it for both
+    # the game and the capability probe, including direct CMake builds.
+    get_filename_component(REDBARON_SDK_ROOT "${rexglue_DIR}/../../.." ABSOLUTE)
+    foreach(fsr_asset amd_fidelityfx_upscaler_dx12.dll FidelityFX-LICENSE.txt)
+        set(fsr_source "${REDBARON_SDK_ROOT}/bin/${fsr_asset}")
+        if(EXISTS "${fsr_source}")
+            foreach(host snoopyflyingace redbaron_probe)
+                add_custom_command(TARGET ${host} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${fsr_source}" "$<TARGET_FILE_DIR:${host}>" VERBATIM)
+            endforeach()
+        endif()
+    endforeach()
 endif()
 
 # Stage controller mappings and a starter configuration beside the executable.
