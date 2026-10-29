@@ -55,10 +55,10 @@ async def main(executable):
     with tempfile.TemporaryDirectory(prefix="redbaron-net-") as folder:
         async with serve(rooms.handler, "127.0.0.1", 0, compression=None, max_size=49152) as server:
             url = f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}"
-            async def launch(index, room=""):
+            async def launch(index, room="", public=False):
                 config = Path(folder) / f"client-{index}.json"
                 config.write_text(json.dumps(dict(server=url, name=f"Test{index}",
-                                                   namespace=140+index, room=room)))
+                                                   namespace=140+index, room=room, public=public)))
                 log = open(Path(folder) / f"client-{index}.log", "wb")
                 process = await asyncio.create_subprocess_exec(
                     str(executable), "--config", str(config), stdin=asyncio.subprocess.PIPE,
@@ -69,8 +69,13 @@ async def main(executable):
                 return client
 
             try:
-                host = await launch(0)
+                host = await launch(0, public=True)
                 welcome = await host.wait("welcome")
+                async with connect(url, proxy=None) as directory:
+                    await directory.send(json.dumps(dict(op="list", protocol=1, build="redbaron-wire-1")))
+                    listing = json.loads(await directory.recv())
+                    assert [item["room"] for item in listing["rooms"]] == [welcome["room"]], listing
+                print("PASS: public native host appears in room directory", flush=True)
                 for i in range(1, 8):
                     client = await launch(i, welcome["room"])
                     await client.wait("welcome")

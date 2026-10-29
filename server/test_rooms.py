@@ -138,6 +138,56 @@ class RoomTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(replacement["op"], "welcome")
         self.assertGreater(replacement["id"], joined["id"])
 
+    async def directory(self, **options):
+        socket = await connect(self.url, proxy=None)
+        self.clients.append(socket)
+        await socket.send(json.dumps(dict(op="list", protocol=PROTOCOL, build=BUILD, **options)))
+        async with asyncio.timeout(3):
+            return json.loads(await socket.recv())
+
+    async def test_directory_public_only_capacity_and_lock(self):
+        private_host, private = await self.open(name="Private")
+        public_host, public = await self.open(name="Public", public=True)
+        coop_host, coop = await self.open(name="Coop", mode="coop", public=True)
+        listed = await self.directory()
+        self.assertEqual({item["room"] for item in listed["rooms"]}, {public["room"], coop["room"]})
+        self.assertNotIn(private["room"], json.dumps(listed))
+        self.assertNotIn("credential", json.dumps(listed))
+        self.assertEqual((await self.directory(mode="coop"))["rooms"][0]["host"], "Coop")
+        client, joined = await self.open(op="join", room=coop["room"])
+        self.assertEqual(joined["op"], "welcome")
+        self.assertEqual((await self.directory(mode="coop"))["rooms"], [])
+        await public_host.send(json.dumps({"op": "lock", "locked": True}))
+        await self.message(public_host, "locked")
+        self.assertEqual((await self.directory())["rooms"], [])
+        await public_host.send(json.dumps({"op": "lock", "locked": False}))
+        await self.message(public_host, "locked")
+        await public_host.close()
+        async with asyncio.timeout(3):
+            while public["room"] in self.rooms.rooms:
+                await asyncio.sleep(.01)
+        self.assertEqual((await self.directory())["rooms"], [])
+
+    async def test_directory_rejects_invalid_requests_and_pages(self):
+        for options in ({"mode": "invalid"}, {"offset": True}, {"offset": -1}):
+            self.assertEqual((await self.directory(**options))["op"], "error")
+        for index in range(51):
+            _, welcome = await self.open(name=f"Host{index}", public=True)
+            self.assertEqual(welcome["op"], "welcome")
+        first = await self.directory()
+        self.assertEqual(len(first["rooms"]), 50)
+        second = await self.directory(offset=first["next_offset"])
+        self.assertEqual(len(second["rooms"]), 1)
+        self.assertIsNone(second["next_offset"])
+        self.assertFalse(set(item["room"] for item in first["rooms"]) &
+                         set(item["room"] for item in second["rooms"]))
+
+    async def test_visibility_must_be_boolean_and_defaults_private(self):
+        _, invalid = await self.open(public="yes")
+        self.assertEqual(invalid["op"], "error")
+        _, private = await self.open()
+        self.assertNotIn(private["room"], json.dumps(await self.directory()))
+
 
 if __name__ == "__main__":
     unittest.main()

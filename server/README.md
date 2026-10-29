@@ -9,6 +9,12 @@ The original game's simulation authority is still under investigation.
 The service is prepared for future hosting. No public endpoint is operated by the
 project yet. Local signaling tests are not evidence of Internet gameplay.
 
+The development protocol distinguishes private rooms (the default) from rooms
+explicitly marked public. A paginated directory lists only public rooms with an
+available slot; locked and private rooms are never included. This is a backend
+building block: the game's room browser and automatic connection are not yet
+integrated, and the current launcher still creates private rooms.
+
 ## Local development
 
 Use Python 3.11 or newer in a virtual environment:

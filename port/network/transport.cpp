@@ -18,6 +18,7 @@ Transport::Transport(Json options) : options_(std::move(options)) {
     Json hello{{"op", options_.value("room", "").empty() ? "create" : "join"},
       {"protocol", 1}, {"build", "redbaron-wire-1"}, {"name", options_.at("name")},
       {"players", options_.value("players", 1)}, {"mode", options_.value("mode", "multiplayer")}};
+    if (hello["op"] == "create") hello["public"] = options_.value("public", false);
     if (options_.contains("room")) hello["room"] = options_["room"];
     socket_->Send(hello.dump());
   }); }, [this](std::string text) {

@@ -57,6 +57,7 @@ class Member:
 class Room:
     code: str
     mode: str
+    public: bool = False
     members: dict[int, Member] = field(default_factory=dict)
     locked: bool = False
     # IDs aren't reused: delayed ICE messages cannot target a replacement member.
@@ -87,6 +88,26 @@ class Rooms:
                           for url in self.turn_urls)
         return result
 
+    def directory(self, request):
+        require(isinstance(request, dict), "Expected a JSON object")
+        require(integer(request.get("protocol"), PROTOCOL, PROTOCOL) and request.get("build") == BUILD,
+                "Incompatible client version. Update the game")
+        mode = request.get("mode", "all")
+        require(mode in ("all", "multiplayer", "coop"), "Invalid room mode")
+        offset = request.get("offset", 0)
+        require(integer(offset, 0, self.max_rooms), "Invalid directory offset")
+        entries = []
+        for room in sorted(self.rooms.values(), key=lambda item: item.code):
+            players = sum(member.players for member in room.members.values())
+            if (not room.public or room.locked or not room.members.get(0) or players >= room.capacity
+                    or (mode != "all" and room.mode != mode)):
+                continue
+            entries.append({"room": room.code, "host": room.members[0].name,
+                            "mode": room.mode, "players": players, "capacity": room.capacity})
+        page = entries[offset:offset + 50]
+        return {"op": "rooms", "rooms": page, "next_offset": offset + len(page)
+                if offset + len(page) < len(entries) else None}
+
     def admit(self, socket, request):
         require(isinstance(request, dict), "Expected a JSON object")
         require(integer(request.get("protocol"), PROTOCOL, PROTOCOL) and request.get("build") == BUILD,
@@ -101,10 +122,12 @@ class Rooms:
             mode = request.get("mode", "multiplayer")
             require(mode in ("multiplayer", "coop"), "Invalid room mode")
             require(players <= (2 if mode == "coop" else 8), "Co-op supports two players")
+            public = request.get("public", False)
+            require(type(public) is bool, "Invalid room visibility")
             code = secrets.token_hex(8).upper()
             while code in self.rooms:
                 code = secrets.token_hex(8).upper()
-            room = Room(code, mode)
+            room = Room(code, mode, public=public)
             self.rooms[code] = room
             member_id = 0
         elif request.get("op") == "join":
@@ -201,7 +224,12 @@ class Rooms:
             require(self.connections <= self.max_rooms * 8, "Server is full")
             raw = await asyncio.wait_for(socket.recv(), timeout=10)
             require(isinstance(raw, str), "Expected text JSON")
-            room, member = self.admit(socket, json.loads(raw))
+            request = json.loads(raw)
+            if isinstance(request, dict) and request.get("op") == "list":
+                await socket.send(json.dumps(self.directory(request), separators=(",", ":")))
+                await socket.close(1000, "Directory complete")
+                return
+            room, member = self.admit(socket, request)
 
             async def send_messages():
                 while True:
