@@ -22,6 +22,10 @@ de transporte cobrem oito processos, transferência TCP, UDP, saída do anfitri�
 de certificado inválido. São necessários testes entre computadores, sob CGNAT, com relay
 público e em co-op antes de declarar o online pronto. Não há garantia de ausência de lag.
 
+O anfitrião remove uma tentativa que não conclui a conexão em 30 segundos, liberando
+a vaga. O teste de integração confirmou que os demais clientes permanecem conectados
+e continuam transferindo dados enquanto essa tentativa é descartada.
+
 Online e quatro jogadores locais voltaram a ser a prioridade do usuário em 29/10/2026. **Dois jogadores em tela dividida estão funcionando; quatro locais ainda não.** A primeira partida LAN foi exercitada entre dois processos no mesmo PC, usando o modo original Team DogFight. Isso ainda não comprova conexão entre PCs diferentes ou pela Internet.
 
 ## Jogar localmente

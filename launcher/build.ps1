@@ -1,6 +1,7 @@
 [CmdletBinding()]
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'out'), [string]$SdkRoot = '', [string]$SdkSourceRoot = '')
+param([string]$OutputDirectory = '', [string]$SdkRoot = '', [string]$SdkSourceRoot = '')
 $ErrorActionPreference = 'Stop'
+if(!$OutputDirectory){$OutputDirectory=Join-Path $PSScriptRoot 'out'}
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $wpf = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/WPF'
 if (!(Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x compiler not found.' }

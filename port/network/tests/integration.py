@@ -24,8 +24,8 @@ class Client:
         async for line in self.process.stdout:
             self.events.append(json.loads(line))
 
-    async def wait(self, op, count=1):
-        async with asyncio.timeout(30):
+    async def wait(self, op, count=1, timeout=30):
+        async with asyncio.timeout(timeout):
             while True:
                 matches = [m for m in self.events if m["op"] == op]
                 if len(matches) >= count:
@@ -135,15 +135,26 @@ async def main(executable):
                 print(f"PASS: unordered UDP and ephemeral-port replies; local RTT {min(times):.1f}-{max(times):.1f} ms", flush=True)
                 await clients[7].stop()
                 await host.wait("left")
+                async with connect(url, proxy=None) as stalled:
+                    await stalled.send(json.dumps(dict(op="join", protocol=1, build="redbaron-wire-1",
+                                                       name="Stalled", room=welcome["room"])))
+                    admission = json.loads(await stalled.recv())
+                    assert admission["op"] == "welcome", admission
+                    rejected = await host.wait("peer_error", timeout=40)
+                    assert rejected["id"] == admission["id"], rejected
+                    await host.wait("left", 2)
+                    assert len(rooms.rooms[welcome["room"]].members) == 7
+                    await tcp(1, 0, 10000)
+                print("PASS: stalled ICE admission is removed without disturbing the match", flush=True)
                 async with connect(url, proxy=None) as invalid:
                     await invalid.send(json.dumps(dict(op="join", protocol=1, build="redbaron-wire-1",
                                                        name="BadSignal", room=welcome["room"])))
                     admission = json.loads(await invalid.recv())
                     assert admission["op"] == "welcome", admission
                     await invalid.send(json.dumps(dict(op="signal", to=0, kind="answer", data="invalid SDP")))
-                    rejected = await host.wait("peer_error")
+                    rejected = await host.wait("peer_error", 2)
                     assert rejected["id"] == admission["id"], rejected
-                    await host.wait("left", 2)
+                    await host.wait("left", 3)
                 await tcp(1, 0, 10000)
                 print("PASS: malformed peer signaling is isolated; host and other clients keep playing", flush=True)
                 await host.stop()

@@ -56,6 +56,17 @@ void Transport::Poll() {
       Emit({{"op", "error"}, {"message", error.what()}}); Stop();
     }
   }
+  if (id_ == 0) {
+    // A peer that never completes ICE must not reserve a player slot forever.
+    // Collect IDs first: RejectPeer removes entries from peers_.
+    std::vector<uint16_t> expired;
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& [id, peer] : peers_) {
+      if (!peer.reported_ready && now - peer.started > std::chrono::seconds(30))
+        expired.push_back(id);
+    }
+    for (auto id : expired) RejectPeer(id, "Could not establish a connection to this player");
+  }
   if(id_ != 0 && peers_.contains(0) && !peers_.at(0).reported_ready &&
       std::chrono::steady_clock::now()-peers_.at(0).started > std::chrono::seconds(30)) {
     Emit({{"op","error"},{"message","Could not reach the host. Check the relay server and try joining again."}});Stop();
@@ -153,6 +164,10 @@ void Transport::AddPeer(uint16_t id, bool offer) {
     Emit({{"op", "peer_state"}, {"id", id}, {"state", int(state)}});
     if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Disconnected ||
         state == rtc::PeerConnection::State::Closed) {
+      if (id_ == 0 && state != rtc::PeerConnection::State::Disconnected) {
+        RejectPeer(id, "The connection to this player was lost");
+        return;
+      }
       if (membership) membership(id, false);
       if(id_ != 0 && id == 0) {Emit({{"op","error"},{"message","The connection to the host was lost. Join the room again."}});Stop();}
     }
