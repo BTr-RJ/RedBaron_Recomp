@@ -1,7 +1,8 @@
 # Epic Online Services: integração planejada
 
-O EOS foi escolhido para investigação e integração do online, mas **ainda não
-está implementado**. O jogo continua usando o transporte experimental existente.
+O EOS foi escolhido para integração do online. Um diagnóstico separado já
+compilou e inicializou o SDK oficial 1.19.2.1 no Windows, mas o provedor online
+**ainda não está implementado**. O jogo continua usando o transporte experimental existente.
 Não anunciar salas, amigos, crossplay ou conectividade EOS como funcionais até
 serem testados com o produto e o SDK oficiais.
 
@@ -34,6 +35,21 @@ serem testados com o produto e o SDK oficiais.
    tokens nem segredos em issues, conversas, logs ou commits. As credenciais e
    configurações de acesso devem ser tratadas conforme a política do cliente e
    a documentação oficial da Epic.
+
+O SDK 1.19.2.1 fornecido pelo usuário foi extraído em pasta local ignorada pelo
+Git. Para compilar o diagnóstico em outra máquina, informe a pasta `SDK` extraída:
+
+```powershell
+cmake -S port/eos -B eos-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DREDBARON_EOS_SDK=C:/caminho/para/SDK
+cmake --build eos-build --target redbaron_eos_probe --parallel 4
+ctest --test-dir eos-build --output-on-failure
+```
+
+O diagnóstico de SDK somente inicializa e encerra a biblioteca; não autentica,
+não cria uma conta e não verifica conectividade com os serviços da Epic. Um
+segundo teste cobre a fragmentação e remontagem de mensagens de até 32 KiB em
+pacotes de até 1170 bytes, limite declarado pelo SDK usado. Essa rotina ainda
+não está ligada ao transporte P2P do EOS.
 
 ## Integração e validação
 
