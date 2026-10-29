@@ -64,6 +64,12 @@ No diagnóstico, o publicador de sessão consulta um jogo simulado por UDP local
 há uma atualização pendente e remove o registro ao desaparecer a sessão. O teste
 verifica publicação, atualização e retirada no serviço real. O jogo simulado
 não valida a integração com um executável em execução nem a entrada de clientes.
+`lobby_directory.*` mantém cópias dos resultados públicos válidos, inclusive os
+detalhes necessários para uma futura entrada. `directory_responder.*` responde
+às buscas locais usando um endereço distinto por resultado. O diagnóstico ligou
+essas duas partes ao EOS e verificou os pacotes UDP com um cliente simulado;
+é necessário manter a associação estável entre resultado e lobby, ligar o
+seletor do jogo à entrada e estabelecer o P2P antes de usar isso em partidas.
 Esse teste não valida descoberta por outro usuário nem entrada no jogo.
 
 O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,

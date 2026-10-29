@@ -9,7 +9,9 @@
 #include "session_record.h"
 #include "lobby_record.h"
 #include "lobby_publisher.h"
+#include "lobby_directory.h"
 #include "../network/session_publisher.h"
+#include "../network/directory_responder.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -73,6 +75,28 @@ static std::string TestSession(bool large) {
   constexpr char digits[]="0123456789abcdef";std::string hex;hex.reserve(data.size()*2);
   for(const auto b:data) {hex.push_back(digits[b>>4]);hex.push_back(digits[b&15]);}
   return hex;
+}
+static bool TestDirectoryResponder(const std::string& record) {
+  redbaron::net::DirectoryResponder responder(198);
+  if(!responder.Set(256,record))return false;
+  SOCKET query_socket=socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);
+  if(query_socket==INVALID_SOCKET)return false;
+  sockaddr_in local{};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(0x7fc60001u);
+  sockaddr_in destination{};destination.sin_family=AF_INET;destination.sin_addr.s_addr=htonl(0x7fc60000u);destination.sin_port=htons(43821);
+  std::array<uint8_t,20> query{'R','B','L','A','N','0','1',1,1,2,3,4,5,6,7,8,0x58,0x41,0x09,0xb5};
+  bool ok=bind(query_socket,reinterpret_cast<sockaddr*>(&local),sizeof(local))==0 &&
+    sendto(query_socket,reinterpret_cast<const char*>(query.data()),int(query.size()),0,reinterpret_cast<sockaddr*>(&destination),sizeof(destination))==int(query.size());
+  if(ok) {
+    responder.Poll();fd_set reads;FD_ZERO(&reads);FD_SET(query_socket,&reads);timeval timeout{1,0};
+    ok=select(0,&reads,nullptr,nullptr,&timeout)>0;
+    if(ok) {
+      std::array<uint8_t,8192> response{};sockaddr_in from{};int from_size=sizeof(from);
+      const int n=recvfrom(query_socket,reinterpret_cast<char*>(response.data()),int(response.size()),0,reinterpret_cast<sockaddr*>(&from),&from_size);
+      ok=n==int(record.size()/2) && (ntohl(from.sin_addr.s_addr)&0xffff)==256 &&
+         std::equal(query.begin()+8,query.begin()+16,response.begin()+8);
+    }
+  }
+  closesocket(query_socket);return ok;
 }
 
 // The diagnostic owns and destroys only the lobby it creates.
@@ -148,6 +172,11 @@ struct LobbyFlow {
       EOS_LobbySearch_GetSearchResultCountOptions options{};
       options.ApiVersion=EOS_LOBBYSEARCH_GETSEARCHRESULTCOUNT_API_LATEST;
       self.search_count=EOS_LobbySearch_GetSearchResultCount(self.search,&options);
+      redbaron::eos::LobbyDirectory directory;
+      const bool directory_ok=directory.Refresh(self.search) &&
+        (self.record_stage==2 ? directory.entries().empty() :
+          directory.entries().size()==1 && directory.entries()[0].record==self.test_record && directory.entries()[0].id==self.id &&
+          TestDirectoryResponder(directory.entries()[0].record));
       if (self.search_count) {
         EOS_LobbySearch_CopySearchResultByIndexOptions copy{};
         copy.ApiVersion=EOS_LOBBYSEARCH_COPYSEARCHRESULTBYINDEX_API_LATEST;
@@ -155,6 +184,7 @@ struct LobbyFlow {
         if (EOS_LobbySearch_CopySearchResultByIndex(self.search,&copy,&details)==EOS_EResult::EOS_Success) {
           const auto record=redbaron::eos::ReadLobbyRecord(details);
           self.attribute_verified=self.record_stage==2 ? !record : record==self.test_record;
+          self.attribute_verified=self.attribute_verified && directory_ok;
           if(self.attribute_verified && self.record_stage==1) {
             EOS_LobbyDetails_CopyAttributeByKeyOptions stale{};
             stale.ApiVersion=EOS_LOBBYDETAILS_COPYATTRIBUTEBYKEY_API_LATEST;stale.AttrKey="RB_RECORD_52";
