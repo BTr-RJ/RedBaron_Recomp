@@ -45,7 +45,15 @@ cmake --build eos-build --target redbaron_eos_probe --parallel 4
 ctest --test-dir eos-build --output-on-failure
 ```
 
-O diagnóstico de SDK somente inicializa e encerra a biblioteca; não autentica,
+Com as credenciais em um arquivo local ignorado pelo Git, os comandos
+`redbaron_eos_probe --device-login <config>` e `--lobby-check <config>`
+testam, respectivamente, o login anônimo por dispositivo e a criação seguida
+da remoção de uma sala privada temporária. Não coloque esse arquivo ou seus
+valores em logs, mensagens ou commits. No ambiente de desenvolvimento, os dois
+testes foram concluídos usando o produto configurado pelo usuário. O login por
+dispositivo não é autenticação de conta Epic e não fornece lista de amigos.
+
+O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
 não cria uma conta e não verifica conectividade com os serviços da Epic. Um
 segundo teste cobre a fragmentação e remontagem de mensagens de até 32 KiB em
 pacotes de até 1170 bytes, limite declarado pelo SDK usado. Essa rotina ainda
