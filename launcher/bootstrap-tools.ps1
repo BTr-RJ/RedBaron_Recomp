@@ -4,6 +4,7 @@ param([Parameter(Mandatory=$true)][string]$ToolRoot,[switch]$RequirePython,
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'install-progress.ps1')
 if(![Environment]::Is64BitOperatingSystem){throw 'A 64-bit Windows installation is required.'}
 $ToolRoot=[IO.Path]::GetFullPath($ToolRoot)
 New-Item -ItemType Directory -Path $ToolRoot -Force | Out-Null
@@ -24,6 +25,9 @@ if($OfflineToolsRoot -or $OfflineManifest) {
     $manifest=Get-Content -LiteralPath $OfflineManifest -Raw | ConvertFrom-Json
     if($manifest.version -ne 1 -or !$manifest.files -or $manifest.files.Count -gt 10000){throw 'Invalid offline tools manifest.'}
     Write-Output 'Verifying included build tools (no tool downloads)...'
+    $neededEntries=@(foreach($candidate in $manifest.files){foreach($prefix in $requiredPrefixes){if($candidate.path.StartsWith($prefix)){$candidate;break}}})
+    [long]$verifyTotal=0;foreach($needed in $neededEntries){$verifyTotal+=$needed.size};[long]$verified=0
+    if($verifyTotal){Write-RBProgress 'Verifying offline tools' 0 $verifyTotal}
     $checkedPaths=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach($entry in $manifest.files) {
         if($entry.path -notmatch '^(portable|vs)/' -or $entry.path -match '(^|/)\.{1,2}(/|$)|[:\\]' -or $entry.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid offline tool entry.'}
@@ -36,7 +40,10 @@ if($OfflineToolsRoot -or $OfflineManifest) {
             $next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next
         }
         if(!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -ne $entry.size -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $entry.sha256){throw ('Offline tool verification failed: '+$entry.path+'. Extract the entire package again.')}
+        $verified+=$entry.size;Write-RBProgress 'Verifying offline tools' $verified $verifyTotal
     }
+    $portableEntries=@($neededEntries | Where-Object {$_.path.StartsWith('portable/')})
+    [long]$copyTotal=0;foreach($needed in $portableEntries){$copyTotal+=$needed.size};[long]$prepared=0
     foreach($entry in $manifest.files | Where-Object {$_.path.StartsWith('portable/')}) {
         if(!@($requiredPrefixes | Where-Object {$entry.path.StartsWith($_)}).Count){continue}
         $target=Join-Path $ToolRoot $entry.path
@@ -49,6 +56,7 @@ if($OfflineToolsRoot -or $OfflineManifest) {
         if(Test-Path -LiteralPath $target){
             if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ine $entry.sha256){throw 'The existing tool cache differs. Choose a new installation folder.'}
         }else{New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null;Copy-Item -LiteralPath (Join-Path $OfflineToolsRoot $entry.path) -Destination $target}
+        $prepared+=$entry.size;Write-RBProgress 'Preparing portable tools' $prepared $copyTotal
     }
     foreach($bin in @('portable/llvm/bin','portable/cmake/bin','portable/ninja')){if(Test-Path -LiteralPath (Join-Path $ToolRoot $bin)){$env:PATH=(Join-Path $ToolRoot $bin)+';'+$env:PATH}}
 }
@@ -60,7 +68,8 @@ function Download([string]$url,[string]$hash,[string]$name) {
     if(!(Test-Path -LiteralPath $path)) {
         $partial=$path+'.partial'
         Write-Host "Downloading $name..."
-        Invoke-WebRequest -UseBasicParsing -TimeoutSec 1800 -Uri $url -OutFile $partial
+        Receive-RBDownload $url $partial ('Downloading '+$name)
+        Write-RBProgress ('Verifying '+$name)
         if((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $hash){throw "Checksum mismatch for $name; file was not used."}
         [IO.File]::Move($partial,$path)
     }
@@ -77,7 +86,7 @@ if(!$cmakeOk) {
     $target=Join-Path $ToolRoot 'cmake'
     if(!(Test-Path -LiteralPath (Join-Path $target 'cmake-4.4.5-windows-x86_64/bin/cmake.exe'))) {
         if(Test-Path -LiteralPath $target){throw "Incomplete tool folder preserved: $target"}
-        Expand-Archive -LiteralPath $zip -DestinationPath $target
+        Expand-RBArchive $zip $target 'Extracting CMake'
     }
     $env:PATH=(Join-Path $target 'cmake-4.4.5-windows-x86_64/bin')+';'+$env:PATH
 }
@@ -86,7 +95,7 @@ if(!(Have 'ninja')) {
     $target=Join-Path $ToolRoot 'ninja'
     if(!(Test-Path -LiteralPath (Join-Path $target 'ninja.exe'))) {
         if(Test-Path -LiteralPath $target){throw "Incomplete tool folder preserved: $target"}
-        Expand-Archive -LiteralPath $zip -DestinationPath $target
+        Expand-RBArchive $zip $target 'Extracting Ninja'
     }
     $env:PATH=$target+';'+$env:PATH
 }
@@ -102,6 +111,7 @@ if(!$clangOk) {
     if(!(Test-Path -LiteralPath (Join-Path $bin 'clang++.exe'))) {
         if(Test-Path -LiteralPath $target){throw "Incomplete tool folder preserved: $target"}
         New-Item -ItemType Directory -Path $target | Out-Null
+        Write-RBProgress 'Extracting Clang'
         & tar.exe -xf $archive -C $target
         if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath (Join-Path $bin 'clang++.exe'))){throw "LLVM extraction failed; work retained at $target"}
     }
@@ -122,7 +132,7 @@ if($RequirePython) {
         $target=Join-Path $ToolRoot 'python'
         if(!(Test-Path -LiteralPath (Join-Path $target 'python.exe'))) {
             if(Test-Path -LiteralPath $target){throw "Incomplete tool folder preserved: $target"}
-            Expand-Archive -LiteralPath $zip -DestinationPath $target
+            Expand-RBArchive $zip $target 'Extracting Python'
         }
         $env:PATH=$target+';'+$env:PATH
     }
@@ -143,11 +153,12 @@ if(!$compiler -or !$sdkFound) {
     if(!(Test-Path -LiteralPath $bootstrap)) {
         if($OfflineToolsRoot){throw 'The offline Microsoft Build Tools layout is missing.'}
         Write-Output 'Downloading Microsoft Visual C++ Build Tools...'
-        Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://aka.ms/vs/17/release/vs_BuildTools.exe' -OutFile $bootstrap
+        Receive-RBDownload 'https://aka.ms/vs/17/release/vs_BuildTools.exe' $bootstrap 'Downloading Microsoft installer'
     }
     $signature=Get-AuthenticodeSignature -LiteralPath $bootstrap
     if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {throw 'Microsoft Build Tools signature verification failed.'}
     Write-Output 'Installing Visual C++ Build Tools and Windows SDK; Windows may request administrator approval.'
+    Write-RBProgress 'Installing Microsoft build tools'
     $installArguments=@('--quiet','--wait','--norestart')
     if($OfflineToolsRoot){$installArguments+=@('--noweb','--noUpdateInstaller')}
     if(!$compiler){$installArguments+=@('--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64')}

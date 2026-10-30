@@ -105,6 +105,13 @@ Start-Process .\launcher\out\RedBaron_Launcher.exe -ArgumentList '--self-test','
 
 The launcher uses the Windows .NET Framework compiler and WPF assemblies. `redbaron_probe.exe` queries runtime/GPU flags and SDL devices without loading game files. The controller database and its license are included in installations.
 
+Both installer variants show a persistent, stage-based progress bar. Downloads,
+archive extraction and file copies report measured bytes; Ninja reports completed
+build steps; DLC installation reports completed packages. Microsoft setup and
+other operations without measurable totals show activity rather than a fabricated
+percentage. Errors/cancellation stop the bar; only a completed game/DLC workflow
+shows installation complete at 100%. Structured progress remains in the log.
+
 Validated: C++ build, routing/remapping tests, C# settings/validation/argument/shortcut tests, old-label migration without binding changes, a complete clean installation, rejection of overlapping/occupied/incompatible destinations, and Save/Play/direct launch/return via UIAutomation. The English UI was checked at normal and compact window sizes. The embedded source ZIP was checked against current sources and contains no game data. Local evidence lives in the ignored `prioridade5_launcher/` folder. Custom mappings, multiple physical controllers and higher resolutions still need gameplay testing.
 
 ## DLSS modes and LAN preview

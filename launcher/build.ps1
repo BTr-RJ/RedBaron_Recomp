@@ -88,6 +88,7 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'MainWindow.xaml') + ',MainWindow.xaml'),
     ('/resource:' + $archive + ',Source.zip'),
     ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'),
+    ('/resource:' + (Join-Path $PSScriptRoot 'install-progress.ps1') + ',InstallProgress.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'install-dlc.ps1') + ',InstallDlc.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'bootstrap-tools.ps1') + ',BootstrapTools.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'tool-inventory.ps1') + ',ToolInventory.ps1'),

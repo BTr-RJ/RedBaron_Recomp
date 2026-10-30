@@ -6,6 +6,8 @@ param(
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'install-progress.ps1')
+Write-RBProgress 'Checking DLC packages'
 function NoLinks([string]$path) {
     $current=[IO.Path]::GetFullPath($path)
     while($current) {
@@ -51,12 +53,13 @@ $work=[IO.Path]::GetFullPath($work)
 if(!$work.StartsWith($UserRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) {throw 'Invalid staging location.'}
 New-Item -ItemType Directory -Path $work | Out-Null
 $installed=0;$skipped=0
+Write-RBProgress 'Installing DLCs' 0 $packages.Count
 try {
     foreach($package in $packages) {
         $target=Join-Path $content $package.Name
         $targetHeader=Join-Path $headers ($package.Name+'.header')
         if((Test-Path -LiteralPath $target) -and (Test-Path -LiteralPath $targetHeader)) {
-            Write-Output "Already installed: $($package.Name)";++$skipped;continue
+            Write-Output "Already installed: $($package.Name)";++$skipped;Write-RBProgress 'Installing DLCs' ($installed+$skipped) $packages.Count;continue
         }
         if((Test-Path -LiteralPath $target) -or (Test-Path -LiteralPath $targetHeader)) {
             throw "Incomplete existing installation preserved: $($package.Name)"
@@ -74,6 +77,7 @@ try {
             throw
         }
         ++$installed;Write-Output "Installed: $($package.Name)"
+        Write-RBProgress 'Installing DLCs' ($installed+$skipped) $packages.Count
     }
     Write-Output "DLC installation complete: $installed installed, $skipped already present."
 } finally {

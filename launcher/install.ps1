@@ -14,6 +14,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 [Threading.Thread]::CurrentThread.CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo('en-US')
+. (Join-Path $PSScriptRoot 'install-progress.ps1')
+Write-RBProgress 'Checking game files'
 
 function Full-Path([string]$Value) { [IO.Path]::GetFullPath($Value).TrimEnd('\','/') }
 function Is-Within([string]$Child,[string]$Parent) {
@@ -111,15 +113,16 @@ $marker = Join-Path $Destination '.redbaron-install.json'
 try {
     Write-Output 'Preparing port source files...'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [IO.Compression.ZipFile]::ExtractToDirectory($SourceArchive,$Destination)
+    Expand-RBArchive $SourceArchive $Destination 'Preparing port files'
     if($bundledSdk) {
         Write-Output 'Unpacking the included ReXGlue SDK and online components...'
-        [IO.Compression.ZipFile]::ExtractToDirectory($SdkArchive,$Sdk)
+        Expand-RBArchive $SdkArchive $Sdk 'Unpacking SDK'
     }
     foreach ($file in @('bin/rexglue.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','lib/cmake/rexglue/rexglueConfig.cmake')) {
         if (!(Test-Path -LiteralPath (Join-Path $Sdk $file))) { throw "Incomplete SDK: $file" }
     }
     if($BootstrapScript) {
+        Write-RBProgress 'Checking build tools'
         Write-Output 'Checking build tools...'
         $needPython=!(Test-Path -LiteralPath (Join-Path $Sdk 'bin/redbaron_net.exe') -PathType Leaf) -or !(Test-Path -LiteralPath (Join-Path $Sdk 'bin/datachannel.dll') -PathType Leaf)
         & $BootstrapScript -ToolRoot (Join-Path $Destination '.redbaron-tools') -RequirePython:$needPython -OfflineToolsRoot $OfflineToolsRoot -OfflineManifest $OfflineManifest
@@ -141,18 +144,23 @@ try {
     }
     if($extracted){Write-Output ('Copying {0} game files...' -f $files.Count)}
     $index=0
+    [long]$copied=0
+    if($extracted){Write-RBProgress 'Copying game files' 0 $bytes}
     foreach ($file in $files) {
         $relative=$file.FullName.Substring($Source.Length).TrimStart('\','/')
         $target=Join-Path (Join-Path $Destination 'game') $relative
         New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
         Copy-Item -LiteralPath $file.FullName -Destination $target
+        $copied+=$file.Length;Write-RBProgress 'Copying game files' $copied $bytes
         $index++
         if ($index % 100 -eq 0) { Write-Output ('Files: {0}/{1}' -f $index,$files.Count) }
     }
     Write-Output 'Generating code and building (this may take several minutes)...'
+    Write-RBProgress 'Generating game code'
     & (Join-Path $Destination 'scripts/build.ps1') -SdkRoot $Sdk -Parallel 4
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/snoopyflyingace.exe'))) { throw 'The build did not produce the game executable.' }
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/redbaron_probe.exe'))) { throw 'The hardware detector is missing after the build.' }
+    Write-RBProgress 'Finishing game installation'
     if($OnlineConfig) {
         if(!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/EOSSDK-Win64-Shipping.dll'))){throw 'The online runtime is missing after the build.'}
         $onlineDirectory=Join-Path $Destination 'build_cpp_release/eos'

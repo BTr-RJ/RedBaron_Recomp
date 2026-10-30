@@ -117,11 +117,16 @@
               <TextBlock Name="SdkInfo" Text="Checking build tools…" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
             </StackPanel>
           </Expander>
-          <ProgressBar Name="InstallProgress" Height="5" Background="#2C3440" Foreground="#D65F68" IsIndeterminate="True" Visibility="Collapsed"/>
           <TextBlock Name="InstallState" Style="{StaticResource Muted}" Margin="0,10,0,8"/>
           <TextBox Name="InstallLog" IsReadOnly="True" Height="120" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="12" Visibility="Collapsed"/>
         </StackPanel></ScrollViewer>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,0"><Button Name="InstallButton" Content="Install" Style="{StaticResource Primary}"/><Button Name="CancelInstall" Content="Cancel installation" Margin="10,0,0,0" Visibility="Collapsed"/><Button Name="UseExisting" Content="Use existing installation…" Margin="10,0,0,0"/></StackPanel>
+        <StackPanel Grid.Row="1" Margin="0,14,0,0">
+          <StackPanel Name="InstallProgressPanel" Visibility="Collapsed" Margin="0,0,0,12">
+            <TextBlock Name="InstallProgressText" Text="Preparing installation…" Margin="0,0,0,7"/>
+            <ProgressBar Name="InstallProgress" Height="8" Minimum="0" Maximum="100" Background="#2C3440" Foreground="#D65F68" IsIndeterminate="True" AutomationProperties.Name="Current installation step progress"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal"><Button Name="InstallButton" Content="Install" Style="{StaticResource Primary}"/><Button Name="CancelInstall" Content="Cancel installation" Margin="10,0,0,0" Visibility="Collapsed"/><Button Name="UseExisting" Content="Use existing installation…" Margin="10,0,0,0"/></StackPanel>
+        </StackPanel>
         </Grid>
       </TabItem>
       <TabItem Header="Video">

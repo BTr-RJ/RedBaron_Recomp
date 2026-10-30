@@ -87,6 +87,13 @@ int wmain(int argc, wchar_t** argv) {
       if (!device.Initialize()) {std::cerr<<"Could not open package\n";++failed;continue;}
       auto* root=device.ResolvePath("");
       if (!root) {std::cerr<<"Package has no root\n";++failed;continue;}
+      uint64_t total_bytes=0,extracted_bytes=0;
+      if(extract) {
+        std::queue<rex::filesystem::Entry*> pending;pending.push(root);
+        while(!pending.empty()){auto* item=pending.front();pending.pop();for(auto& child:item->children())pending.push(child.get());if(!(item->attributes() & rex::filesystem::kFileAttributeDirectory))total_bytes+=item->size();}
+      }
+      const auto report=[&](){if(extract)std::cout<<"@@RBPROGRESS {\"stage\":\"Extracting "<<(extract_game?"game":"DLC")<<" package\",\"completed\":"<<extracted_bytes<<",\"total\":"<<total_bytes<<"}"<<std::endl;};
+      report();
       if(extract && !std::filesystem::create_directory(destination)) {std::cerr<<"Cannot create destination\n";return 1;}
       std::queue<rex::filesystem::Entry*> entries;entries.push(root);
       while(!entries.empty()) {
@@ -127,6 +134,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         file->Destroy();out.flush();
         if(!out || offset!=entry->size()) {std::cerr<<"Incomplete package entry\n";return 1;}
+        extracted_bytes+=offset;report();
       }
     }
   }

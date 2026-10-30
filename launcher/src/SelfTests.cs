@@ -34,6 +34,12 @@ namespace RedBaron {
             Directory.CreateDirectory(directory);
             var results=new List<string>();
             try {
+                InstallProgress progress;
+                Assert(InstallProgress.TryParse("@@RBPROGRESS {\"stage\":\"Downloading\",\"completed\":25,\"total\":100}",out progress) && progress.Known && progress.Percent==25,"Measured download progress rejected");
+                Assert(InstallProgress.TryParse("[90/180] Building CXX object",out progress) && progress.Percent==50 && progress.stage=="Compiling","Ninja progress not recognized");
+                Assert(InstallProgress.TryParse("@@RBPROGRESS {\"stage\":\"Installing Microsoft tools\",\"completed\":0,\"total\":0}",out progress) && !progress.Known,"Unknown work received a fabricated percentage");
+                foreach(var invalidProgress in new[]{"ordinary log","@@RBPROGRESS broken","@@RBPROGRESS {\"stage\":\"x\",\"completed\":11,\"total\":10}","[7/0] broken","@@RBPROGRESS {\"stage\":\"x\",\"completed\":-1,\"total\":10}"})Assert(!InstallProgress.TryParse(invalidProgress,out progress),"Malformed progress accepted");
+                results.Add("Installation progress: measured byte counts, Ninja steps, unknown phases and malformed input");
                 var install=new Settings {Root=Path.Combine(directory,"installer"),Destination=Path.Combine(directory,"new game"),Source="package"};
                 var plan=Services.PlanInstallation(install);Assert(plan.InstallGame && !plan.InstallDlc,"Optional DLC became mandatory");
                 install.DlcSource=Path.Combine(directory,"DLC packages");Directory.CreateDirectory(install.DlcSource);

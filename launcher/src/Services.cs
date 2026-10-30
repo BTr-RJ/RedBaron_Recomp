@@ -222,7 +222,9 @@ namespace RedBaron {
             string job=Path.Combine(s.Root,"launcher-data","install-"+DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
             Directory.CreateDirectory(job);
             string archive=Path.Combine(job,"source.zip"), script=Path.Combine(job,"install.ps1");
+            log("@@RBPROGRESS {\"stage\":\"Preparing installer\",\"completed\":0,\"total\":0}");
             ExtractResource("Source.zip",archive); ExtractResource("Install.ps1",script);
+            ExtractResource("InstallProgress.ps1",Path.Combine(job,"install-progress.ps1"));
             string appConfig=Path.Combine(job,"launcher.config");ExtractResource("App.config",appConfig);
             string bootstrap=Path.Combine(job,"bootstrap-tools.ps1");ExtractResource("BootstrapTools.ps1",bootstrap);
             ExtractResource("ToolInventory.ps1",Path.Combine(job,"tool-inventory.ps1"));
@@ -266,6 +268,7 @@ namespace RedBaron {
             string logfile=Path.Combine(logs,"dlc-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
             object gate=new object();Action<string> record=line=>{lock(gate)File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
             string script=Path.Combine(job,"install-dlc.ps1");ExtractResource("InstallDlc.ps1",script);
+            ExtractResource("InstallProgress.ps1",Path.Combine(job,"install-progress.ps1"));
             string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,
                 "-Source",source,"-UserRoot",userRoot,"-Inspector",inspector},s.Root,record,token);

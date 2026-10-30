@@ -336,6 +336,12 @@ namespace RedBaron {
             string destination=Text("DestinationPath").Text.Trim();
             Button("InstallButton").Content=Services.HasInstallation(settings.Root) || Services.HasInstallation(destination)?"Install DLCs":"Install";
         }
+        void ApplyInstallProgress(InstallProgress progress) {
+            Get<StackPanel>("InstallProgressPanel").Visibility=Visibility.Visible;
+            Get<ProgressBar>("InstallProgress").IsIndeterminate=!progress.Known;
+            Get<ProgressBar>("InstallProgress").Value=progress.Percent;
+            Label("InstallProgressText").Text=progress.ToString();
+        }
         async Task Install() {
             if(installation!=null)return;
             settings.Source=Text("SourcePath").Text.Trim();settings.DlcSource=Text("DlcSource").Text.Trim();
@@ -347,10 +353,17 @@ namespace RedBaron {
             string[] controls={"InstallButton","CheckTools","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseSourceFile","BrowseDestination","BrowseSdk"};
             foreach(string name in controls)Button(name).IsEnabled=false;
             foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=false;
-            Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;
+            Get<StackPanel>("InstallProgressPanel").Visibility=Visibility.Visible;
+            Get<ProgressBar>("InstallProgress").Value=0;Get<ProgressBar>("InstallProgress").IsIndeterminate=true;
+            Label("InstallProgressText").Text="Preparing installation…";Button("CancelInstall").Visibility=Visibility.Visible;
             Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
             string outcome="";bool failed=false;
-            Action<string> log=line=>window.Dispatcher.BeginInvoke(new Action(()=>{Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;}));
+            Action<string> log=line=>window.Dispatcher.BeginInvoke(new Action(()=>{
+                InstallProgress progress;
+                if(InstallProgress.TryParse(line,out progress)) {
+                    ApplyInstallProgress(progress);
+                }else {Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;}
+            }));
             Status(plan.InstallGame?"Installing game and selected content...":"Adding DLCs to the installed game...");
             try {
                 settings=await Services.InstallContent(settings,log,installation.Token);
@@ -359,7 +372,10 @@ namespace RedBaron {
             catch(Exception error){failed=true;outcome=error.Message;}
             finally {
                 installation.Dispose();installation=null;
-                Get<ProgressBar>("InstallProgress").Visibility=Visibility.Collapsed;Button("CancelInstall").Visibility=Visibility.Collapsed;
+                Get<ProgressBar>("InstallProgress").IsIndeterminate=false;
+                if(!failed)Get<ProgressBar>("InstallProgress").Value=100;
+                Label("InstallProgressText").Text=failed?"Installation stopped. See the log for details.":"Installation complete — 100%";
+                Button("CancelInstall").Visibility=Visibility.Collapsed;
                 foreach(string name in controls)Button(name).IsEnabled=true;
                 foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=true;
             }
@@ -405,6 +421,12 @@ namespace RedBaron {
             }
         }
         async Task CaptureScreens() {
+            int logOption=Array.IndexOf(args,"--progress-log");
+            if(logOption>=0 && logOption+1<args.Length) {
+                foreach(var record in File.ReadAllLines(args[logOption+1])) {
+                    InstallProgress measured;if(InstallProgress.TryParse(record,out measured))ApplyInstallProgress(measured);
+                }
+            }
             int index=Array.IndexOf(args,"--capture");
             if(index+1>=args.Length) {window.Close();return;}
             string folder=Path.GetFullPath(args[index+1]);Directory.CreateDirectory(folder);
