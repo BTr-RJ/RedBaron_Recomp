@@ -1,4 +1,18 @@
-# Patch experimental do codegen ReXGlue
+# Patches do ReXGlue
+
+Atualizações incrementais de 30/10/2026, aplicadas pelo build isolado:
+
+- `rexglue-eos-matchmaking.patch`, após o social: consulta Quick Match observada
+  no menu e preservação de filtros de versão/conteúdo, sem igualdade de rank.
+- `rexglue-native-leaderboards.patch`, após matchmaking: enumerador de ranking,
+  ABI de resultados e encaminhamento das estatísticas ao provedor do port.
+- `rexglue-temporal-stability.patch`, quando FSR temporal/DLSS está incluído:
+  estabilidade de recursos/histórico, escala do jitter e amostragem estável no
+  DLSS enquanto o HUD ainda está composto na imagem de entrada.
+
+Os patches incrementais foram revertidos/reaplicados em cópia de teste e
+reproduziram o texto dos arquivos atuais. Veja [EOS](../docs/EOS.md),
+[rankings](../docs/LEADERBOARDS.md) e [vídeo](../docs/VIDEO.md) para limites.
 
 O patch de vídeo `rexglue-spatial-fsr-vsync.patch` habilita FSR 1/CAS espaciais,
 VSync do monitor e tamanho físico da janela. Use `scripts/build-video-sdk.ps1`

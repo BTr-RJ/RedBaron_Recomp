@@ -1,0 +1,351 @@
+diff --git a/include/rex/system/xam/stats_provider.h b/include/rex/system/xam/stats_provider.h
+new file mode 100644
+--- /dev/null
++++ b/include/rex/system/xam/stats_provider.h
+@@ -0,0 +1,50 @@
++#pragma once
++#include <cstdint>
++#include <map>
++#include <memory>
++#include <optional>
++#include <string>
++#include <vector>
++namespace rex::system {
++class KernelState;
++}
++namespace rex::system::xam {
++struct StatSpec {
++  uint32_t view = 0;
++  std::vector<uint16_t> columns;
++};
++struct StatWrite {
++  uint32_t view = 0;
++  std::map<uint32_t, int64_t> properties;
++};
++struct StatRow {
++  uint64_t xuid = 0;
++  uint32_t rank = 0;
++  int64_t rating = 0;
++  std::string name;
++  std::map<uint16_t, int64_t> columns;
++};
++struct StatQuery {
++  uint32_t title = 0, view = 0, start = 1, count = 10;
++  uint64_t pivot = 0;
++  std::vector<uint64_t> users;
++  std::vector<uint16_t> columns;
++};
++struct StatResult {
++  bool ok = false;
++  uint32_t total = 0;
++  std::vector<StatRow> rows;
++};
++class StatsProvider {
++ public:
++  virtual ~StatsProvider() = default;
++  virtual bool Write(uint32_t title, uint64_t user, const std::vector<StatWrite>& views) = 0;
++  virtual StatResult Read(const StatQuery& query) = 0;
++};
++void SetStatsProvider(std::shared_ptr<StatsProvider> provider);
++uint32_t CreateStatsEnumerator(KernelState*, uint32_t title, uint32_t kind, uint64_t pivot,
++                               uint32_t count, uint32_t specs, uint32_t specs_ptr,
++                               uint32_t size_ptr, uint32_t handle_ptr);
++std::optional<uint32_t> DispatchStats(KernelState*, uint32_t message, uint32_t buffer,
++                                      uint32_t length);
++}  // namespace rex::system::xam
+diff --git a/src/system/xam/native_stats.cpp b/src/system/xam/native_stats.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/system/xam/native_stats.cpp
+@@ -0,0 +1,236 @@
++#include <rex/system/xam/stats_provider.h>
++#include <rex/system/kernel_state.h>
++#include <rex/system/xenumerator.h>
++#include <rex/system/xam/user_profile.h>
++#include <rex/memory.h>
++#include <mutex>
++#include <cstring>
++#include <algorithm>
++namespace rex::system::xam {
++namespace {
++std::mutex provider_mutex;
++std::shared_ptr<StatsProvider> provider;
++std::shared_ptr<StatsProvider> Provider() {
++  std::lock_guard lock(provider_mutex);
++  return provider;
++}
++uint8_t* Guest(KernelState* k, uint32_t a, size_t n) {
++  auto* m = k->memory();
++  if (!a || !n || n > 0x100000 || uint64_t(a) + n > 0x100000000ull || !m->LookupHeap(a) ||
++      !m->LookupHeap(a + uint32_t(n) - 1))
++    return nullptr;
++  return m->TranslateVirtual(a);
++}
++uint32_t U32(const uint8_t* p) {
++  return memory::load_and_swap<uint32_t>(p);
++}
++void W32(uint8_t* p, uint32_t v) {
++  memory::store_and_swap<uint32_t>(p, v);
++}
++void W64(uint8_t* p, uint64_t v) {
++  memory::store_and_swap<uint64_t>(p, v);
++}
++bool Specs(KernelState* k, uint32_t n, uint32_t address, std::vector<StatSpec>& out) {
++  if (!n || n > 16)
++    return false;
++  auto* p = Guest(k, address, n * 136);
++  if (!p)
++    return false;
++  for (uint32_t i = 0; i < n; ++i, p += 136) {
++    StatSpec s;
++    s.view = U32(p);
++    auto count = U32(p + 4);
++    if (count > 64)
++      return false;
++    for (uint32_t j = 0; j < count; ++j)
++      s.columns.push_back(memory::load_and_swap<uint16_t>(p + 8 + j * 2));
++    out.push_back(std::move(s));
++  }
++  return true;
++}
++struct View {
++  StatSpec spec;
++  StatResult result;
++};
++size_t BufferSize(const std::vector<View>& views) {
++  size_t bytes = 8 + views.size() * 16;
++  for (const auto& v : views)
++    bytes += v.result.rows.size() * (48 + v.spec.columns.size() * 24);
++  return bytes;
++}
++void Pack(const std::vector<View>& views, uint32_t address, uint8_t* p) {
++  const auto size = BufferSize(views);
++  std::memset(p, 0, size);
++  W32(p, uint32_t(views.size()));
++  W32(p + 4, address + 8);
++  size_t at = 8 + views.size() * 16;
++  for (size_t i = 0; i < views.size(); ++i) {
++    const auto& v = views[i];
++    auto* view = p + 8 + i * 16;
++    W32(view, v.spec.view);
++    W32(view + 4, v.result.total);
++    W32(view + 8, uint32_t(v.result.rows.size()));
++    W32(view + 12, v.result.rows.empty() ? 0 : address + uint32_t(at));
++    const size_t rows = at;
++    at += v.result.rows.size() * 48;
++    for (size_t j = 0; j < v.result.rows.size(); ++j) {
++      const auto& r = v.result.rows[j];
++      auto* row = p + rows + j * 48;
++      W64(row, r.xuid);
++      W32(row + 8, r.rank);
++      W64(row + 16, uint64_t(r.rating));
++      std::memcpy(row + 24, r.name.data(), std::min<size_t>(15, r.name.size()));
++      W32(row + 40, uint32_t(v.spec.columns.size()));
++      W32(row + 44, v.spec.columns.empty() ? 0 : address + uint32_t(at));
++      for (auto col : v.spec.columns) {
++        auto* c = p + at;
++        at += 24;
++        memory::store_and_swap<uint16_t>(c, col);
++        c[8] = 2;
++        auto f = r.columns.find(col);
++        W64(c + 16, uint64_t(f == r.columns.end() ? 0 : f->second));
++      }
++    }
++  }
++}
++class StatsEnumerator final : public XEnumerator {
++ public:
++  StatsEnumerator(KernelState* k, std::vector<View> views, size_t bytes)
++      : XEnumerator(k, 1, bytes), views_(std::move(views)) {}
++  uint32_t WriteItems(uint32_t address, uint8_t* data, uint32_t* written) override {
++    if (done_) {
++      if (written)
++        *written = 0;
++      return X_ERROR_NO_MORE_FILES;
++    }
++    Pack(views_, address, data);
++    done_ = true;
++    if (written)
++      *written = 1;
++    return X_ERROR_SUCCESS;
++  }
++
++ private:
++  std::vector<View> views_;
++  bool done_ = false;
++};
++}  // namespace
++void SetStatsProvider(std::shared_ptr<StatsProvider> p) {
++  std::lock_guard lock(provider_mutex);
++  provider = std::move(p);
++}
++uint32_t CreateStatsEnumerator(KernelState* k, uint32_t title, uint32_t kind, uint64_t pivot,
++                               uint32_t count, uint32_t ns, uint32_t sp, uint32_t sizeptr,
++                               uint32_t handleptr) {
++  auto* size = Guest(k, sizeptr, 4);
++  auto* handle = Guest(k, handleptr, 4);
++  if (!size || !handle || kind > 1 || !count || count > 100)
++    return X_ERROR_INVALID_PARAMETER;
++  W32(size, 0);
++  W32(handle, 0);
++  std::vector<StatSpec> specs;
++  if (!Specs(k, ns, sp, specs))
++    return X_ERROR_INVALID_PARAMETER;
++  auto service = Provider();
++  if (!service)
++    return X_ERROR_NOT_LOGGED_ON;
++  std::vector<View> views;
++  for (auto& s : specs) {
++    StatQuery q;
++    q.title = title ? title : k->title_id();
++    q.view = s.view;
++    q.count = count;
++    q.columns = s.columns;
++    if (kind == 1)
++      q.start = uint32_t(pivot);
++    else
++      q.pivot = pivot;
++    auto result = service->Read(q);
++    if (!result.ok)
++      return X_ERROR_FUNCTION_FAILED;
++    views.push_back({std::move(s), std::move(result)});
++  }
++  const auto bytes = BufferSize(views);
++  auto e = object_ref<StatsEnumerator>(new StatsEnumerator(k, std::move(views), bytes));
++  auto status = e->Initialize(0, 0xFB, 0xB0023, 0xB0024, 0);
++  if (XFAILED(status))
++    return status;
++  W32(size, uint32_t(bytes));
++  W32(handle, e->handle());
++  return X_ERROR_SUCCESS;
++}
++std::optional<uint32_t> DispatchStats(KernelState* k, uint32_t msg, uint32_t buffer,
++                                      uint32_t length) {
++  if (msg != 0xB0021 && msg != 0xB0025 && msg != 0xB0026)
++    return std::nullopt;
++  const uint32_t need = msg == 0xB0021 ? 28 : 20;
++  auto* p = Guest(k, buffer, need);
++  if (!p || (length && length < need))
++    return X_ERROR_INVALID_PARAMETER;
++  if (msg == 0xB0026)
++    return X_ERROR_SUCCESS;
++  auto service = Provider();
++  if (!service)
++    return X_ERROR_NOT_LOGGED_ON;
++  if (msg == 0xB0025) {
++    auto user = memory::load_and_swap<uint64_t>(p + 4);
++    const auto n = U32(p + 12);
++    if (!n || n > 32)
++      return X_ERROR_INVALID_PARAMETER;
++    auto* v = Guest(k, U32(p + 16), n * 12);
++    if (!v)
++      return X_ERROR_INVALID_PARAMETER;
++    std::vector<StatWrite> views;
++    for (uint32_t i = 0; i < n; ++i, v += 12) {
++      StatWrite w;
++      w.view = U32(v);
++      auto np = U32(v + 4);
++      if (np > 256)
++        return X_ERROR_INVALID_PARAMETER;
++      auto* prop = np ? Guest(k, U32(v + 8), np * 24) : nullptr;
++      if (np && !prop)
++        return X_ERROR_INVALID_PARAMETER;
++      for (uint32_t j = 0; j < np; ++j, prop += 24) {
++        const auto type = prop[8];
++        if (type == 1)
++          w.properties[U32(prop)] = int32_t(U32(prop + 16));
++        else if (type == 2)
++          w.properties[U32(prop)] = int64_t(memory::load_and_swap<uint64_t>(prop + 16));
++      }
++      views.push_back(std::move(w));
++    }
++    return service->Write(k->title_id(), user, views) ? X_ERROR_SUCCESS : X_ERROR_FUNCTION_FAILED;
++  }
++  const auto users = U32(p + 4);
++  if (!users || users > 100)
++    return X_ERROR_INVALID_PARAMETER;
++  auto* ids = Guest(k, U32(p + 8), users * 8);
++  if (!ids)
++    return X_ERROR_INVALID_PARAMETER;
++  std::vector<StatSpec> specs;
++  if (!Specs(k, U32(p + 12), U32(p + 16), specs))
++    return X_ERROR_INVALID_PARAMETER;
++  std::vector<View> views;
++  for (auto& s : specs) {
++    StatQuery q;
++    q.title = U32(p) ? U32(p) : k->title_id();
++    q.view = s.view;
++    q.columns = s.columns;
++    q.count = 100;
++    for (uint32_t i = 0; i < users; ++i)
++      q.users.push_back(memory::load_and_swap<uint64_t>(ids + i * 8));
++    auto result = service->Read(q);
++    if (!result.ok)
++      return X_ERROR_FUNCTION_FAILED;
++    views.push_back({std::move(s), std::move(result)});
++  }
++  auto needed = BufferSize(views);
++  if (U32(p + 20) < needed)
++    return X_ERROR_INSUFFICIENT_BUFFER;
++  auto* dest = Guest(k, U32(p + 24), needed);
++  if (!dest)
++    return X_ERROR_INVALID_PARAMETER;
++  Pack(views, U32(p + 24), dest);
++  return X_ERROR_SUCCESS;
++}
++}  // namespace rex::system::xam
+diff --git a/src/system/CMakeLists.txt b/src/system/CMakeLists.txt
+--- a/src/system/CMakeLists.txt
++++ b/src/system/CMakeLists.txt
+@@ -34,6 +34,7 @@
+     xam/content_manager.cpp
+     xam/user_profile.cpp
+     xam/lan_lobby.cpp
++    xam/native_stats.cpp
+ 
+     ppc_types.cpp
+     elf_module.cpp
+diff --git a/src/kernel/xam/xam_user.cpp b/src/kernel/xam/xam_user.cpp
+--- a/src/kernel/xam/xam_user.cpp
++++ b/src/kernel/xam/xam_user.cpp
+@@ -28,6 +28,7 @@
+ #include <rex/system/xthread.h>
+ #include <rex/system/xsession.h>
+ #include <rex/system/xam/lan_lobby.h>
++#include <rex/system/xam/stats_provider.h>
+ #include <rex/system/xtypes.h>
+ 
+ REXCVAR_DEFINE_UINT32(user_language, 1, "Kernel", "User's language ID");
+@@ -775,7 +776,12 @@
+ REX_EXPORT_STUB(__imp__XamUserAllowedToPostToSocialNetwork);
+ REX_EXPORT_STUB(__imp__XamUserCreateAvatarAssetEnumerator);
+ REX_EXPORT_STUB(__imp__XamUserCreatePlayerEnumerator);
+-REX_EXPORT_STUB(__imp__XamUserCreateStatsEnumerator);
++namespace rex::kernel::xam {
++u32 XamUserCreateStatsEnumerator_entry(u32 title,u32 kind,u64 pivot,u32 count,u32 specs,u32 address,u32 size,u32 handle) {
++ return rex::system::xam::CreateStatsEnumerator(REX_KERNEL_STATE(),title,kind,pivot,count,specs,address,size,handle);
++}
++}
++REX_EXPORT(__imp__XamUserCreateStatsEnumerator,rex::kernel::xam::XamUserCreateStatsEnumerator_entry)
+ REX_EXPORT_STUB(__imp__XamUserCreateTitlesPlayedEnumerator);
+ REX_EXPORT_STUB(__imp__XamUserFlushLogonQueue);
+ REX_EXPORT_STUB(__imp__XamUserGetAge);
+diff --git a/src/kernel/xam/apps/xgi_app.cpp b/src/kernel/xam/apps/xgi_app.cpp
+--- a/src/kernel/xam/apps/xgi_app.cpp
++++ b/src/kernel/xam/apps/xgi_app.cpp
+@@ -14,6 +14,7 @@
+ #include <rex/thread.h>
+ #include <rex/system/xsession.h>
+ #include <rex/system/xam/lan_lobby.h>
++#include <rex/system/xam/stats_provider.h>
+ 
+ namespace rex {
+ namespace kernel {
+@@ -30,6 +31,7 @@
+ X_HRESULT XgiApp::DispatchMessageSync(uint32_t message, uint32_t buffer_ptr,
+                                       uint32_t buffer_length) {
+   // NOTE: buffer_length may be zero or valid.
++  if(auto result=DispatchStats(kernel_state_,message,buffer_ptr,buffer_length))return *result;
+   if (auto result = XSession::Dispatch(kernel_state_, message, buffer_ptr, buffer_length)) {
+     REXKRNL_DEBUG("RedBaron session message {:X}: result={:08X}", message, uint32_t(*result));
+     return *result;

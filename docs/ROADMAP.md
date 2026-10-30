@@ -1,38 +1,61 @@
 # Roadmap do RedBaron_Recomp
 
-## Decisões atuais
+Atualizado em 30/10/2026. A versão prevista para testes públicos é **0.10**.
+O repositório e os instaladores de teste continuam privados.
 
-**Prioridade atual: online e multiplayer local para quatro pessoas, preservando bots.** Dois locais com bots e LAN entre dois processos foram validados. Quatro locais, rollback e serviços completos de Internet ainda não estão implementados. O launcher mantém tema escuro e interface em inglês. Ver [multiplayer](MULTIPLAYER.md) e [launcher](../launcher/README.md).
+## Online e serviços Epic
 
-Preservar o gameplay original: o movimento do mouse não deve controlar câmera ou voo neste momento. Teclado, cliques e controles físicos devem coexistir. O layout atual serve como referência; os comandos são configuráveis no launcher.
+- Provedor EOS dentro do jogo, descoberta de salas públicas, P2P direto/relay,
+  login Epic, overlay, amigos e fluxo de convites implementados. O launcher
+  mantém apenas o nome online; não precisa ficar aberto durante a partida.
+- Dois PCs em redes distintas já chegaram ao lobby e ao voo de Team Dog Fight.
+  Abertura de sala/overlay foi verificada em Private Match, Player Match público
+  e co-op; co-op conserva duas vagas. Isso não valida partidas completas em todos
+  os modos ou o aceite de convite entre duas contas.
+- Quick Match foi corrigido a partir da consulta do menu real. Considera modos
+  multiplayer compatíveis e escolhe o menor ping medido entre candidatos; busca
+  Custom preserva o modo escolhido. Co-op conserva sua categoria própria.
+- As 12 conquistas nativas são reconhecidas no produto. Sincronização implementada;
+  ainda falta confirmar um novo desbloqueio legítimo e sua restauração em outro PC.
+- Ponte de leaderboard e estatísticas implementada no menu original. O EOS
+  reconheceu 17/17 definições e respondeu à leitura real de um ranking vazio.
+  Pontuação obtida em partida, filtro de amigos e renovação semanal precisam de
+  validação. As semanas futuras exigem configuração administrativa.
 
-O Xbox Series do usuário é o controle de referência. A compatibilidade é ampliada pelo SDL e pela base de mapeamentos, com confirmação por modelo conforme os testes.
+Veja [EOS](EOS.md) e [leaderboards](LEADERBOARDS.md). Priorizar convite/entrada de
+outra conta, rodada até o placar, co-op completo e múltiplos hosts em redes reais.
+Oito jogadores reais e reconexão continuam sem validação completa.
 
-## Sequência
+## Vídeo e entrada
 
-1. **Licença e execução:** desbloqueio confirmado no menu e renderização normal com ROV. Continuar a validação de conteúdo e estabilidade da campanha.
-2. **Entrada:** validar o layout no voo, uso simultâneo com controle, vibração, reconexão e outros modelos. Manter câmera pelo mouse desligada.
-3. **Multiplayer (prioridade atual):** perfis/saves separados, segundo jogador e transporte LAN experimental implementados. Próximos: dois PCs/controles físicos, quatro câmeras/jogadores locais, modos online restantes, reconexão, serviços de Internet e avaliação de rollback. Bots locais preservados e testados. Ver [estado e testes](MULTIPLAYER.md).
-4. **Vídeo (em validação):** FSR 1/CAS, VSync do monitor, resolução física até 8K, escala interna e filtros implementados. Validar missões em resoluções maiores; validar alvos de FPS nas demais missões, validar a correção da física e o pacing do VSync, refinar movimento de objetos/HUD dos previews FSR 3.1.5 e DLSS e validar HDR na TV. Ver [implementação e medições](VIDEO.md).
-5. **Launcher com instalador embutido:** SDK e transporte podem ser incluídos na compilação do launcher; ferramentas ausentes são preparadas de fontes oficiais. A instalação de jogo extraído passou em teste isolado; CMake, Ninja, Python e LLVM foram preparados em pastas isoladas. Verificar a instalação do Microsoft Build Tools em uma máquina limpa e fazer auditoria de redistribuição. Dois pacotes DLC de jogo foram instalados e montados em teste; validar o conteúdo em partida e estudar os itens de avatar. A aba Update consulta e baixa releases verificadas; aplicação sobre instalação existente ainda falta. Base-game STFS, Som e Conquistas permanecem pendentes.
-6. **Splash screens:** a sequência das imagens de abertura com falha é pulada por padrão, preservando o carregamento original. A correção do pipeline 2D permanece em investigação.
+- ROV, resoluções maiores, filtros, VSync, alvos de FPS com correção de timing,
+  contador de FPS e saída HDR10 implementados. HDR converte conteúdo SDR; não é
+  iluminação HDR nativa. Preservar configurações pessoais e saves.
+- FSR temporal/DLSS permanecem experimentais. A correção atual estabiliza a
+  amostragem e os recursos do DLSS; HUD separado e movimento de objetos continuam
+  pendentes. Não anunciar ausência total de flickering ou ghosting.
+- A imagem de abertura defeituosa é ignorada pelo ponto de entrada direto;
+  captura de inicialização confirmou sua ausência. Outros filmes originais de
+  abertura e o aviso de carregamento permanecem.
+- Teclado, botões do mouse e controle SDL configuráveis; câmera pelo mouse adiada.
+  Quatro mapas de entrada não equivalem a quatro câmeras locais. Dois jogadores
+  locais foram validados; quatro locais ainda não estão concluídos.
 
-## Launcher: estado e evolução
+Veja [vídeo](VIDEO.md) e [multiplayer](MULTIPLAYER.md).
 
-| Aba | Escopo previsto |
-|---|---|
-| Vídeo / GPU | Adaptador, backend, resolução, janela/tela cheia, proporção, VSync, limite de FPS, filtros e opções disponíveis |
-| Controles | Dispositivos, mapeamento de teclado/mouse e gamepad, perfis, zonas mortas e teste de entradas |
-| Som | Dispositivo de saída e volumes suportados |
-| Conquistas | Lista, descrições e progresso local do runtime; serviços externos dependem de integração futura |
-| Online / perfil | Nome online, perfil local e conexão; recursos de rede dependem da implementação do multiplayer |
-| Geral | Caminho dos dados, iniciar jogo, restaurar padrões e acesso aos logs |
-| Instalação | Selecionar cópia local do jogo, verificar arquivos, extrair/importar os dados e preparar os componentes necessários localmente |
+## Instalador e publicação
 
-O launcher preserva preferências e usa o TOML atual. O nome chega ao perfil XAM e a aba Online permite LAN experimental; UPnP segue desabilitado. DLSS tem cinco modos com escala automática. FPS/HDR exibem o estado real da saída; HDR converte conteúdo SDR. FSR/DLSS ainda precisam de movimento de objetos e composição separada do HUD. Sem frame generation. Ver [vídeo](VIDEO.md).
+O instalador reúne jogo e DLC opcional numa operação, aceita pasta extraída,
+`default.xex` ou STFS, detecta ferramentas, mostra progresso e limpa arquivos
+intermediários após sucesso. Existe versão com ferramentas e versão que baixa
+somente as ausentes. O usuário confirmou instalação em outro Windows 11; o novo
+pacote sem build tools inclui o runtime atualizado e passou no self-test.
 
-O repositório poderá tornar-se público posteriormente, sem arquivos do jogo nem código gerado. O instalador usa uma pasta extraída fornecida pelo usuário e compila em destino separado; a preparação automática das ferramentas já foi testada parcialmente. A extração do pacote do jogo base ainda não foi implementada, e a instalação do Microsoft Build Tools precisa ser validada em uma máquina limpa.
+Antes de publicar: validar os fluxos acima, resolver acesso social público do EAS
+fora da organização, revisar redistribuição e todo o histórico Git. Não incluir
+jogo, DLCs, fontes derivados, metadados, saves ou credenciais. AGENTS.md continua
+local; sua remoção do histórico público ainda exige auditoria final.
 
-Interface nativa Windows em WPF/.NET Framework 4.8. Quatro mapas de entrada não equivalem a quatro câmeras locais; a tela dividida atual foi validada com dois jogadores e quatro bots.
-
-O usuário definiu a primeira Release de testes como **0.10** e solicitou também ports Linux e Android com crossplay. Esses ports, a instalação completa e a validação online continuam pendentes. Nenhuma Release oficial foi publicada nesta etapa.
+Ports completos para Linux/Android, crossplay desses ports, rollback e quatro
+câmeras locais permanecem trabalho futuro. O suporte multiplataforma do SDK EOS
+não comprova que esses ports existam.

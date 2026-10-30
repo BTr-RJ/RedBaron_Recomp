@@ -3,6 +3,8 @@
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
+#include <rex/system/xam/user_profile.h>
+#include <rex/system/util/xdbf_utils.h>
 #include <rex/ppc.h>
 #include <rex/ui/imgui_dialog.h>
 #include <imgui.h>
@@ -157,6 +159,11 @@ void ShutdownOnline() {
 void BindOnlineRuntime(rex::Runtime& runtime) {
 #ifdef REDBARON_EOS_ENABLED
   online_kernel=runtime.kernel_state();ExportAchievements(runtime);
+  if(online) {
+    const auto data=runtime.kernel_state()->title_xdbf().GetEntry(rex::system::util::XdbfSection::kMetadata,0x58535243);
+    auto* profile=runtime.kernel_state()->user_profile(0);
+    if(data && profile)online->ConfigureLeaderboards(std::vector<uint8_t>(data.buffer,data.buffer+data.size),profile->xuid(),runtime.user_data_root()/"eos");
+  }
   std::lock_guard lock(invitation_mutex);
   if(invitation)runtime.kernel_state()->BroadcastNotification(0x02000002,0);
 #endif

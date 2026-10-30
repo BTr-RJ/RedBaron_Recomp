@@ -101,6 +101,7 @@ endif()
 
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
+    target_compile_definitions(redbaron_probe PRIVATE REDBARON_NO_GUEST_SPLASH=1)
     if(TARGET redbaron_eos_service)
         target_compile_definitions(redbaron_probe PRIVATE REDBARON_EOS_ENABLED=1)
     endif()

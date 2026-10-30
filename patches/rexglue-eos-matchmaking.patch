@@ -1,0 +1,83 @@
+diff --git a/src/system/xsession.cpp b/src/system/xsession.cpp
+--- a/src/system/xsession.cpp
++++ b/src/system/xsession.cpp
+@@ -2,11 +2,15 @@
+ #include <rex/system/kernel_state.h>
+ #include <rex/system/xam/user_profile.h>
+ #include <rex/system/xam/lan_lobby.h>
++#include <rex/system/xam/native_matchmaking_policy.h>
+ #include <rex/system/util/object_table.h>
+ #include <rex/logging.h>
++#include <rex/cvar.h>
+ #include <algorithm>
+ #include <cstring>
+ #include <random>
++
++REXCVAR_DEFINE_BOOL(redbaron_matchmaking_trace, false, "Network", "Log native matchmaking query fields");
+ 
+ namespace rex::system {
+ namespace {
+@@ -37,9 +41,20 @@
+   const uint32_t capacity = Read32(data + 24), address = Read32(data + 28);
+   if (!address || capacity < 8) return 0x80155207;
+   auto records = xam::LanSearch(kernel->title_id());
+-  bool quick = kernel->title_id() == 0x584109B5;
+-  for (uint32_t i = 0; i < context_count; ++i)
+-    if (Read32(contexts + i * 8) == 0x800B && Read32(contexts + i * 8 + 4) != UINT32_MAX) quick = false;
++  if (REXCVAR_GET(redbaron_matchmaking_trace)) {
++    REXKRNL_INFO("Match query: procedure={} limit={} contexts={} properties={} users={}",
++        Read32(data), limit, context_count, property_count, extended ? Read32(data + 32) : 0);
++    for (uint32_t i=0;i<context_count;++i)
++      REXKRNL_INFO("Match context {:08X}={:08X}",Read32(contexts+i*8),Read32(contexts+i*8+4));
++    for (uint32_t i=0;i<property_count;++i)
++      REXKRNL_INFO("Match property {:08X} type={} value={:08X}",Read32(properties+i*24),properties[i*24+8],Read32(properties+i*24+16));
++  }
++  std::array<uint32_t, 32> property_ids{};
++  for (uint32_t i=0;i<property_count;++i) property_ids[i]=Read32(properties+i*24);
++  const bool quick=xam::SnoopyAnyModeSearch(kernel->title_id(),Read32(data),
++      std::span<const uint32_t>(property_ids.data(),property_count));
++  if (REXCVAR_GET(redbaron_matchmaking_trace))
++    REXKRNL_INFO("Match query policy: {}",quick?"any mode / lowest reachable ping":"selected mode");
+   if (!records.empty()) {
+     REXKRNL_DEBUG("LAN search procedure={} contexts={} properties={} users={} found={}", Read32(data), context_count, property_count, extended ? Read32(data + 32) : 0, records.size());
+     for (uint32_t i=0;i<context_count;++i) REXKRNL_DEBUG("LAN query context {:08X}={:08X}", Read32(contexts+i*8),Read32(contexts+i*8+4));
+@@ -50,13 +65,14 @@
+     if (extended && record.open_public + record.open_private < Read32(data + 32)) return true;
+     for (uint32_t i = 0; i < context_count; ++i) {
+       const auto id = Read32(contexts + i * 8), value = Read32(contexts + i * 8 + 4);
+-      if (quick && id == 0x800B) continue;
+       auto found = record.contexts.find(id);
+       if (found == record.contexts.end() || found->second != value) return true;
+     }
+     for (uint32_t i = 0; i < property_count; ++i) {
+       auto* property = properties + i * 24; auto found = record.properties.find(Read32(property));
+-      if (quick && Read32(property) != 0x10000033) continue;
++      // Native rank is a Near sort key, never an equality requirement. Preserve
++      // version and content compatibility filters in both Quick and Custom.
++      if (xam::SnoopyNearSortProperty(kernel->title_id(),Read32(property))) continue;
+       if (found == record.properties.end()) return true;
+       const auto type = property[8]; const size_t count = type == 1 || type == 5 ? 4 : type == 2 || type == 3 || type == 7 ? 8 : 0;
+       // Flying Ace search procedure 1 requests capacity for the joining party
+diff --git a/include/rex/system/xam/native_matchmaking_policy.h b/include/rex/system/xam/native_matchmaking_policy.h
+new file mode 100644
+--- /dev/null
++++ b/include/rex/system/xam/native_matchmaking_policy.h
+@@ -0,0 +1,18 @@
++#pragma once
++#include <cstdint>
++#include <span>
++
++namespace rex::system::xam {
++// The title's Quick Match uses multiplayer search procedure 1 without a
++// GameMode property. Context 0x800B identifies multiplayer versus challenges;
++// it is not the Dog Fight / CTF / other multiplayer ruleset selector.
++inline bool SnoopyAnyModeSearch(uint32_t title, uint32_t procedure,
++                               std::span<const uint32_t> properties) {
++  if (title != 0x584109B5 || procedure != 1) return false;
++  for (auto id : properties) if (id == 0x10000046) return false;
++  return true;
++}
++inline bool SnoopyNearSortProperty(uint32_t title, uint32_t property) {
++  return title == 0x584109B5 && property == 0x10000042;
++}
++}

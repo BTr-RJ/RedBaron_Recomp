@@ -5,6 +5,8 @@
 #include <rex/system/xsocket.h>
 #include <rex/system/xam/user_profile.h>
 #include <rex/system/xam/lan_lobby.h>
+#include <rex/system/xam/stats_provider.h>
+#include <rex/system/xenumerator.h>
 #include <rex/system/util/object_table.h>
 #include <WinSock2.h>
 #include <iostream>
@@ -18,6 +20,14 @@ namespace rex::kernel::xam {
 uint32_t NetDll_accept_entry(uint32_t, uint32_t, ppc_ptr_t<system::XSOCKADDR>, mapped_u32);
 }
 static void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+class TestStats final:public rex::system::xam::StatsProvider {
+ public:
+ rex::system::xam::StatQuery last;std::vector<rex::system::xam::StatWrite> written;
+ bool Write(uint32_t,uint64_t,const std::vector<rex::system::xam::StatWrite>& views) override {written=views;return true;}
+ rex::system::xam::StatResult Read(const rex::system::xam::StatQuery& query) override {
+  last=query;rex::system::xam::StatRow row;row.xuid=0x0009000012345600ull;row.rank=3;row.rating=9876543210ll;row.name="Test pilot";row.columns={{3,-7},{7,55}};return {true,9,{row}};
+ }
+};
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   try {
@@ -43,6 +53,28 @@ int main(int argc, char** argv) {
     auto* bytes = mem->TranslateVirtual(address);
     auto put = [&](unsigned offset, uint32_t value) { rex::memory::store_and_swap<uint32_t>(bytes + offset, value); };
     auto get = [&](unsigned offset) { return rex::memory::load_and_swap<uint32_t>(bytes + offset); };
+    {
+      using namespace rex::system;using namespace rex::system::xam;using rex::X_RESULT;
+      auto provider=std::make_shared<TestStats>();SetStatsProvider(provider);
+      put(2048,51);put(2052,2);rex::memory::store_and_swap<uint16_t>(bytes+2056,3);rex::memory::store_and_swap<uint16_t>(bytes+2058,7);
+      Check(CreateStatsEnumerator(kernel,0x584109B5,1,2,10,1,address+2048,address+2200,address+2204)==0,"Leaderboard enumerator creation");
+      Check(provider->last.start==2&&provider->last.count==10&&provider->last.columns==std::vector<uint16_t>({3,7}),"Native rank and column filters preserved");
+      Check(get(2200)==120,"Leaderboard nested output buffer size");put(2424,0x12345678);
+      auto enumerator=kernel->object_table()->LookupObject<XEnumerator>(get(2204));uint32_t written=0;
+      Check(enumerator&&enumerator->WriteItems(address+2304,bytes+2304,&written)==0&&written==1,"Leaderboard enumeration writes one result container");
+      Check(get(2304)==1&&get(2308)==address+2312&&get(2312)==51&&get(2316)==9&&get(2320)==1,"Leaderboard views preserve native pointers and totals");
+      Check(get(2336)==3&&rex::memory::load_and_swap<uint64_t>(bytes+2344)==9876543210ull,"Leaderboard rank/rating alignment and endian");
+      Check(get(2368)==2&&get(2372)==address+2376&&rex::memory::load_and_swap<uint64_t>(bytes+2392)==uint64_t(-7),"Leaderboard columns preserve signed values");
+      Check(get(2424)==0x12345678,"Leaderboard output preserves trailing memory");
+      Check(enumerator->WriteItems(address+2304,bytes+2304,&written)==X_ERROR_NO_MORE_FILES&&written==0,"Leaderboard end of enumeration");
+      Check(CreateStatsEnumerator(kernel,0x584109B5,0,0x0009000012345600ull,10,1,address+2048,address+2200,address+2204)==0&&provider->last.pivot==0x0009000012345600ull,"Leaderboard XUID-centered query");
+      put(2052,65);Check(CreateStatsEnumerator(kernel,0,1,1,10,1,address+2048,address+2200,address+2204)==X_ERROR_INVALID_PARAMETER,"Oversized leaderboard spec rejected");put(2052,2);
+      put(2560,0);rex::memory::store_and_swap<uint64_t>(bytes+2564,0x0009000012345600ull);put(2572,1);put(2576,address+2600);
+      put(2600,51);put(2604,2);put(2608,address+2640);put(2640,0x10000001);bytes[2648]=1;put(2656,uint32_t(-9));put(2664,0x20000002);bytes[2672]=2;rex::memory::store_and_swap<uint64_t>(bytes+2680,12345678901ull);
+      Check(DispatchStats(kernel,0xB0025,address+2560,20)==0&&provider->written.size()==1&&provider->written[0].properties.at(0x10000001)==-9&&provider->written[0].properties.at(0x20000002)==12345678901ll,"Native stat writes retain 32/64-bit properties");
+      Check(DispatchStats(kernel,0xB0025,address+2560,19)==X_ERROR_INVALID_PARAMETER,"Truncated stat write rejected");
+      SetStatsProvider({});Check(CreateStatsEnumerator(kernel,0,1,1,10,1,address+2048,address+2200,address+2204)==X_ERROR_NOT_LOGGED_ON,"Missing leaderboard provider reports unavailable");
+    }
     auto call = [&](uint32_t message, uint32_t size) { auto result = rex::system::XSession::Dispatch(kernel, message, address, size); Check(result.has_value(), "Session dispatcher"); return *result; };
     put(0, session->guest_object()); put(4, 1); put(8, 2); put(12, 0); put(16, 0); put(20, address + 128); put(24, address + 192);
     Check(call(0xB0010, 28) == 0, "Session create");

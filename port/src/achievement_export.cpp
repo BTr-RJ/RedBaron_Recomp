@@ -22,7 +22,13 @@ int main(int argc,char** argv) {
     if(runtime.Setup(std::move(config)) || runtime.LoadXexImage("game:\\default.xex"))throw std::runtime_error("Cannot load local XEX metadata");
     auto* kernel=runtime.kernel_state();if(kernel->title_id()!=0x584109B5)throw std::runtime_error("Unexpected title ID");
     const auto all=kernel->loaded_achievements();if(all.empty())throw std::runtime_error("No native achievement definitions found");
-    const auto db=kernel->title_xdbf();std::ofstream json(out/"achievement-catalog.json",std::ios::binary);
+    const auto db=kernel->title_xdbf();
+    // Original service schema stays beside the private local export, never in
+    // the source repository or installer payload.
+    const auto schema=db.GetEntry(rex::system::util::XdbfSection::kMetadata,0x58535243);
+    if(schema) {std::ofstream source(out/"title-service-schema.bin",std::ios::binary);
+      source.write(reinterpret_cast<const char*>(schema.buffer),schema.size);}
+    std::ofstream json(out/"achievement-catalog.json",std::ios::binary);
     json<<"{\"titleId\":\"584109B5\",\"achievements\":[";bool first=true;
     for(const auto& a:all) {
       if(!first)json<<',';first=false;char id[32];std::snprintf(id,sizeof(id),"SFA_%08X",a.id);

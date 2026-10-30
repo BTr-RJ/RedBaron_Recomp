@@ -229,3 +229,32 @@ The FPS overlay now includes the actual HDR10/SDR output state, taken from
 successful swap-chain color-space negotiation. The preference alone does not
 prove HDR is active. It remains a conversion of SDR content, not native HDR
 lighting. The game cursor is hidden in fullscreen and restored in windowed mode.
+
+## Stability changes (2026-10-30)
+
+The startup splash skip now uses a strong guest entry point so direct generated
+calls cannot bypass it. It advances the image index past the sequence before
+the original update/draw logic runs, preserving loading completion. The probe
+does not link this guest-only entry point.
+
+`rexglue-temporal-stability.patch` removes the depth-only DLSS foreground bias
+mask, handles repeated guest frames whose presentation output resource changed,
+and resets temporal history for backwards timestamps/frame IDs. Jitter amplitude
+also accounts for internal resolution scale.
+
+DLSS uses stable scene sampling by default (`present_dlss_scene_jitter=false`).
+The previous path jittered 3D while passing an already composed, unjittered HUD
+through the same NGX evaluation. Disabling that conflicting jitter is a stability
+workaround, with less subpixel reconstruction detail. This is not full HUD
+separation or dense object velocity support; motion trails and residual shimmer
+remain possible. The advanced jitter flag requires restart and remains experimental.
+
+A 24-frame static menu-text comparison at identical settings showed adjacent RGB
+variation of 0.470 before / 0.440 after on a 431×83 crop. This small local result
+does not establish flicker elimination throughout gameplay or a performance gain.
+Real NGX evaluation, menu rendering and EOS overlay continued working after the
+change. The personal graphics TOML was preserved exactly against the turn's backup.
+
+A startup capture sampled 24 frames from the first game window through the menu
+transition. The broken Xbox Arcade/custom image did not appear. The separate
+original movie logos and loading notice still play.

@@ -12,6 +12,8 @@
 #include "social.h"
 #include "achievement_sync.h"
 #include "matchmaking_policy.h"
+#include "leaderboards.h"
+#include <fstream>
 #include "../network/socket_bridge.h"
 #include <eos_lobby.h>
 #include <algorithm>
@@ -50,9 +52,10 @@ std::string SocketName(std::string_view id) {
 }
 }
 struct OnlineService::Impl {
-  enum class Kind {Search,Connect,Probe,Leave,Friends,Rank};
+  enum class Kind {Search,Connect,Probe,Leave,Friends,Rank,StatsSchema};
   struct Request {
     Kind kind;uint32_t address=0,title=0;LanSessionId session{};
+    std::vector<uint8_t> schema;uint64_t xuid=0;std::filesystem::path private_output;
     std::vector<LanQosTarget> targets;std::vector<LanQosResult> qos;std::vector<LanRecord> records;
     std::vector<std::vector<uint16_t>> samples;
     std::mutex mutex;std::condition_variable cv;bool done=false,ok=false,started=false;
@@ -68,6 +71,7 @@ struct OnlineService::Impl {
   std::unique_ptr<Platform> platform;
   std::unique_ptr<Social> social;
   std::unique_ptr<AchievementSync> achievement_sync;
+  std::shared_ptr<Leaderboards> leaderboards;
   std::atomic<bool> overlay_captured{false};
   EOS_HLobby lobby{};EOS_HP2P p2p{};EOS_HLobbySearch search{};
   EOS_NotificationId updates=EOS_INVALID_NOTIFICATIONID,members=EOS_INVALID_NOTIFICATIONID,qos_notify=EOS_INVALID_NOTIFICATIONID;
@@ -394,6 +398,22 @@ struct OnlineService::Impl {
     for(const auto& r:requests) {
       if(r->done)continue;
       if(r->kind==Kind::Friends) {r->Finish(social && social->ShowFriends());}
+      else if(r->kind==Kind::StatsSchema) {
+        try {
+          if(!leaderboards) {
+            auto schema=ReadLeaderboardSchema(r->schema);
+            leaderboards=std::make_shared<Leaderboards>(*platform,std::move(schema),r->xuid,[this](auto message){Log(message);});
+            std::filesystem::create_directories(r->private_output);
+            std::ofstream setup(r->private_output/"leaderboard-setup.csv",std::ios::binary);
+            setup<<"LeaderboardId,NativeView,Reset,NativeColumn,StatName,Aggregation,Primary\n";
+            for(const auto& view:leaderboards->schema())for(const auto& col:view.columns)if(col.id<65533||col.id==65534)
+              setup<<LeaderboardId(view.id)<<','<<view.id<<','<<view.reset<<','<<col.id<<','<<LeaderboardStat(view.id,col.property)<<','<<col.aggregation<<','<<(col.id==65534?"yes":"no")<<'\n';
+            setup.flush();if(!setup)throw std::runtime_error("Cannot write private leaderboard setup catalog");
+            SetStatsProvider(leaderboards);Log("Native leaderboard schema loaded: "+std::to_string(leaderboards->schema().size())+" view(s); setup catalog saved locally");
+          }
+          r->Finish(true);
+        }catch(const std::exception& e){Log(std::string("Leaderboard setup unavailable: ")+e.what());r->Finish(false);}
+      }
       else if(r->kind==Kind::Rank) {
         const auto now=Clock::now();
         if(!r->started) {
@@ -441,6 +461,7 @@ struct OnlineService::Impl {
   }
   void Shutdown() {
     closing=true;
+    SetStatsProvider({});if(leaderboards)leaderboards->Stop();
     if(platform) {
       const auto deadline=Clock::now()+std::chrono::seconds(8);
       if(join && join->state()==LobbyJoin::State::Joined)join->Leave();
@@ -458,7 +479,7 @@ struct OnlineService::Impl {
       ResetTransport();
       if(search) {EOS_LobbySearch_Release(search);search=nullptr;}
       // Join/publisher callback contexts outlive platform release.
-      directory.Clear();platform->Release();social.reset();achievement_sync.reset();join.reset();publisher.reset();platform.reset();
+      directory.Clear();platform->Release();social.reset();achievement_sync.reset();leaderboards.reset();join.reset();publisher.reset();platform.reset();
     }
     {std::lock_guard lock(requests_mutex);running=false;for(auto& r:incoming)r->Finish(false);incoming.clear();}
     for(auto& r:requests)if(!r->done)r->Finish(false);requests.clear();
@@ -525,6 +546,7 @@ struct OnlineService::Impl {
         }
         if(now>=next_snapshot){next_snapshot=now+std::chrono::seconds(1);Snapshot();}
         social->Presence(room.empty()?"In menus":private_room?"In a private match":"In a public match");
+        if(leaderboards)leaderboards->Poll();
         if(now>=next_roster){next_roster=now+std::chrono::milliseconds(250);SyncRoster();}
         if(publisher && owned && !destroying && !roster_busy){publisher->Poll();if(publisher->error()!=EOS_EResult::EOS_Success)failed=true;}
         if(!client && now>=next_search)Find();
@@ -572,5 +594,8 @@ void OnlineService::RankMatches(std::vector<LanRecord>& records) {
   if(records.size()<2)return;
   auto r=std::make_shared<Impl::Request>(Impl::Kind::Rank);r->records=records;
   if(impl_->Submit(r))records=std::move(r->records);
+}
+void OnlineService::ConfigureLeaderboards(std::vector<uint8_t> schema,uint64_t xuid,const std::filesystem::path& output) {
+  auto r=std::make_shared<Impl::Request>(Impl::Kind::StatsSchema);r->schema=std::move(schema);r->xuid=xuid;r->private_output=output;impl_->Submit(r);
 }
 }

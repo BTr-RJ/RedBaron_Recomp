@@ -37,6 +37,7 @@ class OnlineService final : public rex::system::xam::LanOnlineProvider {
   bool ShowAchievements(uint32_t user) override;
   bool InputCaptured() const override;
   void RankMatches(std::vector<rex::system::xam::LanRecord>& records) override;
+  void ConfigureLeaderboards(std::vector<uint8_t> schema,uint64_t local_xuid,const std::filesystem::path& private_output);
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

@@ -25,10 +25,13 @@ REXCVAR_DEFINE_UINT32(
     .allowed({"0", "30", "60", "90", "120", "144", "165", "240"})
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
+#ifndef REDBARON_NO_GUEST_SPLASH
+extern "C" void __imp__sub_829AE1D8(PPCContext&, uint8_t*);
+#endif
+
 namespace redbaron {
 namespace {
 PPCFunc *original_frame_interval = nullptr;
-PPCFunc *original_splash_update = nullptr;
 PPCFunc *original_display_tick = nullptr;
 std::atomic<uint64_t> game_frames{0};
 PPCFunc *original_world_tick = nullptr;
@@ -39,7 +42,10 @@ rex::runtime::FunctionDispatcher *video_dispatcher = nullptr;
 std::atomic<double> world_delta{1.0 / 30.0};
 thread_local double physics_delta = 1.0 / 30.0;
 
+#ifndef REDBARON_NO_GUEST_SPLASH
 void SkipSplash(PPCContext &ctx, uint8_t *base) {
+  static std::atomic<bool> reported{false};
+  if (!reported.exchange(true)) REXLOG_INFO("Startup splash rendering bypassed");
   // The startup object's current image and image count are at these offsets.
   // Keep the original loading and transition logic running.
   const auto object = ctx.r3.u32;
@@ -53,8 +59,9 @@ void SkipSplash(PPCContext &ctx, uint8_t *base) {
   // Copy the value in guest byte order unchanged.
   *reinterpret_cast<volatile uint32_t *>(address(object + 10120)) =
       *reinterpret_cast<volatile uint32_t *>(address(object + 10124));
-  original_splash_update(ctx, base);
+  __imp__sub_829AE1D8(ctx, base);
 }
+#endif
 
 void DisplayTick(PPCContext &ctx, uint8_t *base) {
   original_display_tick(ctx, base);
@@ -193,11 +200,6 @@ void ConfigureVideoTiming() {
 void InstallVideoHooks(rex::Runtime &runtime) {
   const auto fps = REXCVAR_GET(redbaron_fps);
   auto *dispatcher = runtime.function_dispatcher();
-  if (REXCVAR_GET(redbaron_skip_splash)) {
-    original_splash_update = dispatcher->GetFunction(0x829AE1D8);
-    if (!original_splash_update || !dispatcher->SetFunction(0x829AE1D8, SkipSplash))
-      throw std::runtime_error("Could not skip the startup images.");
-  }
   if (REXCVAR_GET(redbaron_show_fps)) {
     original_display_tick = dispatcher->GetFunction(0x828D6548);
     if (!original_display_tick ||
@@ -226,3 +228,12 @@ void InstallVideoHooks(rex::Runtime &runtime) {
       "RedBaron engine target: {} FPS; physics uses measured game delta", fps);
 }
 } // namespace redbaron
+
+// Direct generated calls and the initial function table resolve this strong
+// entry, including the first startup frame before a dispatcher hook can run.
+#ifndef REDBARON_NO_GUEST_SPLASH
+extern "C" void sub_829AE1D8(PPCContext& ctx, uint8_t* base) {
+  if (REXCVAR_GET(redbaron_skip_splash)) redbaron::SkipSplash(ctx, base);
+  else __imp__sub_829AE1D8(ctx, base);
+}
+#endif

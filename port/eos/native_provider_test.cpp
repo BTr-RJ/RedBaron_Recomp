@@ -1,6 +1,7 @@
 #include "native_record.h"
 #include "matchmaking_policy.h"
 #include "invitation_record.h"
+#include <rex/system/xam/native_matchmaking_policy.h>
 #include <rex/cvar.h>
 #include <iostream>
 #include <stdexcept>
@@ -58,9 +59,16 @@ int main() {
     Check(redbaron::eos::EncodeNativeRecord(original).empty(),"A session with no free slots is not offered for a new invitation");
     {
       using namespace redbaron::eos;const auto now=std::chrono::steady_clock::now();
+      const std::array<uint32_t,3> quick_properties{0x10000042,0x1000000A,0x10000033};
+      const std::array<uint32_t,4> custom_properties{0x10000042,0x1000000A,0x10000033,0x10000046};
+      Check(SnoopyAnyModeSearch(0x584109B5,1,quick_properties),"Observed native Quick Match query activates ping selection");
+      Check(!SnoopyAnyModeSearch(0x584109B5,1,custom_properties),"A selected multiplayer mode retains its filter");
+      Check(!SnoopyAnyModeSearch(0x584109B5,0,quick_properties),"Co-op challenge queries retain their own session category");
+      Check(SnoopyNearSortProperty(0x584109B5,0x10000042) && !SnoopyNearSortProperty(0x584109B5,0x1000000A),"Rank proximity is not a version equality filter");
       LanRecord a,b,c;a.open_public=b.open_public=c.open_public=7;
       a.info[0]=1;a.info[11]=1;b.info[0]=2;b.info[11]=2;c.info[0]=3;c.info[11]=3;
-      a.contexts[0x800B]=1;b.contexts[0x800B]=2;c.contexts[0x800B]=3;
+      a.contexts[0x800B]=b.contexts[0x800B]=c.contexts[0x800B]=1;
+      a.properties[0x10000046]={0,0,0,1};b.properties[0x10000046]={0,0,0,2};c.properties[0x10000046]={0,0,0,3};
       LanSessionId aid{},bid{},cid{};aid[0]=1;bid[0]=2;cid[0]=3;
       std::map<uint32_t,MatchPing> pings{{1,{aid,80,now+std::chrono::seconds(10)}},{2,{bid,15,now+std::chrono::seconds(10)}},{3,{cid,40,now+std::chrono::seconds(10)}}};
       std::vector<LanRecord> choices{a,b,c};

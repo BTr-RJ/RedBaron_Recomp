@@ -98,6 +98,17 @@ try {
     $socialPatch=Join-Path $project 'patches/rexglue-eos-social.patch'
     Native 'git' @('apply','--check','--ignore-space-change',$socialPatch)
     Native 'git' @('apply','--ignore-space-change',$socialPatch)
+    $matchmakingPatch=Join-Path $project 'patches/rexglue-eos-matchmaking.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$matchmakingPatch)
+    Native 'git' @('apply','--ignore-space-change',$matchmakingPatch)
+    $leaderboardPatch=Join-Path $project 'patches/rexglue-native-leaderboards.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$leaderboardPatch)
+    Native 'git' @('apply','--ignore-space-change',$leaderboardPatch)
+    if($Fsr315) {
+        $stabilityPatch=Join-Path $project 'patches/rexglue-temporal-stability.patch'
+        Native 'git' @('apply','--check','--ignore-space-change',$stabilityPatch)
+        Native 'git' @('apply','--ignore-space-change',$stabilityPatch)
+    }
 } finally {Pop-Location}
 Native 'cmake' @('-S',$source,'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
     '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++','-DCMAKE_C_FLAGS=-march=x86-64-v2',

@@ -130,9 +130,34 @@ Validação social de 30/10/2026:
   de modo ainda precisa ser conferida no menu real.
 
 Permanecem necessários: convite/entrada de duas contas reais, conquista obtida
-normalmente, rodada completa até o placar, oito jogadores e co-op. Ranking,
-voz, rollback e ports Linux/Android não estão implementados por esta integração.
+normalmente, rodada completa até o placar, oito jogadores e uma missão co-op
+entre duas contas. A ponte de ranking foi adicionada posteriormente; veja
+[configuração e limites](LEADERBOARDS.md). Voz, rollback e ports Linux/Android
+não estão implementados por esta integração.
 O release público permanece pendente.
+
+## Revisão de modos e Quick Match (30/10/2026)
+
+A consulta capturada no menu real **Player Match → Find Game → Quick Match**
+usa o procedimento 1, categoria `0x800B=1`, versão, vagas e proximidade de rank.
+Ela não inclui a propriedade de modo `0x10000046`. A detecção antiga confundia
+a categoria com o modo; foi corrigida em `rexglue-eos-matchmaking.patch`.
+O rank é uma ordenação Near, não uma exigência de igualdade.
+
+Quick Match agora ativa a escolha pelo menor ping medido entre hosts públicos
+compatíveis de diferentes modos multiplayer. Preserva versão, conteúdo e vagas.
+Busca Custom com modo selecionado conserva esse filtro; co-op mantém sua
+categoria e busca próprias. O snapshot EOS admite vários hosts simultâneos;
+salas privadas e cheias não entram no Quick Match. A política foi testada com
+três modos/hosts, ping expirado e troca de sessão no mesmo endereço. O menu real
+confirmou a ativação da política corrigida. Escolha entre vários PCs reais ainda
+precisa de validação.
+
+As salas públicas também habilitam convites EOS. No teste do host, o overlay
+ofereceu “Convidar para o jogo” em Player Match público, sem enviar convite a
+pessoas. Co-op público criou sala EOS com duas vagas; co-op privado publicou sala
+somente por convite com duas vagas, e RT abriu o overlay oficial. Isso valida
+publicação/abertura no host, não o ingresso e conclusão de todas as missões/modos.
 
 ## Compilação e instalador
 
