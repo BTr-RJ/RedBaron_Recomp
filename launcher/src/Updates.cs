@@ -18,7 +18,7 @@ namespace RedBaron {
     }
     public static class Updates {
         public const string CurrentVersion="0.10.0";
-        const long MaxBytes=512L*1024*1024;
+        const long MaxBytes=2L*1024*1024*1024-1;
         const string Endpoint="https://api.github.com/repos/BTr-RJ/RedBaron_Recomp/releases/latest";
         static bool ValidAsset(ReleaseAsset asset) {
             if(asset==null || asset.size<=0 || asset.size>MaxBytes || !Regex.IsMatch(asset.digest??"",@"\Asha256:[0-9a-fA-F]{64}\z"))return false;

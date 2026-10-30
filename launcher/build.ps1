@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param([string]$OutputDirectory = '', [string]$SdkRoot = '', [string]$SdkSourceRoot = '',
-    [string]$PrivateEosConfig = '')
+    [string]$PrivateEosConfig = '', [string]$OfflineToolsRoot = '')
 $ErrorActionPreference = 'Stop'
 if(!$OutputDirectory){$OutputDirectory=Join-Path $PSScriptRoot 'out'}
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
@@ -90,8 +90,10 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'install.ps1') + ',Install.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'install-dlc.ps1') + ',InstallDlc.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'bootstrap-tools.ps1') + ',BootstrapTools.ps1'),
+    ('/resource:' + (Join-Path $PSScriptRoot 'tool-inventory.ps1') + ',ToolInventory.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'App.config') + ',App.config'))
 if($sdkBundle){$arguments+=('/resource:'+$sdkArchive+',Sdk.zip')}
+if($OfflineToolsRoot){$arguments+=('/resource:'+([IO.Path]::GetFullPath((Join-Path $OfflineToolsRoot 'manifest.json')))+',OfflineTools.json')}
 if($PrivateEosConfig) {
     if(!$sdkBundle -or !(Test-Path -LiteralPath (Join-Path $SdkRoot 'lib/redbaron_eos_service.lib'))){throw 'The private online installer requires the EOS provider bundle.'}
     $PrivateEosConfig=[IO.Path]::GetFullPath($PrivateEosConfig)

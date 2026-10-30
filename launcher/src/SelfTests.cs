@@ -155,7 +155,9 @@ namespace RedBaron {
                 release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip";
                 release.assets[0].digest="sha256:bad";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Unverified update accepted");
-                release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=600L*1024*1024;
+                release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=1600L*1024*1024;
+                Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Offline tool package rejected by update size limit");
+                release.assets[0].size=3L*1024*1024*1024;
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Oversized update accepted");
                 byte[] payload=Encoding.UTF8.GetBytes("test update archive bytes");
                 release.assets[0].size=payload.Length;

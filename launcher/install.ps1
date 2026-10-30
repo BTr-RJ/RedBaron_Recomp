@@ -8,7 +8,8 @@ param(
     [string]$SdkArchive = '',
     [string]$BootstrapScript = '',
     [string]$LauncherConfig = '',
-    [string]$OnlineConfig = ''
+    [string]$OnlineConfig = '',
+    [string]$OfflineToolsRoot = '', [string]$OfflineManifest = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -121,7 +122,7 @@ try {
     if($BootstrapScript) {
         Write-Output 'Checking build tools...'
         $needPython=!(Test-Path -LiteralPath (Join-Path $Sdk 'bin/redbaron_net.exe') -PathType Leaf) -or !(Test-Path -LiteralPath (Join-Path $Sdk 'bin/datachannel.dll') -PathType Leaf)
-        & $BootstrapScript -ToolRoot (Join-Path $Destination '.redbaron-tools') -RequirePython:$needPython
+        & $BootstrapScript -ToolRoot (Join-Path $Destination '.redbaron-tools') -RequirePython:$needPython -OfflineToolsRoot $OfflineToolsRoot -OfflineManifest $OfflineManifest
     }
     foreach ($tool in @('cmake','ninja','clang++')) { Get-Command $tool -ErrorAction Stop | Out-Null }
     if(!$extracted) {

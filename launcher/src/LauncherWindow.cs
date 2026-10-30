@@ -60,7 +60,7 @@ namespace RedBaron {
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
             layout=new WindowLayout(window);
-            Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+"Missing CMake, Ninja, Clang and Microsoft Build Tools can be downloaded during installation; Windows may request administrator approval. No game files are downloaded.";
+            Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+(Services.HasOfflineTools()?"Offline build tools are included. Compatible installed tools are reused; only missing components are installed. ":"Missing tools can be downloaded during installation. ")+"Microsoft Build Tools may request administrator approval. No game files are downloaded.";
             window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);layout.Center();};
             window.PreviewKeyDown+=(sender,e)=>{
                 if(capture==null && (e.Key==Key.F11 || (e.Key==Key.Escape && layout.Fullscreen))) {layout.Toggle();e.Handled=true;}
@@ -105,6 +105,7 @@ namespace RedBaron {
             Button("LeaveRoom").Click+=async(sender,e)=>await LeaveOnline();
             Button("CopyRoom").Click+=(sender,e)=>{try {if(online!=null && online.Room.Length>0){Clipboard.SetText(OnlineSession.Invitation(settings.OnlineServer,online.Room));Status("Invitation copied. Send it to your friends.");}}catch(Exception error){Status("Could not copy the invitation: "+error.Message,true);}};
             Button("InstallButton").Click+=async(sender,e)=>await Install();
+            Button("CheckTools").Click+=async(sender,e)=>await CheckBuildTools();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
             Button("CheckUpdates").Click+=async(sender,e)=>await CheckForUpdates();
@@ -126,6 +127,7 @@ namespace RedBaron {
             window.Closed+=(sender,e)=>{if(online!=null)online.Dispose();};
             window.Loaded+=async(sender,e)=>{
                 await Refresh();
+                await CheckBuildTools();
                 if(args.Contains("--capture")) await CaptureScreens();
                 else await CheckForUpdates();
             };
@@ -151,6 +153,16 @@ namespace RedBaron {
             UpdateInstallAction();
             Label("InstallState").Text=Services.HasInstallation(settings.Root)?"Current installation: "+settings.Root:"Select a game source and an installation folder to begin.";
             ShowPlayer();loading=false;
+        }
+        async Task CheckBuildTools() {
+            Button("CheckTools").IsEnabled=false;
+            try {
+                var tools=await Services.CheckBuildTools(settings);
+                int ready=tools.Count(t=>t.available);
+                Get<Expander>("BuildToolsPanel").Header=ready==tools.Count?"Build tools — all required tools installed":"Build tools — "+(tools.Count-ready)+" missing or outdated";
+                Label("ToolInventory").Text=String.Join(Environment.NewLine,tools.Select(t=>t.name+": "+(t.available?t.version+" — already installed":"missing or outdated — will be installed")));
+            }catch(Exception error){Label("ToolInventory").Text=error.Message;}
+            finally {Button("CheckTools").IsEnabled=installation==null;}
         }
         void UpdateDlssControls() {
             bool dlss=Val(Combo("Upscaling"))=="dlss";
@@ -332,7 +344,7 @@ namespace RedBaron {
             InstallPlan plan;
             try {plan=Services.PlanInstallation(settings);}catch(Exception error){Status(error.Message,true);return;}
             installation=new CancellationTokenSource();
-            string[] controls={"InstallButton","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseSourceFile","BrowseDestination","BrowseSdk"};
+            string[] controls={"InstallButton","CheckTools","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseSourceFile","BrowseDestination","BrowseSdk"};
             foreach(string name in controls)Button(name).IsEnabled=false;
             foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=false;
             Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;
@@ -352,7 +364,7 @@ namespace RedBaron {
                 foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=true;
             }
             if(failed && Services.HasInstallation(plan.Root))settings=Settings.Load(plan.Root);
-            ApplySettings();await Refresh(false);Status(outcome,failed);
+            ApplySettings();await Refresh(false);await CheckBuildTools();Status(outcome,failed);
         }
         async Task CheckForUpdates() {
             if(updateBusy)return;
@@ -399,6 +411,13 @@ namespace RedBaron {
             for(int tab=0;tab<5;tab++) {
                 Get<TabControl>("Tabs").SelectedIndex=tab;await Task.Delay(200);window.UpdateLayout();
                 SaveCapture(Path.Combine(folder,new[]{"install","video","controls","online","update"}[tab]+".png"));
+                if(tab==0 && args.Contains("--capture-tools")) {
+                    var panel=Get<Expander>("BuildToolsPanel");panel.IsExpanded=true;
+                    var grid=(Grid)((TabItem)Get<TabControl>("Tabs").Items[0]).Content;
+                    var scroll=grid.Children.OfType<ScrollViewer>().First();scroll.ScrollToEnd();
+                    await Task.Delay(100);window.UpdateLayout();SaveCapture(Path.Combine(folder,"install_tools.png"));
+                    panel.IsExpanded=false;scroll.ScrollToHome();
+                }
                 if(tab==1) {
                     var item=(TabItem)Get<TabControl>("Tabs").Items[1];
                     ((ScrollViewer)item.Content).ScrollToEnd();await Task.Delay(100);window.UpdateLayout();

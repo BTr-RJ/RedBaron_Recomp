@@ -34,6 +34,15 @@ need gameplay verification. No game content is included with this project.
 
 ## Current limits
 
+The Install tab checks Clang, CMake, Ninja, Visual C++ Build Tools and the Windows
+SDK automatically. **Build tools** shows versions and whether each component is
+already compatible or needs installation. The same inventory drives bootstrap;
+compatible tools are reused, including cached tool paths from earlier installs.
+Offline builds carry a `Tools` folder beside the launcher. Their embedded SHA-256
+manifest validates only the components needed on the current machine. Microsoft
+components install from the signed layout with `--noweb`; portable tools are
+copied into the installation only when missing. Normal builds retain downloads.
+
 Two local players now work in the native split-screen mode, including bots. Four input profiles do not enable four local cameras. For keyboard + controller, select Exclusive · player 2 and No controller/Automatic for Player 2, then press its Confirm binding to join in Enlist Now → Local Multiplayer. One keyboard/mouse serves one player. Profiles 3 and 4 remain reserved for future support. Actions follow the **FlyingAce** preset; in-game prompts still use Xbox labels. Mouse motion does not control the camera.
 
 The runtime includes spatial FSR 1/CAS and experimental **FSR 3.1.5 / NVIDIA DLSS Super Resolution**. Temporal reconstruction uses real depth/camera motion, but object velocities and separate HUD composition remain unfinished: moving objects/HUD can leave trails. No frame generation. DLSS requires an NGX-compatible NVIDIA GPU/driver, checked per adapter.

@@ -109,8 +109,10 @@
           <TextBlock Text="Installation folder" Margin="0,0,0,7"/>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="DestinationPath" AutomationProperties.Name="Destination folder"/><Button Name="BrowseDestination" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
           <CheckBox Name="DesktopShortcut" Content="Create a desktop shortcut" Margin="0,16,0,20"/>
-          <Expander Foreground="#D5DDE9" Header="Build tools" IsExpanded="False">
-            <StackPanel Margin="0,12,0,0"><TextBlock Text="ReXGlue SDK folder (used if no SDK is bundled)" Margin="0,0,0,7"/>
+          <Expander Name="BuildToolsPanel" Foreground="#D5DDE9" Header="Build tools — checking…" IsExpanded="False">
+            <StackPanel Margin="0,12,0,0"><TextBlock Name="ToolInventory" Text="Checking installed tools…" Style="{StaticResource Muted}" Margin="0,0,0,10"/>
+              <Button Name="CheckTools" Content="Check installed tools" HorizontalAlignment="Left" Margin="0,0,0,16"/>
+              <TextBlock Text="ReXGlue SDK folder (used if no SDK is bundled)" Margin="0,0,0,7"/>
               <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="116"/></Grid.ColumnDefinitions><TextBox Name="SdkPath" AutomationProperties.Name="SDK folder"/><Button Name="BrowseSdk" Content="Browse…" Grid.Column="1" Margin="10,0,0,0"/></Grid>
               <TextBlock Name="SdkInfo" Text="Checking build tools…" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,14"/>
             </StackPanel>

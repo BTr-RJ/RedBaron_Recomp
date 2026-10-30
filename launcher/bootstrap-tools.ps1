@@ -1,13 +1,60 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$ToolRoot,[switch]$RequirePython)
+param([Parameter(Mandatory=$true)][string]$ToolRoot,[switch]$RequirePython,
+    [string]$OfflineToolsRoot='', [string]$OfflineManifest='', [string]$InventoryFile='')
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 Set-StrictMode -Version Latest
 if(![Environment]::Is64BitOperatingSystem){throw 'A 64-bit Windows installation is required.'}
 $ToolRoot=[IO.Path]::GetFullPath($ToolRoot)
 New-Item -ItemType Directory -Path $ToolRoot -Force | Out-Null
+. (Join-Path $PSScriptRoot 'tool-inventory.ps1') -CatalogFile $InventoryFile
+$inventory=@(Get-RedBaronToolInventory)
+foreach($entry in $inventory){Write-Output ($entry.name+': '+$(if($entry.available){$entry.version+' - compatible, reusing'}else{'missing or outdated'}))}
+foreach($entry in $inventory | Where-Object {$_.available -and $_.key -in @('cmake','ninja','clang')}){$env:PATH=(Split-Path -Parent $entry.path)+';'+$env:PATH}
+$requiredPrefixes=New-Object 'System.Collections.Generic.List[string]'
+foreach($entry in $inventory | Where-Object {!$_.available}) {
+    if($entry.key -eq 'clang'){$requiredPrefixes.Add('portable/llvm/')}
+    elseif($entry.key -in @('cmake','ninja')){$requiredPrefixes.Add('portable/'+$entry.key+'/')}
+    elseif(!$requiredPrefixes.Contains('vs/')){$requiredPrefixes.Add('vs/')}
+}
+if(@($requiredPrefixes | Where-Object {$_.StartsWith('portable/')}).Count){$requiredPrefixes.Add('portable/licenses/')}
+if($OfflineToolsRoot -or $OfflineManifest) {
+    if(!$OfflineToolsRoot -or !$OfflineManifest){throw 'The offline tool folder and its manifest must be supplied together.'}
+    $OfflineToolsRoot=[IO.Path]::GetFullPath($OfflineToolsRoot).TrimEnd('\')
+    $manifest=Get-Content -LiteralPath $OfflineManifest -Raw | ConvertFrom-Json
+    if($manifest.version -ne 1 -or !$manifest.files -or $manifest.files.Count -gt 10000){throw 'Invalid offline tools manifest.'}
+    Write-Output 'Verifying included build tools (no tool downloads)...'
+    $checkedPaths=New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach($entry in $manifest.files) {
+        if($entry.path -notmatch '^(portable|vs)/' -or $entry.path -match '(^|/)\.{1,2}(/|$)|[:\\]' -or $entry.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid offline tool entry.'}
+        if(!@($requiredPrefixes | Where-Object {$entry.path.StartsWith($_)}).Count){continue}
+        $file=Join-Path $OfflineToolsRoot $entry.path
+        $current=[IO.Path]::GetFullPath($file)
+        while($current) {
+            if(!$checkedPaths.Add($current)){break}
+            if((Test-Path -LiteralPath $current) -and ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Links are not supported in the offline tools folder.'}
+            $next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next
+        }
+        if(!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -ne $entry.size -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ine $entry.sha256){throw ('Offline tool verification failed: '+$entry.path+'. Extract the entire package again.')}
+    }
+    foreach($entry in $manifest.files | Where-Object {$_.path.StartsWith('portable/')}) {
+        if(!@($requiredPrefixes | Where-Object {$entry.path.StartsWith($_)}).Count){continue}
+        $target=Join-Path $ToolRoot $entry.path
+        $current=[IO.Path]::GetFullPath($target)
+        while($current) {
+            if(!$checkedPaths.Add($current)){break}
+            if((Test-Path -LiteralPath $current) -and ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Links are not supported in the tool cache.'}
+            $next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next
+        }
+        if(Test-Path -LiteralPath $target){
+            if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ine $entry.sha256){throw 'The existing tool cache differs. Choose a new installation folder.'}
+        }else{New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null;Copy-Item -LiteralPath (Join-Path $OfflineToolsRoot $entry.path) -Destination $target}
+    }
+    foreach($bin in @('portable/llvm/bin','portable/cmake/bin','portable/ninja')){if(Test-Path -LiteralPath (Join-Path $ToolRoot $bin)){$env:PATH=(Join-Path $ToolRoot $bin)+';'+$env:PATH}}
+}
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 function Download([string]$url,[string]$hash,[string]$name) {
+    if($OfflineToolsRoot){throw 'An included build tool is missing or incompatible. Extract the complete offline package again.'}
     $path=Join-Path $ToolRoot $name
     if((Test-Path -LiteralPath $path) -and (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $hash){throw "Unexpected existing download: $path"}
     if(!(Test-Path -LiteralPath $path)) {
@@ -88,16 +135,24 @@ if(Test-Path -LiteralPath $vswhere) {
 $kitInfo=Get-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue
 $kit=if($kitInfo){$kitInfo.KitsRoot10}else{''}
 $sdkFound=$kit -and (Get-ChildItem -LiteralPath (Join-Path $kit 'Include') -Filter '10.*' -Directory -ErrorAction SilentlyContinue | Where-Object {Test-Path -LiteralPath (Join-Path $_.FullName 'um/Windows.h')} | Select-Object -First 1)
+$currentInventory=@(Get-RedBaronToolInventory)
+if(!($currentInventory | Where-Object {$_.key -eq 'visualCpp'}).available){$compiler=''}
+$sdkFound=($currentInventory | Where-Object {$_.key -eq 'windowsSdk'}).available
 if(!$compiler -or !$sdkFound) {
-    $bootstrap=Join-Path $ToolRoot 'vs_BuildTools.exe'
+    $bootstrap=if($OfflineToolsRoot){Join-Path $OfflineToolsRoot 'vs/vs_BuildTools.exe'}else{Join-Path $ToolRoot 'vs_BuildTools.exe'}
     if(!(Test-Path -LiteralPath $bootstrap)) {
+        if($OfflineToolsRoot){throw 'The offline Microsoft Build Tools layout is missing.'}
         Write-Output 'Downloading Microsoft Visual C++ Build Tools...'
         Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://aka.ms/vs/17/release/vs_BuildTools.exe' -OutFile $bootstrap
     }
     $signature=Get-AuthenticodeSignature -LiteralPath $bootstrap
     if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {throw 'Microsoft Build Tools signature verification failed.'}
     Write-Output 'Installing Visual C++ Build Tools and Windows SDK; Windows may request administrator approval.'
-    $process=Start-Process -FilePath $bootstrap -ArgumentList @('--quiet','--wait','--norestart','--add','Microsoft.VisualStudio.Workload.VCTools','--includeRecommended') -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+    $installArguments=@('--quiet','--wait','--norestart')
+    if($OfflineToolsRoot){$installArguments+=@('--noweb','--noUpdateInstaller')}
+    if(!$compiler){$installArguments+=@('--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64')}
+    if(!$sdkFound){$installArguments+=@('--add','Microsoft.VisualStudio.Component.Windows11SDK.26100')}
+    $process=Start-Process -FilePath $bootstrap -ArgumentList $installArguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
     if($process.ExitCode -notin @(0,3010)){throw "Microsoft Build Tools installation failed: $($process.ExitCode)"}
     if($process.ExitCode -eq 3010){throw 'Windows requires a restart to finish installing Build Tools. Restart and run installation again.'}
 }
@@ -125,6 +180,11 @@ foreach($line in $environmentText.Split([char]10)){
     $split=$line.IndexOf('=')
     if($split -gt 0){[Environment]::SetEnvironmentVariable($line.Substring(0,$split),$line.Substring($split+1),'Process')}
 }
-$env:PATH=($selectedToolBins -join ';')+';'+$env:PATH
+$systemFolder=[Environment]::GetFolderPath('System')
+$env:PATH=($selectedToolBins -join ';')+';'+$systemFolder+';'+(Join-Path $systemFolder 'WindowsPowerShell/v1.0')+';'+$env:PATH
 foreach($tool in @('cmake','ninja','clang++','rc.exe')){Get-Command $tool -ErrorAction Stop | Out-Null}
+$finalInventory=@(Get-RedBaronToolInventory)
+if(@($finalInventory | Where-Object {!$_.available}).Count){throw 'One or more build tools are still unavailable.'}
+New-Item -ItemType Directory -Path (Split-Path -Parent $CatalogFile) -Force | Out-Null
+ConvertTo-Json -InputObject $finalInventory -Depth 3 | Set-Content -LiteralPath $CatalogFile -Encoding UTF8
 Write-Output 'Build tools are ready.'

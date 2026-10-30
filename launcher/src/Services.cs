@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 namespace RedBaron {
     public sealed class Flag { public string @default {get;set;} public string[] allowed {get;set;} }
     public sealed class Device { public string key {get;set;} public string name {get;set;} }
+    public sealed class BuildTool { public string key {get;set;} public string name {get;set;} public bool available {get;set;} public string version {get;set;} public string path {get;set;} }
     public sealed class Gpu { public int index {get;set;} public string name {get;set;} public bool dlss {get;set;} }
     public sealed class Capabilities {
         public Dictionary<string,Flag> flags {get;set;}
@@ -32,6 +33,18 @@ namespace RedBaron {
         public bool InstallDlc {get;set;}
     }
     public static class Services {
+        public static bool HasOfflineTools() {
+            using(var manifest=Assembly.GetExecutingAssembly().GetManifestResourceStream("OfflineTools.json"))return manifest!=null;
+        }
+        public static async Task<List<BuildTool>> CheckBuildTools(Settings s) {
+            string job=Path.Combine(s.Root,"launcher-data","tool-check-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
+            string script=Path.Combine(job,"tool-inventory.ps1");ExtractResource("ToolInventory.ps1",script);
+            string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
+            var output=new List<string>();object gate=new object();
+            int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-AsJson"},s.Root,line=>{lock(gate)output.Add(line);},CancellationToken.None);
+            if(code!=0)throw new IOException("Could not check installed build tools.");
+            return Json.Serializer.Deserialize<List<BuildTool>>(String.Join(Environment.NewLine,output));
+        }
         public static bool HasInstallation(string root) {
             try {return !String.IsNullOrWhiteSpace(root) && File.Exists(Path.Combine(root,"build_cpp_release","snoopyflyingace.exe")) && File.Exists(Path.Combine(root,"game","default.xex"));}
             catch(ArgumentException){return false;}
@@ -212,6 +225,7 @@ namespace RedBaron {
             ExtractResource("Source.zip",archive); ExtractResource("Install.ps1",script);
             string appConfig=Path.Combine(job,"launcher.config");ExtractResource("App.config",appConfig);
             string bootstrap=Path.Combine(job,"bootstrap-tools.ps1");ExtractResource("BootstrapTools.ps1",bootstrap);
+            ExtractResource("ToolInventory.ps1",Path.Combine(job,"tool-inventory.ps1"));
             string sdkArchive="";
             using(var bundled=Assembly.GetExecutingAssembly().GetManifestResourceStream("Sdk.zip")) {
                 if(bundled!=null) {sdkArchive=Path.Combine(job,"sdk.zip");using(var output=File.Create(sdkArchive))bundled.CopyTo(output);}
@@ -223,6 +237,11 @@ namespace RedBaron {
             record("Log: "+logfile);
             var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe,"-LauncherConfig",appConfig,"-BootstrapScript",bootstrap};
             if(sdkArchive.Length!=0){arguments.Add("-SdkArchive");arguments.Add(sdkArchive);}
+            if(HasOfflineTools()) {
+                string manifest=Path.Combine(job,"offline-tools.json");ExtractResource("OfflineTools.json",manifest);
+                arguments.Add("-OfflineManifest");arguments.Add(manifest);
+                arguments.Add("-OfflineToolsRoot");arguments.Add(Path.Combine(Path.GetDirectoryName(LauncherExe),"Tools"));
+            }
             using(var online=Assembly.GetExecutingAssembly().GetManifestResourceStream("PrivateEosConfig.ini")) {
                 if(online!=null) {
                     string config=Path.Combine(job,"eos-config.ini");
