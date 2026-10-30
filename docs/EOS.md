@@ -75,9 +75,13 @@ Em 29/10/2026:
 - O jogo confirmou oito vagas no menu e removeu o lobby ao fechar a janela.
 - Uma instalação limpa compilou com as bibliotecas EOS embarcadas e o probe
   confirmou a disponibilidade do provedor, sem incluir configurações do produto.
+- Sete clientes com identidades EOS distintas executaram o diagnóstico em
+  paralelo contra o host Windows. Todos ingressaram, receberam o roster e
+  completaram os ecos TCP/UDP reais. Foram oito participantes do transporte;
+  esse teste não substitui oito pessoas executando o jogo.
 
 Permanecem necessários: partida completa com dois executáveis em redes distintas,
-desconexão/reentrada durante gameplay e teste de oito jogadores
+desconexão/reentrada durante gameplay e teste de oito jogadores no jogo
 e co-op. Amigos Epic, convites privados EOS, ranking, voz, rollback e ports
 Linux/Android não estão implementados por esta integração.
 
