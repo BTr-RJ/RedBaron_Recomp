@@ -1,133 +1,126 @@
-# Epic Online Services: integração planejada
+# EOS e matchmaking dentro do jogo
 
-O EOS foi escolhido para integração do online. Um diagnóstico separado já
-compilou e inicializou o SDK oficial 1.19.2.1 no Windows, mas o provedor online
-**ainda não está implementado**. O jogo continua usando o transporte experimental existente.
-Não anunciar salas, amigos, crossplay ou conectividade EOS como funcionais até
-serem testados com o produto e o SDK oficiais.
+O provedor EOS agora está ligado ao executável e às chamadas nativas de rede.
+O menu do jogo publicou uma partida pública real no EOS; uma consulta separada
+encontrou o registro. Isso ainda **não valida uma partida entre dois usuários
+EOS**, conexões pela Internet ou relay. O release permanece pendente.
 
-## Experiência pretendida
+## Uso no ambiente de desenvolvimento
 
-- O anfitrião cria uma partida no jogo. Partidas públicas podem ser encontradas
-  no jogo sem convite; as privadas usam convite ou entrada por amigos.
-- A simulação continua no jogo do anfitrião. O EOS fornece serviços de sessão,
-  identificação e comunicação; não converte automaticamente a lógica original
-  em uma simulação autoritativa e não implementa rollback para o port.
-- O acesso à lista de amigos Epic exige a integração e autenticação da conta
-  Epic. O Social Overlay é uma opção no Windows; a documentação da Epic informa
-  que ele não está disponível no Linux ou Android. Nessas plataformas, a
-  interface correspondente precisará ser própria e validada.
-- O SDK existe para Windows, Linux e Android, mas isso não conclui os ports do
-  jogo nem comprova crossplay entre eles. Testar as versões e funções exatas
-  das plataformas antes de anunciar suporte.
+Na aba Online do launcher, marcar **Enable online play through Epic Online
+Services**, salvar e clicar em Play. No jogo, usar **Online → Player Match →
+Find Game**, escolhendo o mesmo modo. O comportamento original cria uma
+partida pública quando a busca não encontra outra adequada. O anfitrião
+precisa manter o jogo aberto. Clientes usam o menu, sem endereço de servidor
+ou convite do launcher.
 
-## Preparação pelo responsável pelo projeto
+O arquivo local `build_cpp_release/eos/config.ini` contém a configuração do
+produto. Não enviar seu conteúdo ao Git, logs, mensagens ou pacotes públicos.
+A opção fica desmarcada por padrão; o comportamento offline/LAN anterior é
+preservado. EOS e uma sala WebRTC não podem ser ativados simultaneamente.
+O launcher pode fechar depois de abrir o jogo: o provedor roda no jogo.
 
-1. No [Epic Developer Portal](https://dev.epicgames.com/portal/), configurar
-   organização e produto `RedBaron_Recomp`. Revisar e aceitar pessoalmente os
-   acordos que a Epic exigir; não registrar aceites em nome do responsável.
-2. Em Downloads & Release Notes → EOS SDK, baixar e extrair o SDK oficial para
-   Windows. Manter o pacote local, fora do Git, até revisar sua redistribuição.
-3. Configurar o produto, sandbox, deployment e um cliente com política limitada
-   aos serviços necessários. Para recursos sociais com contas Epic, configurar
-   também Epic Account Services e seguir as exigências de revisão da Epic.
-4. Informar ao desenvolvedor apenas o caminho local do SDK. Não enviar senhas,
-   tokens nem segredos em issues, conversas, logs ou commits. As credenciais e
-   configurações de acesso devem ser tratadas conforme a política do cliente e
-   a documentação oficial da Epic.
+## Implementação
 
-O SDK 1.19.2.1 fornecido pelo usuário foi extraído em pasta local ignorada pelo
-Git. Para compilar o diagnóstico em outra máquina, informe a pasta `SDK` extraída:
+- `port/eos/online_service.*`: worker dedicado para autenticação por dispositivo,
+  renovação, consultas, criação/saída de lobby, notificações de membros e P2P.
+- `port/src/online.cpp`: inicialização antes dos perfis e sockets do jogo,
+  endereços estáveis e desligamento antes do encerramento imediato do SDK.
+- `patches/rexglue-online-provider.patch`: encaminha busca, QoS e conexão do
+  runtime ao provedor. A abertura do socket escolhido aguarda a entrada EOS.
+  A busca usa um snapshot atualizado em segundo plano, sem aguardar a Internet
+  a cada frame. O patch é aplicado após `rexglue-online-transport.patch`.
+- `native_record.*` e `lobby_publisher.*`: publicam os atributos reais da sessão
+  nativa, preservando modos e metadados. Uma partida cheia ou temporariamente
+  oculta deixa de ser anunciada sem perder o transporte; a exclusão efetiva da
+  sessão encerra o lobby.
+- `address_wire.*`: os endereços do jogo permanecem estáveis quando o EOS atribui
+  posições no lobby. Rejeita colisões e mensagens antigas de posições reutilizadas.
+- `eos_wire.*` e `network/socket_bridge.*`: TCP/UDP do jogo sobre mensagens EOS,
+  fragmentação e retransmissão pelo anfitrião. A simulação e a replicação continuam
+  sendo as originais do jogo. Isso não implementa rollback.
+- QoS usa socket/canal EOS separados, consulta dados reais do anfitrião e mede
+  o tempo de resposta. Uma segunda identidade de dispositivo validou esse caminho.
+- O runtime limita sessões EOS a oito jogadores. Limites nativos menores,
+  como o co-op de dois, são mantidos. Bots não são convertidos em membros EOS.
+
+## Evidências e limites
+
+Em 29/10/2026:
+
+- Build do jogo e nove testes CTest passaram, incluindo encaminhamento nativo,
+  autenticação de remetentes, fragmentação e estabilidade de endereços.
+- Sete sockets TCP reais conectaram ao host simulado; UDP fragmentado transitou
+  entre dois clientes pela ponte do host. Foram usadas oito instâncias locais
+  da ponte; **a entrega de pacotes EOS foi simulada nesse teste**.
+- Com o EOS real, o diagnóstico de runtime publicou, escondeu, reabriu e removeu
+  uma sessão. Um segundo processo consultou o serviço e encontrou um registro
+  durante a publicação e zero após o encerramento. Ambos usaram a mesma
+  identidade de dispositivo, portanto não comprovaram entrada de outro jogador.
+- O executável do jogo abriu com EOS, renderizou o menu e criou a partida
+  pública Team Dog Fight. A consulta independente encontrou a sessão real.
+- O launcher passou nos testes de preferências, argumentos, componentes ausentes
+  e exclusão mútua de provedores. Sua aba Online foi inspecionada renderizada.
+
+- Um diagnóstico Linux isolado, com outra identidade de dispositivo, encontrou
+  o host Windows, consultou o QoS real, ingressou e recebeu o roster autenticado.
+  TCP de 32768 bytes e UDP de 1800 bytes retornaram sem corrupção pela ponte
+  nativa usando o EOS real em conexão direta. Esse diagnóstico não executa o jogo
+  Linux e não valida uma partida completa nem redes físicas diferentes.
+- A mesma identidade saiu e entrou novamente, repetindo os testes de dados.
+  Com relay forçado nos dois lados, o EOS informou conexão do tipo relay tanto
+  no QoS quanto no socket de gameplay, e os dois testes TCP/UDP passaram.
+- O teste real revelou e corrigiu atributos de roster visíveis somente ao host
+  e atualizações concorrentes que podiam apagar os atributos da sessão.
+- O jogo confirmou oito vagas no menu e removeu o lobby ao fechar a janela.
+- Uma instalação limpa compilou com as bibliotecas EOS embarcadas e o probe
+  confirmou a disponibilidade do provedor, sem incluir configurações do produto.
+
+Permanecem necessários: partida completa com dois executáveis em redes distintas,
+desconexão/reentrada durante gameplay e teste de oito jogadores
+e co-op. Amigos Epic, convites privados EOS, ranking, voz, rollback e ports
+Linux/Android não estão implementados por esta integração.
+
+## Compilação e instalador
+
+Para compilar o provedor a partir do SDK oficial local:
 
 ```powershell
-cmake -S port/eos -B eos-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DREDBARON_EOS_SDK=C:/caminho/para/SDK
-cmake --build eos-build --target redbaron_eos_probe --parallel 4
+cmake -S port/eos -B eos-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DREDBARON_EOS_SDK=C:/caminho/SDK -Drexglue_DIR=C:/caminho/rex/lib/cmake/rexglue
+cmake --build eos-build --parallel 4
 ctest --test-dir eos-build --output-on-failure
 ```
 
-Com as credenciais em um arquivo local ignorado pelo Git, os comandos
-`redbaron_eos_probe --device-login <config>` e `--lobby-check <config>`
-testam, respectivamente, o login anônimo por dispositivo e a criação seguida
-da remoção de uma sala privada temporária. Não coloque esse arquivo ou seus
-valores em logs, mensagens ou commits. No ambiente de desenvolvimento, os dois
-testes foram concluídos usando o produto configurado pelo usuário. O login por
-dispositivo não é autenticação de conta Epic e não fornece lista de amigos.
-O comando `--search-check <config>` cria uma sala pública temporária em uma
-categoria aleatória de diagnóstico, busca essa categoria pela mesma identidade
-e remove a sala. Publica e lê registros sintéticos válidos de 8 KiB e do tamanho
-mínimo, divididos em atributos pequenos, verificando a remoção dos atributos
-antigos ao reduzir o registro. A busca repetida foi necessária até as alterações
-aparecerem no índice. `lobby_record.*` implementa essa publicação e leitura e
-valida o registro nativo; ainda não está ligado ao processo de rede ou ao jogo.
-No diagnóstico, o publicador de sessão consulta um jogo simulado por UDP local;
-`lobby_publisher.*` sincroniza o registro no EOS, consolida alterações enquanto
-há uma atualização pendente e remove o registro ao desaparecer a sessão. O teste
-verifica publicação, atualização e retirada no serviço real. O jogo simulado
-não valida a integração com um executável em execução nem a entrada de clientes.
-`lobby_directory.*` mantém cópias dos resultados públicos válidos, inclusive os
-detalhes necessários para uma futura entrada. `directory_responder.*` responde
-às buscas locais usando um endereço distinto por resultado. O diagnóstico ligou
-essas duas partes ao EOS e verificou os pacotes UDP com um cliente simulado;
-é necessário manter a associação estável entre resultado e lobby, ligar o
-seletor do jogo à entrada e estabelecer o P2P antes de usar isso em partidas.
-`directory_mapping.*` preserva endereços enquanto as salas permanecem na lista,
-rejeita identificadores de sessão duplicados e resolve o endereço para o lobby;
-ele ainda não detecta a seleção do jogo nem inicia a entrada.
-`lobby_join.*` implementa o ciclo assíncrono de entrada e saída, mantendo o
-resultado da busca até a conclusão; `JoinSelected` resolve o endereço selecionado
-para o resultado correspondente. Os estados foram exercitados com uma API
-simulada, mas ainda não há evento do jogo conectado a esse código nem teste de
-entrada com outra identidade EOS.
-`selection_gateway.*` detecta uma conexão TCP local para o endereço de uma sala
-e mantém o socket aberto durante a admissão; `SocketBridge::Adopt` pode assumir
-o socket após a conexão estar pronta. Um teste local preservou os dados enviados
-antes da transferência e rejeitou origem diferente do processo do jogo.
-`selection_join.*` liga esse evento a `JoinSelected` e aguarda a preparação do
-peer antes de entregar o socket. O diagnóstico usou um resultado real do EOS,
-mas simulou tanto a entrada na sala quanto o peer P2P. Ainda falta colocar esses
-componentes no processo do jogo, verificar o momento real de seleção e encaminhar
-QoS e dados para o host EOS.
-Esse teste não valida descoberta por outro usuário nem entrada no jogo.
+O ReXGlue usado deve conter o patch do provedor. Para compilar o jogo com os
+fontes EOS, passar `-EosSdk C:/caminho/SDK` a `scripts/build.ps1`.
 
-O diagnóstico `--sdk-check` somente inicializa e encerra a biblioteca; não autentica,
-não cria uma conta e não verifica conectividade com os serviços da Epic. Um
-segundo teste cobre a fragmentação e remontagem de mensagens de até 32 KiB em
-pacotes de até 1170 bytes, limite declarado pelo SDK usado. Ela é utilizada
-pelo adaptador P2P experimental descrito abaixo.
+`scripts/stage-eos.ps1 -EosSdk <SDK> -BuildDirectory <eos-build> -RuntimeSdk <rex>`
+prepara bibliotecas autorais, DLL/import library EOS e avisos de terceiros no
+SDK de instalação. O jogo também pode ligar essas bibliotecas já compiladas,
+sem incluir os headers do SDK EOS no pacote. `launcher/build.ps1` inclui o código
+autoral e esses componentes do SDK preparado. A configuração do produto não
+é incorporada automaticamente; sua distribuição precisa ser resolvida antes
+de publicar um instalador online para usuários finais.
 
-`port/eos/eos_wire.*` contém um adaptador experimental de pacotes P2P do EOS
-para a interface de rede existente. Ele só aceita membros previamente fornecidos
-pelo responsável pela sessão e usa o anfitrião para retransmitir entre clientes.
-O comando `--wire-check <config>` valida apenas sua inicialização com uma
-identidade autenticada e sem outros jogadores. O adaptador ainda não está ligado
-ao lobby, ao jogo ou ao launcher; tráfego real, desconexões e autenticação dos
-membros continuam pendentes de validação. Ele deve usar uma instância do EOS
-dedicada ao transporte, pois consome as filas dos canais 0 e 1 dessa instância.
-Um teste automatizado simula três membros e a API P2P: verifica encaminhamento,
-mensagens fragmentadas confiáveis e não confiáveis e rejeição de remetentes
-desconhecidos ou forjados. Essa simulação não prova conectividade EOS real.
-`lobby_roster.*` associa membros autenticados a posições estáveis atribuídas
-pelo anfitrião, publica a tabela como atributos privados e a aplica ao adaptador
-P2P depois de verificar cada identidade na lista de membros EOS. O fluxo foi
-testado no serviço real somente com o anfitrião; inclusão e saída dos demais
-membros foram simuladas e precisam de integração às notificações do lobby.
+Diagnósticos opt-in, que acessam o produto real:
 
-## Integração e validação
+```powershell
+eos-build/redbaron_eos_service_check.exe --host <config-local> <userdata-de-teste> <categoria-unica> 50
+eos-build/redbaron_eos_service_check.exe --browse <config-local> <categoria-unica>
+eos-build/redbaron_eos_service_check.exe --echo <config-local> <userdata-de-teste> <categoria-unica> 120
+eos-build/redbaron_eos_service_check.exe --relay-echo <config-local> <userdata-de-teste> <categoria-unica> 120
+```
 
-Integrar inicialização, ciclo de chamadas e encerramento do SDK; autenticação;
-criação, busca e entrada nas sessões; conexão P2P; e mapeamento das sessões
-para as estruturas XAM usadas pelo jogo. A camada `port/network/wire.h` separa
-o adaptador de sockets do provedor de rede, mantendo o WebRTC como referência
-para testes de regressão. Será necessário adaptar limites de mensagem,
-confiabilidade e ciclos de vida do EOS ao protocolo real do jogo.
+Em um segundo dispositivo Linux, `redbaron_eos_peer_check <config-local>
+<categoria-unica> <auto|relay>` verifica descoberta, QoS, entrada, roster e eco
+TCP/UDP real contra `--echo`/`--relay-echo`. Para comprovar relay de gameplay,
+o callback deve informar o tipo relay no socket de gameplay. Cada host de teste
+deve encerrar antes de iniciar outro com a mesma identidade EOS; processos
+simultâneos com a mesma identidade interferem no roteamento P2P do SDK.
 
-Testar criação e entrada públicas no menu, salas privadas, até oito jogadores,
-limite de dois no co-op, bots, desconexão e retomada, além de conexões diretas
-e via relay em redes diferentes. Validar contas Epic e a experiência social
-separadamente. Antes de uma release, revisar licenças, redistribuíveis,
-políticas de acesso e todos os arquivos incluídos no pacote e no histórico Git.
+O primeiro usa dados autorais de teste no runtime e remove somente o lobby que
+criou; não executa uma partida. Os diagnósticos anteriores de SDK, login e
+publicação permanecem em `redbaron_eos_probe`.
 
-Referências oficiais: [Lobbies e sessões](https://dev.epicgames.com/docs/epic-online-services/multiplayer/lobbies-and-sessions/lobbies-and-sessions-introduction),
-[P2P](https://dev.epicgames.com/docs/epic-online-services/multiplayer/nat-p2p-interface/p2p-guide/p2p-intro),
-[Social Overlay e crossplay](https://dev.epicgames.com/docs/epic-online-services/accounts-and-social/crossplay/crossplay-technical-overview),
-[configuração de clientes e políticas](https://dev.epicgames.com/docs/epic-online-services/eos-fundamentals/client-and-client-policy/client-policy-guide).
+Referências oficiais: [Lobbies](https://dev.epicgames.com/docs/epic-online-services/multiplayer/lobbies-and-sessions/lobby-interface),
+[P2P](https://dev.epicgames.com/docs/epic-online-services/multiplayer/nat-p2p-interface).

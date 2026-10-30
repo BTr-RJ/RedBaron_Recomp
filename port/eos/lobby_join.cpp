@@ -38,7 +38,7 @@ bool LobbyJoin::Reset() {
 }
 void EOS_CALL LobbyJoin::Left(const EOS_Lobby_LeaveLobbyCallbackInfo* data) {
   auto& self=*static_cast<LobbyJoin*>(data->ClientData);self.error_=data->ResultCode;
-  if(self.error_==EOS_EResult::EOS_Success){self.state_=State::Idle;self.id_.clear();}
+  if(self.error_==EOS_EResult::EOS_Success || self.error_==EOS_EResult::EOS_NotFound){self.state_=State::Idle;self.id_.clear();}
   else self.state_=State::Joined;
 }
 }

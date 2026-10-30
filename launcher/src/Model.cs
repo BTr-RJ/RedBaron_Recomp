@@ -33,6 +33,7 @@ namespace RedBaron {
         public string OnlineServer { get; set; }
         public string OnlineMode { get; set; }
         public int OnlineLocalPlayers { get; set; }
+        public bool EosEnabled { get; set; }
         public string Resolution { get; set; }
         public bool Fullscreen { get; set; }
         public bool Vsync { get; set; }
@@ -61,6 +62,7 @@ namespace RedBaron {
         }
         public string Build { get { return Path.Combine(Root, "build_cpp_release"); } }
         public string Exe { get { return Path.Combine(Build, "snoopyflyingace.exe"); } }
+        public string EosConfig { get { return Path.Combine(Build, "eos", "config.ini"); } }
         public string Toml { get { return Path.Combine(Build, "snoopyflyingace.toml"); } }
         public string FileName { get { return Path.Combine(Root, "launcher-settings.json"); } }
         public static Settings Load(string root) {

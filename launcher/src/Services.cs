@@ -18,6 +18,7 @@ namespace RedBaron {
         public List<Gpu> gpus {get;set;}
         public string inputError {get;set;}
         public bool hdrActive {get;set;}
+        public bool eosAvailable {get;set;}
         public int refreshHz {get;set;}
         public int desktopWidth {get;set;}
         public int desktopHeight {get;set;}
@@ -107,6 +108,7 @@ namespace RedBaron {
         }
         public static void Save(Settings s,Capabilities caps) {
             s.Validate();
+            if(s.EosEnabled && !caps.eosAvailable)throw new InvalidDataException("Update the game build to enable in-game EOS matchmaking.");
             if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before saving settings.");
             if(s.LanEnabled && (!caps.flags.ContainsKey("redbaron_lan") || !caps.flags.ContainsKey("redbaron_lan_peer")))
                 throw new InvalidDataException("Update the game runtime to use experimental LAN play.");
@@ -134,11 +136,19 @@ namespace RedBaron {
             try {AtomicFile.Write(s.FileName,json);}
             catch {AtomicFile.Write(s.Toml,original);throw;}
         }
+        internal static string[] EosArguments(Settings s,bool hasWebRtc) {
+            if(!s.EosEnabled)return new string[0];
+            if(hasWebRtc)throw new InvalidDataException("Leave the WebRTC room before starting in-game matchmaking.");
+            if(!File.Exists(s.EosConfig) || !File.Exists(Path.Combine(s.Build,"EOSSDK-Win64-Shipping.dll")))
+                throw new InvalidDataException("Online components are missing. Repair the online installation, or turn off in-game matchmaking to play offline.");
+            return new[]{"--redbaron_eos_config="+s.EosConfig,"--redbaron_online_players="+s.OnlineLocalPlayers};
+        }
         public static Process Play(Settings s, IEnumerable<string> onlineArguments=null) {
             if(!File.Exists(s.Exe)) throw new FileNotFoundException("Game not installed. Open Install and select your local game files.");
             if(!File.Exists(Path.Combine(s.Root,"game","default.xex"))) throw new FileNotFoundException("Game files are missing from this installation.");
             if(IsGameRunning(s)) throw new InvalidOperationException("The game is already running.");
             var arguments=new List<string>{"--game_data_root="+Path.Combine(s.Root,"game")};
+            arguments.AddRange(EosArguments(s,onlineArguments!=null));
             if(onlineArguments!=null)arguments.AddRange(onlineArguments);
             var info=new ProcessStartInfo(s.Exe,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);

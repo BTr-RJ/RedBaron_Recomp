@@ -1,5 +1,10 @@
 # Multiplayer local, LAN e salas online experimentais
 
+**Atualização EOS:** o jogo e o launcher agora incluem o provedor de matchmaking
+descrito em [EOS.md](EOS.md). Uma partida criada no menu foi anunciada no EOS
+real. Ingresso de outro usuário e tráfego EOS entre computadores ainda não foram
+validados; as evidências WebRTC abaixo não substituem essa validação.
+
 ## Salas online em desenvolvimento
 
 O launcher pode criar uma sala ou entrar usando um convite. O anfitrião configura

@@ -2,6 +2,7 @@
 param(
     [string]$SdkRoot = '',
     [string]$BuildDirectory = '',
+    [string]$EosSdk = '',
     [ValidateRange(1, 64)][int]$Parallel = 4,
     [switch]$ConfigureOnly
 )
@@ -61,6 +62,7 @@ try {
 $cmakeArgs = @('-S', $portDir, '-B', $BuildDirectory, '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=clang++',
     ('-Drexglue_DIR=' + (Join-Path $SdkRoot 'lib/cmake/rexglue')))
+if($EosSdk){$cmakeArgs += ('-DREDBARON_EOS_SDK=' + [IO.Path]::GetFullPath($EosSdk))}
 Invoke-CheckedNative 'cmake' $cmakeArgs
 if ($ConfigureOnly) { Write-Output 'Code generation and configuration complete.'; return }
 

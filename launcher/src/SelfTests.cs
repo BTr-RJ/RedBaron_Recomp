@@ -114,6 +114,21 @@ namespace RedBaron {
                     Reject(()=>{string ignored;OnlineSession.ParseInvitation(invalidInvite,out ignored);},"Invalid invitation accepted");
                 results.Add("Online invitations: server and room roundtrip; empty and unsafe inputs rejected");
                 results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
+                loaded.EosEnabled=true;
+                Reject(()=>Services.Save(loaded,caps),"Unsupported EOS build accepted");
+                caps.eosAvailable=true;
+                Reject(()=>Services.EosArguments(loaded,false),"Missing EOS installation accepted");
+                Directory.CreateDirectory(Path.GetDirectoryName(loaded.EosConfig));
+                File.WriteAllText(loaded.EosConfig,"test fixture, not credentials");
+                File.WriteAllText(Path.Combine(loaded.Build,"EOSSDK-Win64-Shipping.dll"),"test fixture");
+                Services.Save(loaded,caps);
+                Assert(Settings.Load(loaded.Root).EosEnabled,"EOS preference did not roundtrip");
+                var eosArgs=Services.EosArguments(loaded,false);
+                Assert(eosArgs.Length==2 && eosArgs[0]=="--redbaron_eos_config="+loaded.EosConfig && eosArgs[1]=="--redbaron_online_players=2","EOS launch arguments are incorrect");
+                Reject(()=>Services.EosArguments(loaded,true),"Concurrent EOS and WebRTC providers accepted");
+                loaded.EosEnabled=false;Assert(Services.EosArguments(loaded,false).Length==0,"Disabled EOS emitted launch arguments");
+                Services.Save(loaded,caps);
+                results.Add("EOS: capability gating, missing components, saved preference, launch arguments and provider exclusivity");
                 var release=new ReleaseInfo{tag_name="v0.10",assets=new[]{new ReleaseAsset {
                     name="RedBaron_Recomp-v0.10-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
                     browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.10/RedBaron_Recomp-v0.10-windows-x64.zip"}}};

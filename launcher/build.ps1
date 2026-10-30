@@ -22,9 +22,9 @@ try {
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'port/network') -File) {
         if ($file.Extension -in @('.cpp','.h','.txt','.json')) { $sourceFiles += 'port/network/' + $file.Name }
     }
-    foreach ($folder in @('port/src','port/config','port/tests')) {
+    foreach ($folder in @('port/src','port/config','port/tests','port/eos')) {
         $sourceFiles += @(Get-ChildItem -LiteralPath (Join-Path $projectRoot $folder) -File |
-            Where-Object { $_.Extension -in @('.cpp','.h','.txt','.toml') } |
+            Where-Object { $_.Extension -in @('.cpp','.h','.txt','.toml','.cmake') } |
             ForEach-Object { $folder + '/' + $_.Name })
     }
     foreach ($name in $sourceFiles) {

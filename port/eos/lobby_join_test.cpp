@@ -35,6 +35,10 @@ int main() {
       Check(client.Start("test-lobby",details));joined.ClientData=context;joined.ResultCode=EOS_EResult::EOS_AccessDenied;
       join_callback(&joined);Check(client.state()==LobbyJoin::State::Failed && released==2);
       Check(client.Reset() && client.state()==LobbyJoin::State::Idle);
+      Check(client.Start("test-lobby",details));joined.ClientData=context;joined.ResultCode=EOS_EResult::EOS_Success;
+      join_callback(&joined);Check(client.Leave());
+      left.ClientData=context;left.ResultCode=EOS_EResult::EOS_NotFound;leave_callback(&left);
+      Check(client.state()==LobbyJoin::State::Idle && client.lobby_id().empty());
     }
     Check(EOS_Shutdown()==EOS_EResult::EOS_Success);
     std::cout<<"PASS: asynchronous lobby join, leave, failure and handle ownership\n";return 0;

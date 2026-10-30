@@ -11,6 +11,7 @@ void Release(std::vector<LobbyEntry>& entries) {
 }
 }
 LobbyDirectory::~LobbyDirectory(){Release(entries_);}
+void LobbyDirectory::Clear(){Release(entries_);}
 EOS_HLobbyDetails LobbyDirectory::TakeDetails(const std::string& id) {
   auto it=std::find_if(entries_.begin(),entries_.end(),[&](const auto& e){return e.id==id;});
   if(it==entries_.end())return nullptr;

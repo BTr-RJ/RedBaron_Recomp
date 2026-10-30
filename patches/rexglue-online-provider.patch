@@ -1,0 +1,167 @@
+--- a/src/system/xam/lan_lobby.cpp
++++ b/src/system/xam/lan_lobby.cpp
+@@ -5,6 +5,7 @@
+ #include <WinSock2.h>
+ #include <WS2tcpip.h>
+ #include <algorithm>
++#include <atomic>
+ #include <chrono>
+ #include <cstring>
+ #include <fstream>
+@@ -27,6 +28,7 @@
+ 
+ namespace rex::system::xam {
+ namespace {
++std::atomic<std::shared_ptr<LanOnlineProvider>> online_provider;
+ constexpr uint16_t kDiscoveryPort = 43821;
+ constexpr size_t kMaxPacket = 8192;
+ using Bytes = std::vector<uint8_t>;
+@@ -153,6 +155,7 @@
+ }
+ bool LanEnabled() { return REXCVAR_GET(redbaron_lan) && InitSockets(); }
+ bool LanCanHostMatch() {
++  if (auto provider = online_provider.load()) return provider->CanHost();
+   const auto ns = REXCVAR_GET(redbaron_p2p_namespace);
+   return !REXCVAR_GET(redbaron_lan) || ns < 1 || ns > 254 || REXCVAR_GET(redbaron_p2p_id) == 0;
+ }
+@@ -232,6 +235,7 @@
+   return true;
+ }
+ std::vector<LanQosResult> LanQosProbe(const std::vector<LanQosTarget>& targets, uint32_t probes) {
++  if (auto provider = online_provider.load()) return provider->Probe(targets, probes);
+   std::vector<LanQosResult> results(targets.size());
+   if (!LanEnabled() || targets.empty() || targets.size() > 32) return results;
+   Socket socket; socket.value = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+@@ -289,6 +293,7 @@
+   if (value.empty()) map.erase(id); else if (map.size() < 32 || map.contains(id)) map[id] = std::move(value);
+ }
+ std::vector<LanRecord> LanSearch(uint32_t title) {
++  if (auto provider = online_provider.load()) return provider->Search(title);
+   std::vector<LanRecord> result;
+   if (!LanEnabled()) return result;
+   Socket query; query.value = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+@@ -314,4 +319,33 @@
+   }
+   return result;
+ }
+-}
++void LanSetOnlineProvider(std::shared_ptr<LanOnlineProvider> provider) { online_provider.store(std::move(provider)); }
++uint32_t LanOnlinePlayerLimit() { return online_provider.load() ? 8 : 32; }
++bool LanEnsureConnected(uint32_t address) {
++  auto provider = online_provider.load();
++  return !provider || provider->Connect(address);
++}
++void LanLeaveOnline(const LanSessionId& session) {
++  if (auto provider = online_provider.load()) provider->Leave(session);
++}
++std::vector<LanRecord> LanLocalSnapshot() {
++  auto& s = State(); std::lock_guard lock(s.mutex);
++  std::vector<LanRecord> result;
++  for (const auto& [id, record] : s.records) {
++    auto copy = record;
++    copy.contexts = s.attributes[copy.owner].contexts;
++    copy.properties = s.attributes[copy.owner].properties;
++    result.push_back(std::move(copy));
++  }
++  return result;
++}
++LanQosResult LanLocalQos(const LanSessionId& session) {
++  auto& s = State(); std::lock_guard lock(s.mutex);
++  LanQosResult result;
++  if (auto it = s.qos.find(session); it != s.qos.end()) {
++    result.contacted = true; result.disabled = !it->second.enabled;
++    if (it->second.enabled) result.data = it->second.data;
++  }
++  return result;
++}
++}
+--- a/include/rex/system/xam/lan_lobby.h
++++ b/include/rex/system/xam/lan_lobby.h
+@@ -3,6 +3,7 @@
+ #include <array>
+ #include <cstdint>
+ #include <map>
++#include <memory>
+ #include <vector>
+ 
+ namespace rex::system::xam {
+@@ -35,4 +36,21 @@
+ };
+ bool LanQosListen(const LanSessionId& id, uint32_t flags, std::vector<uint8_t> data);
+ std::vector<LanQosResult> LanQosProbe(const std::vector<LanQosTarget>& targets, uint32_t probes);
++// Optional title-owned Internet provider. Install before launching guest threads
++// and detach only after they stop. The provider must synchronize its own worker.
++class LanOnlineProvider {
++ public:
++  virtual ~LanOnlineProvider() = default;
++  virtual std::vector<LanRecord> Search(uint32_t title) = 0;
++  virtual std::vector<LanQosResult> Probe(const std::vector<LanQosTarget>& targets, uint32_t probes) = 0;
++  virtual bool Connect(uint32_t guest_address) = 0;
++  virtual bool CanHost() const = 0;
++  virtual void Leave(const LanSessionId& session) = 0;
++};
++void LanSetOnlineProvider(std::shared_ptr<LanOnlineProvider> provider);
++bool LanEnsureConnected(uint32_t guest_address);
++uint32_t LanOnlinePlayerLimit();
++void LanLeaveOnline(const LanSessionId& session);
++std::vector<LanRecord> LanLocalSnapshot();
++LanQosResult LanLocalQos(const LanSessionId& session);
+ }
+--- a/src/kernel/xam/xam_net.cpp
++++ b/src/kernel/xam/xam_net.cpp
+@@ -851,6 +851,9 @@
+   N_XSOCKADDR native_name(name);
+   if (LanEnabled() && native_name.address_family == AF_INET) {
+     auto* address = reinterpret_cast<N_XSOCKADDR_IN*>(&native_name);
++    if (!LanEnsureConnected(address->sin_addr)) {
++      XThread::SetLastError(WSAECONNREFUSED); return ~0u;
++    }
+     address->sin_port = LanNativePort(address->sin_port);
+     address->sin_addr = LanSocketAddress(address->sin_addr);
+     if (uint32_t(address->sin_addr) == 0x7F000001 && LanBindAddress()) address->sin_addr = LanBindAddress();
+--- a/src/system/xsession.cpp
++++ b/src/system/xsession.cpp
+@@ -100,6 +100,7 @@
+ XSession::XSession(KernelState* kernel) : XObject(kernel, kObjectType) {}
+ XSession::~XSession() {
+   xam::LanSessionId id; std::copy_n(info_.begin(), 8, id.begin());
++  if (created_ && (flags_ & 0x20)) xam::LanLeaveOnline(id);
+   if (advertised_) xam::LanRemove(id);
+   if (created_ && (flags_ & 1)) xam::LanQosListen(id, 16, {});
+ }
+@@ -166,8 +167,12 @@
+     const auto owner = Read32(data + 16);
+     auto profile = kernel->user_profile(owner);
+     if (!profile) return X_ERROR_NO_SUCH_USER;
+-    const uint32_t pub = Read32(data + 8), priv = Read32(data + 12);
++    uint32_t pub = Read32(data + 8), priv = Read32(data + 12);
+     if (pub > 32 || priv > 32 || pub + priv > 32) return X_ERROR_INVALID_PARAMETER;
++    if (requested_flags & 0x20) {
++      const auto limit = xam::LanOnlinePlayerLimit();
++      priv = std::min(priv, limit); pub = std::min(pub, limit - priv);
++    }
+     auto* info = translate(Read32(data + 20), s.info_.size());
+     auto* nonce = translate(Read32(data + 24), 8);
+     if (!info || !nonce) return X_ERROR_INVALID_PARAMETER;
+@@ -194,6 +199,9 @@
+   }
+   if (!s.created_ || s.state_ == 4) return kWrongState;
+   if (message == 0xB0011) {
++    if (s.flags_ & 0x20) {
++      xam::LanSessionId id; std::copy_n(s.info_.begin(), 8, id.begin()); xam::LanLeaveOnline(id);
++    }
+     if (s.flags_ & 1) { xam::LanSessionId id; std::copy_n(s.info_.begin(), 8, id.begin()); xam::LanQosListen(id, 16, {}); }
+     s.state_ = 4; s.members_.clear(); publish(); return X_ERROR_SUCCESS;
+   }
+@@ -231,6 +239,11 @@
+   }
+   if (message == 0xB0018) {
+     uint32_t pub = Read32(data + 8), priv = Read32(data + 12);
++    if (uint64_t(pub) + priv > 32) return X_ERROR_INVALID_PARAMETER;
++    if (Read32(data + 4) & 0x20) {
++      const auto limit = xam::LanOnlinePlayerLimit();
++      priv = std::min(priv, limit); pub = std::min(pub, limit - priv);
++    }
+     if (pub + uint64_t(priv) > 32 || pub < used(false) || priv < used(true)) return X_ERROR_INVALID_PARAMETER;
+     s.flags_ = Read32(data + 4); s.public_slots_ = pub; s.private_slots_ = priv;
+     REXKRNL_INFO("RedBaron session modify: flags={:08X} public={} private={}", s.flags_, pub, priv);

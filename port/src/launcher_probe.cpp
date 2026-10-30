@@ -30,7 +30,11 @@ int main(int argc, char **argv) {
   if (!plugin)
     return 3;
   std::ostringstream json;
-  json << "{\"version\":1,\"flags\":{";
+#ifdef REDBARON_EOS_ENABLED
+  json << "{\"version\":1,\"eosAvailable\":true,\"flags\":{";
+#else
+  json << "{\"version\":1,\"eosAvailable\":false,\"flags\":{";
+#endif
   bool comma = false;
   for (const auto &flag : rex::cvar::GetRegistry()) {
     if (flag.type == rex::cvar::FlagType::Command)

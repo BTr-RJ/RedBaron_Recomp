@@ -19,6 +19,8 @@ namespace redbaron {
 void ConfigureLocalInput(rex::input::InputSystem& input);
 void ConfigureLauncherInput(rex::RuntimeConfig& config);
 void ConfigureVideoTiming();
+void ConfigureOnline();
+void ShutdownOnline();
 void InstallVideoHooks(rex::Runtime& runtime);
 void ApplyWindowBranding(rex::ui::Window* window);
 std::unique_ptr<rex::ui::ImGuiDialog> CreateFpsCounter(rex::ui::ImGuiDrawer* drawer);
@@ -50,6 +52,7 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    redbaron::ConfigureOnline();
     // Set the application's startup policy before KernelState constructs profiles.
     REXCVAR_SET(redbaron_local_profiles, 4);
     if (REXCVAR_GET(redbaron_p2p_namespace) != 0) {
@@ -105,7 +108,13 @@ class SnoopyflyingaceApp : public rex::ReXApp {
     fps_counter_ = redbaron::CreateFpsCounter(drawer);
   }
 
-  void OnShutdown() override { fps_counter_.reset(); }
+  void OnShutdown() override { fps_counter_.reset(); redbaron::ShutdownOnline(); }
+  bool OnWindowCloseRequested() override {
+    // The SDK's window close path terminates the process without OnShutdown.
+    // Leave EOS rooms while the service and guest runtime are still alive.
+    redbaron::ShutdownOnline();
+    return true;
+  }
 
  private:
   std::unique_ptr<rex::ui::ImGuiDialog> fps_counter_;

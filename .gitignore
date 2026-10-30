@@ -37,6 +37,7 @@ CMakeUserPresets.json
 .env.*
 *.pem
 *.key
+**/eos/config.ini
 
 # Conteudo derivado do jogo: gerar/importar somente na maquina do usuario.
 /port/generated/default/

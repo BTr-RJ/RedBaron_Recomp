@@ -22,6 +22,7 @@ set(SNOOPYFLYINGACE_SOURCES
     src/local_input.cpp
     src/video.cpp
     src/branding.cpp
+    src/online.cpp
 )
 
 if(WIN32)
@@ -48,6 +49,26 @@ if(REDBARON_BUILD_INPUT_TESTS)
 endif()
 
 rexglue_setup_target(snoopyflyingace)
+set(REDBARON_EOS_SDK "" CACHE PATH "Official EOS SDK for in-game online play (optional)")
+if(REDBARON_EOS_SDK)
+    add_subdirectory(eos)
+else()
+    get_filename_component(REDBARON_EOS_BUNDLE_ROOT "${rexglue_DIR}/../../.." ABSOLUTE)
+    if(EXISTS "${REDBARON_EOS_BUNDLE_ROOT}/lib/redbaron_eos_service.lib")
+        include(eos/bundled.cmake)
+    endif()
+endif()
+if(TARGET redbaron_eos_service)
+    target_link_libraries(snoopyflyingace PRIVATE redbaron_eos_service)
+    target_compile_definitions(snoopyflyingace PRIVATE REDBARON_EOS_ENABLED=1)
+    if(REDBARON_EOS_SDK)
+        set(REDBARON_EOS_DLL "${REDBARON_EOS_SDK}/Bin/EOSSDK-Win64-Shipping.dll")
+    else()
+        set(REDBARON_EOS_DLL "${REDBARON_EOS_BUNDLE_ROOT}/bin/EOSSDK-Win64-Shipping.dll")
+    endif()
+    add_custom_command(TARGET snoopyflyingace POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${REDBARON_EOS_DLL}" "$<TARGET_FILE_DIR:snoopyflyingace>")
+endif()
 option(REDBARON_INPUT_FEED "Enable scripted controllers in a diagnostic build only" OFF)
 if(REDBARON_INPUT_FEED)
     set_source_files_properties(src/local_input.cpp PROPERTIES COMPILE_DEFINITIONS REDBARON_INPUT_FEED=1)
@@ -64,6 +85,9 @@ endif()
 
 if(WIN32)
     add_executable(redbaron_probe src/launcher_probe.cpp src/video.cpp)
+    if(TARGET redbaron_eos_service)
+        target_compile_definitions(redbaron_probe PRIVATE REDBARON_EOS_ENABLED=1)
+    endif()
     target_link_libraries(redbaron_probe PRIVATE rex::runtime)
     add_executable(redbaron_content_inspect src/content_inspect.cpp)
     target_link_libraries(redbaron_content_inspect PRIVATE rex::runtime)

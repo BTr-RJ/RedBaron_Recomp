@@ -77,7 +77,9 @@ EOS_EResult PublishLobbyRoster(EOS_HLobby lobby,EOS_ProductUserId owner,const ch
     attr.ApiVersion=EOS_LOBBY_ATTRIBUTEDATA_API_LATEST;attr.Key=key.c_str();
     attr.ValueType=EOS_ELobbyAttributeType::EOS_AT_STRING;attr.Value.AsUtf8=encoded[i].c_str();
     EOS_LobbyModification_AddAttributeOptions add{};add.ApiVersion=EOS_LOBBYMODIFICATION_ADDATTRIBUTE_API_LATEST;
-    add.Attribute=&attr;add.Visibility=EOS_ELobbyAttributeVisibility::EOS_LAT_PRIVATE;
+    // PRIVATE is visible only to its author in EOS, including after joining.
+    // IDs are routing identities, not credentials; validate against membership.
+    add.Attribute=&attr;add.Visibility=EOS_ELobbyAttributeVisibility::EOS_LAT_PUBLIC;
     result=EOS_LobbyModification_AddAttribute(builder,&add);
   }
   if(result==EOS_EResult::EOS_Success){EOS_Lobby_UpdateLobbyOptions update{};update.ApiVersion=EOS_LOBBY_UPDATELOBBY_API_LATEST;

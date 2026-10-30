@@ -91,7 +91,7 @@ namespace RedBaron {
                 Choices("Upscaling",updated,selected);
             };
             foreach(var name in new[]{"Upscaling","DlssMode","Resolution","DisplayMode"}) Combo(name).SelectionChanged+=(sender,e)=>UpdateDlssControls();
-            foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut","ShowFps","Hdr","LanEnabled"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
+            foreach(var name in new[]{"ShowLauncher","Vsync","DesktopShortcut","ShowFps","Hdr","LanEnabled","EosEnabled"}) {Check(name).Checked+=(sender,e)=>Changed();Check(name).Unchecked+=(sender,e)=>Changed();}
             Combo("Player").SelectionChanged+=(sender,e)=>{if(loading)return;CommitGrid();playerIndex=Number(Combo("Player"));ShowPlayer();};
             Combo("Device").SelectionChanged+=(sender,e)=>{if(loading)return;settings.Players[playerIndex].Device=Val(Combo("Device"));Changed();};
             Button("BrowseSource").Click+=(sender,e)=>Browse("SourcePath");
@@ -138,6 +138,10 @@ namespace RedBaron {
             Text("PlayerName").Text=settings.PlayerName;
             Text("LanPeer").Text=settings.LanPeer; Check("LanEnabled").IsChecked=settings.LanEnabled;
             Text("OnlineServer").Text=settings.OnlineServer;
+            Check("EosEnabled").IsChecked=settings.EosEnabled;
+            Label("EosState").Text=File.Exists(settings.EosConfig) && File.Exists(Path.Combine(settings.Build,"EOSSDK-Win64-Shipping.dll"))
+                ? "Online components installed. This test build still requires validation between separate PCs."
+                : "Online components are not installed for this game folder.";
             Select("OnlineMode",settings.OnlineMode);Select("OnlineLocalPlayers",settings.OnlineLocalPlayers);
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;Check("ShowFps").IsChecked=settings.ShowFps;Check("Hdr").IsChecked=settings.Hdr;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
@@ -189,6 +193,7 @@ namespace RedBaron {
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
             settings.LanEnabled=Check("LanEnabled").IsChecked==true;settings.LanPeer=Text("LanPeer").Text.Trim();
+            settings.EosEnabled=Check("EosEnabled").IsChecked==true;
             settings.OnlineServer=Text("OnlineServer").Text.Trim();settings.OnlineMode=Val(Combo("OnlineMode"));settings.OnlineLocalPlayers=Number(Combo("OnlineLocalPlayers"));
             settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;settings.Vsync=Check("Vsync").IsChecked==true;settings.ShowFps=Check("ShowFps").IsChecked==true;settings.Hdr=Check("Hdr").IsChecked==true;
             settings.Resolution=Val(Combo("Resolution"));settings.Fullscreen=Number(Combo("DisplayMode"))==1;
@@ -224,6 +229,7 @@ namespace RedBaron {
             Button("CopyRoom").IsEnabled=online!=null && online.Room.Length>0;
         }
         async Task ConnectOnline(bool join) {
+            if(Check("EosEnabled").IsChecked==true){Status("Turn off in-game matchmaking before connecting to a WebRTC room.",true);return;}
             if(connectingOnline || online!=null)return;
             string room="";
             if(join) {
@@ -267,6 +273,8 @@ namespace RedBaron {
                 Check("ShowFps").IsEnabled=caps.flags.ContainsKey("redbaron_show_fps");
                 Check("Hdr").IsEnabled=caps.flags.ContainsKey("present_hdr");
                 Check("LanEnabled").IsEnabled=caps.flags.ContainsKey("redbaron_lan");
+                Check("EosEnabled").IsEnabled=caps.eosAvailable;
+                if(!caps.eosAvailable)Label("EosState").Text="Update the game build to enable in-game EOS matchmaking.";
                 Label("HdrInfo").Text=(caps.hdrActive?"Windows HDR is active on a connected display.":"Windows HDR is off or unavailable. SDR will be used until HDR is active on the game's display.")+" The FPS counter reports the actual HDR10 / SDR output. HDR10 maps the original SDR image to 200-nit white; it does not add HDR lighting.";
                 Label("GpuSummary").Text += caps.refreshHz>0?" · Connected displays: up to "+caps.refreshHz+" Hz":"";
                 Label("UpscalingInfo").Text="FSR 3.1.5 and DLSS are temporal previews. Moving objects and HUD may leave trails; use FSR 1 or bilinear for stable image quality. No frame generation.";
