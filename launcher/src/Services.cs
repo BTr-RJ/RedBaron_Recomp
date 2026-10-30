@@ -26,7 +26,38 @@ namespace RedBaron {
         public Capabilities() { flags=new Dictionary<string,Flag>(); devices=new List<Device>(); gpus=new List<Gpu>(); }
         public bool Supports(string key,string value) { Flag flag; return flags.TryGetValue(key,out flag) && (flag.allowed==null || flag.allowed.Length==0 || flag.allowed.Contains(value)); }
     }
+    public sealed class InstallPlan {
+        public string Root {get;set;}
+        public bool InstallGame {get;set;}
+        public bool InstallDlc {get;set;}
+    }
     public static class Services {
+        public static bool HasInstallation(string root) {
+            try {return !String.IsNullOrWhiteSpace(root) && File.Exists(Path.Combine(root,"build_cpp_release","snoopyflyingace.exe")) && File.Exists(Path.Combine(root,"game","default.xex"));}
+            catch(ArgumentException){return false;}
+        }
+        public static InstallPlan PlanInstallation(Settings s) {
+            bool current=HasInstallation(s.Root);
+            string target=current?s.Root:s.Destination;
+            if(String.IsNullOrWhiteSpace(target))throw new InvalidDataException("Choose an installation folder.");
+            target=Path.GetFullPath(target);
+            bool game=!HasInstallation(target),dlc=!String.IsNullOrWhiteSpace(s.DlcSource);
+            if(!game && !dlc)throw new InvalidDataException("The game is already installed. Select a DLC folder to add content.");
+            if(game && String.IsNullOrWhiteSpace(s.Source))throw new InvalidDataException("Choose a game folder, default.xex or an STFS package.");
+            if(dlc && !Directory.Exists(s.DlcSource))throw new InvalidDataException("The selected DLC folder does not exist.");
+            return new InstallPlan {Root=target,InstallGame=game,InstallDlc=dlc};
+        }
+        public static async Task<Settings> InstallContent(Settings s,Action<string> log,CancellationToken token) {
+            var plan=PlanInstallation(s);
+            if(plan.InstallGame){s.Destination=plan.Root;await Install(s,log,token);}
+            var installed=Settings.Load(plan.Root);
+            if(plan.InstallGame){installed.Sdk=HasBundledSdk()?Path.Combine(plan.Root,"sdk_experimental"):s.Sdk;installed.DesktopShortcut=s.DesktopShortcut;}
+            installed.DlcSource=s.DlcSource;
+            Json.Write(installed.FileName,installed);
+            if(plan.InstallGame && installed.DesktopShortcut)CreateShortcut(installed,Path.Combine(plan.Root,"RedBaron_Launcher.exe"));
+            if(plan.InstallDlc)await InstallDlc(installed,s.DlcSource,log,token);
+            return installed;
+        }
         public static bool HasBundledSdk() {
             using(var resource=Assembly.GetExecutingAssembly().GetManifestResourceStream("Sdk.zip"))return resource!=null;
         }
@@ -212,10 +243,13 @@ namespace RedBaron {
             if(String.IsNullOrWhiteSpace(userRoot))userRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"snoopyflyingace");
             else if(!Path.IsPathRooted(userRoot))userRoot=Path.GetFullPath(Path.Combine(s.Build,userRoot));
             string job=Path.Combine(s.Root,"launcher-data","dlc-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
+            string logs=Path.Combine(s.Root,"launcher-data","logs");Directory.CreateDirectory(logs);
+            string logfile=Path.Combine(logs,"dlc-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
+            object gate=new object();Action<string> record=line=>{lock(gate)File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
             string script=Path.Combine(job,"install-dlc.ps1");ExtractResource("InstallDlc.ps1",script);
             string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,
-                "-Source",source,"-UserRoot",userRoot,"-Inspector",inspector},s.Root,log,token);
+                "-Source",source,"-UserRoot",userRoot,"-Inspector",inspector},s.Root,record,token);
             if(code!=0)throw new IOException("DLC installation failed. Check the installation log above; existing content was preserved.");
         }
         public static void CreateShortcut(Settings s,string launcher) {

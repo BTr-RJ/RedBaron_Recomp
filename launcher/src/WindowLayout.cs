@@ -8,11 +8,10 @@ namespace RedBaron {
     // Window placement uses the current monitor's working area and WPF DPI units.
     sealed class WindowLayout {
         readonly Window window;
-        readonly Button toggle;
         Rect restore;
         WindowState restoreState;
         public bool Fullscreen {get;private set;}
-        public WindowLayout(Window window,Button toggle) {this.window=window;this.toggle=toggle;}
+        public WindowLayout(Window window) {this.window=window;}
         Rect MonitorArea(bool working) {
             var monitor=System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(window).Handle);
             var pixels=working?monitor.WorkingArea:monitor.Bounds;
@@ -40,12 +39,12 @@ namespace RedBaron {
                 var area=MonitorArea(false);
                 window.WindowState=WindowState.Normal;window.WindowStyle=WindowStyle.None;window.ResizeMode=ResizeMode.NoResize;
                 window.Left=area.Left;window.Top=area.Top;window.Width=area.Width;window.Height=area.Height;
-                Fullscreen=true;toggle.Content="Restore";toggle.ToolTip="Exit fullscreen (F11 or Esc)";
+                Fullscreen=true;
             } else {
                 window.WindowStyle=WindowStyle.SingleBorderWindow;window.ResizeMode=ResizeMode.CanResize;
                 window.Left=restore.Left;window.Top=restore.Top;window.Width=restore.Width;window.Height=restore.Height;
                 window.WindowState=restoreState;
-                Fullscreen=false;toggle.Content="Fullscreen";toggle.ToolTip="Fullscreen (F11)";
+                Fullscreen=false;
             }
         }
     }

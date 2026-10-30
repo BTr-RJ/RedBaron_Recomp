@@ -59,11 +59,9 @@ namespace RedBaron {
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attr,ref int value,int size);
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
-            layout=new WindowLayout(window,Button("ToggleFullscreen"));
+            layout=new WindowLayout(window);
             Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+"Missing CMake, Ninja, Clang and Microsoft Build Tools can be downloaded during installation; Windows may request administrator approval. No game files are downloaded.";
             window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);layout.Center();};
-            Button("ToggleFullscreen").Click+=(sender,e)=>layout.Toggle();
-            Button("CloseLauncher").Click+=(sender,e)=>window.Close();
             window.PreviewKeyDown+=(sender,e)=>{
                 if(capture==null && (e.Key==Key.F11 || (e.Key==Key.Escape && layout.Fullscreen))) {layout.Toggle();e.Handled=true;}
             };
@@ -79,7 +77,7 @@ namespace RedBaron {
             Choices("OnlineMode",new[]{new Choice("Multiplayer · up to 8 players","multiplayer"),new Choice("Co-op · 2 players","coop")},s.OnlineMode);
             Choices("OnlineLocalPlayers",new[]{new Choice("1 player",1),new Choice("2 players",2)},s.OnlineLocalPlayers);
             ApplySettings();
-            foreach(var name in new[]{"SourcePath","DestinationPath","SdkPath","PlayerName","LanPeer","OnlineServer"}) Text(name).TextChanged+=(sender,e)=>{Changed();if(sender==Text("PlayerName")) ValidateName();};
+            foreach(var name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath","PlayerName","LanPeer","OnlineServer"}) Text(name).TextChanged+=(sender,e)=>{Changed();UpdateInstallAction();if(sender==Text("PlayerName")) ValidateName();};
             foreach(var name in new[]{"OnlineMode","OnlineLocalPlayers"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","DlssMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             Combo("Gpu").SelectionChanged+=(sender,e)=> {
@@ -95,6 +93,7 @@ namespace RedBaron {
             Combo("Player").SelectionChanged+=(sender,e)=>{if(loading)return;CommitGrid();playerIndex=Number(Combo("Player"));ShowPlayer();};
             Combo("Device").SelectionChanged+=(sender,e)=>{if(loading)return;settings.Players[playerIndex].Device=Val(Combo("Device"));Changed();};
             Button("BrowseSource").Click+=(sender,e)=>Browse("SourcePath");
+            Button("BrowseSourceFile").Click+=(sender,e)=>{var dialog=new Microsoft.Win32.OpenFileDialog {Title="Select default.xex or an Xbox 360 STFS game package",Filter="Xbox 360 game files|*.*",CheckFileExists=true};if(dialog.ShowDialog(window)==true)Text("SourcePath").Text=dialog.FileName;};
             Button("BrowseDestination").Click+=(sender,e)=>Browse("DestinationPath");
             Button("BrowseSdk").Click+=(sender,e)=>Browse("SdkPath");
             Button("BrowseDlc").Click+=(sender,e)=>Browse("DlcSource");
@@ -106,7 +105,6 @@ namespace RedBaron {
             Button("LeaveRoom").Click+=async(sender,e)=>await LeaveOnline();
             Button("CopyRoom").Click+=(sender,e)=>{try {if(online!=null && online.Room.Length>0){Clipboard.SetText(OnlineSession.Invitation(settings.OnlineServer,online.Room));Status("Invitation copied. Send it to your friends.");}}catch(Exception error){Status("Could not copy the invitation: "+error.Message,true);}};
             Button("InstallButton").Click+=async(sender,e)=>await Install();
-            Button("InstallDlc").Click+=async(sender,e)=>await InstallDlc();
             Button("CancelInstall").Click+=(sender,e)=>{if(installation!=null) installation.Cancel();};
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
             Button("CheckUpdates").Click+=async(sender,e)=>await CheckForUpdates();
@@ -136,6 +134,7 @@ namespace RedBaron {
         void ApplySettings() {
             loading=true;
             Text("SourcePath").Text=settings.Source;Text("DestinationPath").Text=settings.Destination;Text("SdkPath").Text=settings.Sdk;
+            Text("DlcSource").Text=settings.DlcSource;
             Text("PlayerName").Text=settings.PlayerName;
             Text("LanPeer").Text=settings.LanPeer; Check("LanEnabled").IsChecked=settings.LanEnabled;
             Text("OnlineServer").Text=settings.OnlineServer;
@@ -148,8 +147,9 @@ namespace RedBaron {
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
             Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);Select("DlssMode",settings.DlssMode);
             Select("Anisotropic",settings.Anisotropic);Select("KeyboardPlayer",settings.KeyboardPlayer);
-            Label("HeaderStatus").Text=File.Exists(settings.Exe)?"Installation found":"Installation required";
-            Label("InstallState").Text=File.Exists(settings.Exe)?"Current installation: "+settings.Root:"Select the source and destination folders to begin.";
+            Label("HeaderStatus").Text=Services.HasInstallation(settings.Root)?"Installation found":"Installation required";
+            UpdateInstallAction();
+            Label("InstallState").Text=Services.HasInstallation(settings.Root)?"Current installation: "+settings.Root:"Select a game source and an installation folder to begin.";
             ShowPlayer();loading=false;
         }
         void UpdateDlssControls() {
@@ -192,6 +192,7 @@ namespace RedBaron {
         void ReadSettings() {
             CommitGrid();
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
+            settings.DlcSource=Text("DlcSource").Text.Trim();
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
             settings.LanEnabled=Check("LanEnabled").IsChecked==true;settings.LanPeer=Text("LanPeer").Text.Trim();
             settings.EosEnabled=Check("EosEnabled").IsChecked==true;
@@ -319,51 +320,39 @@ namespace RedBaron {
             if(value!=null) {capture.Keyboard=value;Get<DataGrid>("Bindings").Items.Refresh();Changed();}
             capture=null;Label("CaptureHint").Text="Capture: keyboard/mouse. Double-click a cell to edit the controller binding.";
         }
+        void UpdateInstallAction() {
+            string destination=Text("DestinationPath").Text.Trim();
+            Button("InstallButton").Content=Services.HasInstallation(settings.Root) || Services.HasInstallation(destination)?"Install DLCs":"Install";
+        }
         async Task Install() {
             if(installation!=null)return;
-            settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;
+            settings.Source=Text("SourcePath").Text.Trim();settings.DlcSource=Text("DlcSource").Text.Trim();
+            settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
+            settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;
+            InstallPlan plan;
+            try {plan=Services.PlanInstallation(settings);}catch(Exception error){Status(error.Message,true);return;}
             installation=new CancellationTokenSource();
-            foreach(string name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=false;
-            Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
-            Status("Installation in progress…");
+            string[] controls={"InstallButton","BrowseDlc","UseExisting","Save","Play","RefreshDevices","BrowseSource","BrowseSourceFile","BrowseDestination","BrowseSdk"};
+            foreach(string name in controls)Button(name).IsEnabled=false;
+            foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=false;
+            Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Button("CancelInstall").Visibility=Visibility.Visible;
+            Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
+            string outcome="";bool failed=false;
+            Action<string> log=line=>window.Dispatcher.BeginInvoke(new Action(()=>{Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;}));
+            Status(plan.InstallGame?"Installing game and selected content...":"Adding DLCs to the installed game...");
             try {
-                await Services.Install(settings,line=>window.Dispatcher.BeginInvoke(new Action(()=>{
-                    Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;
-                })),installation.Token);
-                string target=Path.GetFullPath(settings.Destination);
-                bool shortcut=settings.DesktopShortcut;string sdk=Services.HasBundledSdk()?Path.Combine(target,"sdk_experimental"):settings.Sdk;
-                settings=Settings.Load(target);settings.Sdk=sdk;settings.DesktopShortcut=shortcut;
-                Json.Write(settings.FileName,settings);
-                if(shortcut) Services.CreateShortcut(settings,Path.Combine(target,"RedBaron_Launcher.exe"));
-                dirty=false;ApplySettings();await Refresh(false);Status("Installation complete. Click Play to start the game.");
-            } catch(OperationCanceledException) {Status("Installation cancelled. Your source files were preserved; choose an empty folder to try again.",true);}
-            catch(Exception error) {Status(error.Message,true);}
+                settings=await Services.InstallContent(settings,log,installation.Token);
+                dirty=false;outcome=plan.InstallGame?"Installation complete. Click Play to start the game.":"DLC installation complete. Existing game files and saves were preserved.";
+            } catch(OperationCanceledException){failed=true;outcome="Installation cancelled. Original files were preserved. Any completed game installation remains available.";}
+            catch(Exception error){failed=true;outcome=error.Message;}
             finally {
                 installation.Dispose();installation=null;
                 Get<ProgressBar>("InstallProgress").Visibility=Visibility.Collapsed;Button("CancelInstall").Visibility=Visibility.Collapsed;
-                foreach(string name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","RefreshDevices","BrowseSource","BrowseDestination","BrowseSdk"})Button(name).IsEnabled=true;
-                Button("Save").IsEnabled=caps.flags.Count>0;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);
+                foreach(string name in controls)Button(name).IsEnabled=true;
+                foreach(string name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath"})Text(name).IsEnabled=true;
             }
-        }
-        async Task InstallDlc() {
-            if(installation!=null)return;
-            string source=Text("DlcSource").Text.Trim();
-            if(String.IsNullOrEmpty(source)){Status("Choose the folder containing your DLC packages.",true);return;}
-                installation=new CancellationTokenSource();
-                foreach(var name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","Save","Play","RefreshDevices"})Button(name).IsEnabled=false;
-                Text("InstallLog").Visibility=Visibility.Visible;Text("InstallLog").Clear();
-                Get<ProgressBar>("InstallProgress").Visibility=Visibility.Visible;Status("Installing DLC…");
-                try {
-                    await Services.InstallDlc(settings,source,line=>window.Dispatcher.BeginInvoke(new Action(()=>{
-                        Text("InstallLog").AppendText(line+Environment.NewLine);Text("InstallLog").ScrollToEnd();Label("InstallState").Text=line;
-                    })),installation.Token);
-                    Status("DLC installation complete. Restart the game to load the content.");
-                } catch(Exception error){Status(error.Message,true);}
-                finally {
-                    installation.Dispose();installation=null;Get<ProgressBar>("InstallProgress").Visibility=Visibility.Collapsed;
-                    foreach(var name in new[]{"InstallButton","InstallDlc","BrowseDlc","UseExisting","RefreshDevices"})Button(name).IsEnabled=true;
-                    Button("Save").IsEnabled=caps.flags.Count>0;Button("Play").IsEnabled=caps.flags.Count>0 && File.Exists(settings.Exe);
-                }
+            if(failed && Services.HasInstallation(plan.Root))settings=Settings.Load(plan.Root);
+            ApplySettings();await Refresh(false);Status(outcome,failed);
         }
         async Task CheckForUpdates() {
             if(updateBusy)return;

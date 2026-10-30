@@ -34,6 +34,18 @@ namespace RedBaron {
             Directory.CreateDirectory(directory);
             var results=new List<string>();
             try {
+                var install=new Settings {Root=Path.Combine(directory,"installer"),Destination=Path.Combine(directory,"new game"),Source="package"};
+                var plan=Services.PlanInstallation(install);Assert(plan.InstallGame && !plan.InstallDlc,"Optional DLC became mandatory");
+                install.DlcSource=Path.Combine(directory,"DLC packages");Directory.CreateDirectory(install.DlcSource);
+                plan=Services.PlanInstallation(install);Assert(plan.InstallGame && plan.InstallDlc,"Combined installation was not planned");
+                Directory.CreateDirectory(Path.Combine(install.Destination,"game"));Directory.CreateDirectory(Path.Combine(install.Destination,"build_cpp_release"));
+                File.WriteAllText(Path.Combine(install.Destination,"game","default.xex"),"fixture");File.WriteAllText(Path.Combine(install.Destination,"build_cpp_release","snoopyflyingace.exe"),"fixture");
+                plan=Services.PlanInstallation(install);Assert(!plan.InstallGame && plan.InstallDlc && plan.Root==install.Destination,"Existing destination would be rebuilt");
+                install.Root=install.Destination;install.Source="";install.Destination="";
+                plan=Services.PlanInstallation(install);Assert(!plan.InstallGame && plan.InstallDlc,"DLC-only operation required game source or destination");
+                install.DlcSource="";Reject(()=>Services.PlanInstallation(install),"Installed game would be reinstalled with no DLC selected");
+                install.DlcSource=Path.Combine(directory,"missing DLC");Reject(()=>Services.PlanInstallation(install),"Missing DLC source accepted");
+                results.Add("Unified installation: game only, game plus DLCs, existing destination and DLC-only without rebuilding");
                 var s=new Settings {Root=Path.Combine(directory,"installation with spaces"),Sdk="sdk",Source="game",Destination=""};
                 string original="# user comment\nrender_target_path_d3d12 = \"rov\"\ncustom_option = 42\nkeybind_a = \"Space\" # turbo\n[custom]\nvalue = \"preserved\"\n";
                 s.Players[0].Bindings[0].Keyboard="J,LMB";

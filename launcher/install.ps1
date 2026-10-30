@@ -36,6 +36,24 @@ function Read-BE32([byte[]]$Data,[int]$Offset) {
     if ($Offset -lt 0 -or $Offset + 4 -gt $Data.Length) { throw 'Incomplete XEX header.' }
     [uint32](([uint64]$Data[$Offset] -shl 24) -bor ([uint64]$Data[$Offset+1] -shl 16) -bor ([uint64]$Data[$Offset+2] -shl 8) -bor $Data[$Offset+3])
 }
+function Validate-Game([string]$Folder) {
+    foreach($item in @('default.xex','Config','Packages')) {
+        if(!(Test-Path -LiteralPath (Join-Path $Folder $item))){throw "Incomplete game files: missing $item"}
+    }
+    $header=[IO.File]::ReadAllBytes((Join-Path $Folder 'default.xex'))
+    if($header.Length -lt 24 -or [Text.Encoding]::ASCII.GetString($header,0,4) -ne 'XEX2'){throw 'default.xex is not a valid XEX2 file.'}
+    $count=Read-BE32 $header 20
+    if($count -gt 4096){throw 'Invalid XEX header table.'}
+    $title=[uint32]0
+    for($i=0;$i -lt $count;$i++) {
+        if((Read-BE32 $header (24+8*$i)) -eq 0x00040006){$offset=Read-BE32 $header (28+8*$i);$title=Read-BE32 $header ([int]$offset+12)}
+    }
+    if($title -ne 0x584109B5){throw ('Incompatible title: {0:X8}; expected 584109B5.' -f $title)}
+}
+function Package-Magic([string]$Path) {
+    $stream=[IO.File]::OpenRead($Path)
+    try {$bytes=New-Object byte[] 4;if($stream.Read($bytes,0,4) -ne 4){return $false};return [Text.Encoding]::ASCII.GetString($bytes) -in @('LIVE','PIRS','CON ')}finally{$stream.Dispose()}
+}
 
 $Source = Full-Path $Source
 $Destination = Full-Path $Destination
@@ -53,21 +71,14 @@ Assert-NoReparse $Destination
 if ((Test-Path -LiteralPath $Destination) -and @(Get-ChildItem -LiteralPath $Destination -Force).Count) {
     throw 'The destination must be empty. Choose another folder to preserve existing installations and saves.'
 }
-foreach ($item in @('default.xex','Config','Packages')) {
-    if (!(Test-Path -LiteralPath (Join-Path $Source $item))) { throw "Incomplete source: missing $item" }
-}
-$header = [IO.File]::ReadAllBytes((Join-Path $Source 'default.xex'))
-if ([Text.Encoding]::ASCII.GetString($header,0,4) -ne 'XEX2') { throw 'default.xex is not a valid XEX2 file.' }
-$count = Read-BE32 $header 20
-if ($count -gt 4096) { throw 'Invalid XEX header table.' }
-$titleId = [uint32]0
-for ($i=0; $i -lt $count; $i++) {
-    if ((Read-BE32 $header (24+8*$i)) -eq 0x00040006) {
-        $offset = Read-BE32 $header (28+8*$i)
-        $titleId = Read-BE32 $header ([int]$offset+12)
-    }
-}
-if ($titleId -ne 0x584109B5) { throw ('Incompatible title: {0:X8}; expected 584109B5.' -f $titleId) }
+$packages=New-Object 'System.Collections.Generic.List[string]'
+if(Test-Path -LiteralPath $Source -PathType Leaf) {
+    if([IO.Path]::GetFileName($Source) -ieq 'default.xex'){$Source=Split-Path -Parent $Source}
+    elseif(Package-Magic $Source){$packages.Add($Source)}
+    else {throw 'Select default.xex, an extracted game folder, or a compatible Xbox 360 STFS game package.'}
+} elseif(!(Test-Path -LiteralPath $Source -PathType Container)){throw 'The selected game source does not exist.'}
+Assert-NoReparse $Source
+if((Is-Within $Destination $Source) -or (Is-Within $Source $Destination)){throw 'Choose a destination folder separate from the game source.'}
 if(!$bundledSdk) {
     foreach ($file in @('bin/rexglue.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','lib/cmake/rexglue/rexglueConfig.cmake')) {
         if (!(Test-Path -LiteralPath (Join-Path $Sdk $file))) { throw "Incomplete SDK: $file" }
@@ -77,14 +88,19 @@ if(!$bundledSdk) {
 # Enumerate before creating the destination; never follow source links.
 $files = New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'
 $queue = New-Object 'System.Collections.Generic.Queue[string]'
-$queue.Enqueue($Source)
+if(!$packages.Count){$queue.Enqueue($Source)}
+$extracted=!(Test-Path -LiteralPath $Source -PathType Leaf) -and (Test-Path -LiteralPath (Join-Path $Source 'default.xex'))
+if($extracted){Validate-Game $Source}
 while ($queue.Count) {
     foreach ($item in Get-ChildItem -LiteralPath $queue.Dequeue() -Force) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Link found in source folder: $($item.FullName)" }
-        if ($item.PSIsContainer) { $queue.Enqueue($item.FullName) } else { $files.Add($item) }
+        if ($item.PSIsContainer) { $queue.Enqueue($item.FullName) }
+        elseif($extracted){$files.Add($item)}
+        elseif(($item.Name -match '^[0-9A-Fa-f]{32,42}$' -or $item.Extension -in @('.stfs','.con','.live','.pirs')) -and (Package-Magic $item.FullName)){$packages.Add($item.FullName)}
     }
 }
-$bytes = ($files | Measure-Object Length -Sum).Sum
+if(!$extracted -and !$packages.Count){throw 'No game files or compatible STFS packages found. Select the package file directly or the folder containing default.xex.'}
+$bytes=if($extracted){($files | Measure-Object Length -Sum).Sum}else{($packages | ForEach-Object {(Get-Item -LiteralPath $_).Length} | Measure-Object -Sum).Sum}
 $drive = New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($Destination))
 $workingSpace=if($BootstrapScript -and !(Get-Command clang++ -ErrorAction SilentlyContinue)){10GB}else{4GB}
 if ($drive.AvailableFreeSpace -lt $bytes + $workingSpace) { throw 'Not enough free space. Allow room for the game, build files and the compiler download.' }
@@ -108,7 +124,21 @@ try {
         & $BootstrapScript -ToolRoot (Join-Path $Destination '.redbaron-tools') -RequirePython:$needPython
     }
     foreach ($tool in @('cmake','ninja','clang++')) { Get-Command $tool -ErrorAction Stop | Out-Null }
-    Write-Output ('Copying {0} game files...' -f $files.Count)
+    if(!$extracted) {
+        $inspector=Join-Path $Sdk 'bin/redbaron_content_inspect.exe'
+        if(!(Test-Path -LiteralPath $inspector -PathType Leaf)){throw 'The bundled package extractor is missing. Use a newer installer or an extracted game folder.'}
+        $compatiblePackages=New-Object 'System.Collections.Generic.List[string]'
+        foreach($package in $packages) {
+            $output=& $inspector $package 2>$null
+            if($LASTEXITCODE -eq 0 -and ($output -join ' ') -match 'title=584109B5 type=000D0000'){$compatiblePackages.Add($package)}
+        }
+        if($compatiblePackages.Count -ne 1){throw 'Select exactly one Snoopy Flying Ace Arcade game package. Unrelated packages are not installed.'}
+        Write-Output 'Extracting the selected Xbox 360 game package...'
+        & $inspector --extract-game (Join-Path $Destination 'game') $compatiblePackages[0]
+        if($LASTEXITCODE){throw 'Game package extraction failed. The original package was preserved.'}
+        Validate-Game (Join-Path $Destination 'game')
+    }
+    if($extracted){Write-Output ('Copying {0} game files...' -f $files.Count)}
     $index=0
     foreach ($file in $files) {
         $relative=$file.FullName.Substring($Source.Length).TrimStart('\','/')

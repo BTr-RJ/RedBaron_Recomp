@@ -30,13 +30,14 @@ int wmain(int argc, wchar_t** argv) {
     for(const auto& entry:entries) {
       uint32_t license=0;
       if(manager->OpenContent("redbaron_verify",0,entry,license)!=0) {std::cerr<<"Could not mount content\n";return 1;}
-      std::cout<<entry.file_name()<<" license="<<license<<'\n';
+      std::cout<<entry.file_name()<<" license="<<license<<std::endl;
       if(manager->CloseContent("redbaron_verify")!=0) {std::cerr<<"Could not close content\n";return 1;}
     }
-    std::cout<<"Recognized content packages: "<<entries.size()<<'\n';return 0;
+    std::cout<<"Recognized content packages: "<<entries.size()<<std::endl;return 0;
   }
   const bool make_header=std::wstring_view(argv[1])==L"--header";
-  const bool extract=std::wstring_view(argv[1])==L"--extract";
+  const bool extract_game=std::wstring_view(argv[1])==L"--extract-game";
+  const bool extract=std::wstring_view(argv[1])==L"--extract" || extract_game;
   const bool list=std::wstring_view(argv[1])==L"--list" || extract;
   if ((list && argc<3) || ((extract || make_header) && argc!=4)) return 2;
   std::filesystem::path destination;
@@ -57,8 +58,8 @@ int wmain(int argc, wchar_t** argv) {
     auto header=rex::filesystem::StfsContainerDevice::ReadPackageHeader(path);
     if (!header) {std::cerr<<path.filename().string()<<": invalid STFS header\n";++failed;continue;}
     if ((extract || make_header) && (uint32_t(header->metadata.execution_info.title_id)!=0x584109B5 ||
-        static_cast<uint32_t>(header->metadata.content_type.get())!=2)) {
-      std::cerr<<"Package is not marketplace content for this title\n";return 1;
+        static_cast<uint32_t>(header->metadata.content_type.get())!=(extract_game?0x000D0000u:2u))) {
+      std::cerr<<(extract_game?"Package is not an Arcade game for this title\n":"Package is not marketplace content for this title\n");return 1;
     }
     if(make_header) {
       rex::system::xam::XCONTENT_AGGREGATE_DATA data{};
@@ -80,7 +81,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     std::cout<<path.filename().string()<<" title="<<std::hex<<std::uppercase<<std::setw(8)
              <<std::setfill('0')<<uint32_t(header->metadata.execution_info.title_id)
-             <<" type="<<std::setw(8)<<static_cast<uint32_t>(header->metadata.content_type.get())<<std::dec<<'\n';
+             <<" type="<<std::setw(8)<<static_cast<uint32_t>(header->metadata.content_type.get())<<std::dec<<std::endl;
     if (list) {
       rex::filesystem::StfsContainerDevice device("",path);
       if (!device.Initialize()) {std::cerr<<"Could not open package\n";++failed;continue;}
@@ -92,7 +93,7 @@ int wmain(int argc, wchar_t** argv) {
         auto* entry=entries.front();entries.pop();
         for (auto& child:entry->children()) entries.push(child.get());
         if(entry==root)continue;
-        std::cout<<"  "<<entry->path()<<" ("<<entry->size()<<" bytes)\n";
+        std::cout<<"  "<<entry->path()<<" ("<<entry->size()<<" bytes)"<<std::endl;
         if(!extract)continue;
         auto relative=rex::to_path(rex::string::utf8_fix_path_separators(entry->path()));
         if(relative.empty() || relative.has_root_path()) {std::cerr<<"Unsafe package path\n";return 1;}

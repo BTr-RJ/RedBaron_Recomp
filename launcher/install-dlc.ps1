@@ -29,8 +29,13 @@ while($queue.Count) {
         if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw "Link found in source: $($item.FullName)"}
         if($item.PSIsContainer){$queue.Enqueue($item.FullName);continue}
         if($item.Name -notmatch '^[0-9A-Fa-f]{32,42}$'){continue}
-        $output=& $Inspector $item.FullName 2>$null
+        $output=@()
+        for($attempt=0;$attempt -lt 3;$attempt++) {
+            $output=@(& $Inspector $item.FullName 2>$null)
+            if($LASTEXITCODE -ne 0 -or $output.Count){break}
+        }
         if($LASTEXITCODE -ne 0){continue}
+        if(!$output.Count){throw "Could not read package metadata: $($item.Name). Update the package extractor and try again."}
         if(($output -join ' ') -notmatch 'title=584109B5 type=00000002'){continue}
         if(!$seen.Add($item.Name)){throw "Duplicate package name: $($item.Name)"}
         $packages.Add($item)

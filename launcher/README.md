@@ -23,7 +23,10 @@ may still compile at runtime and become available for preparation on later launc
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
 
 For downloadable content, open **Install**, select the folder containing your own
-STFS packages and click **Install DLC**. The launcher recognizes this title's
+STFS packages in **DLC files (optional)** and use the single **Install** button.
+New installations build the game and then add the selected DLCs. When a game is
+already installed, that button becomes **Install DLCs**, and only adds content.
+The launcher recognizes this title's
 marketplace packages, preserves existing installations and ignores avatar items.
 Close the game before installing. In a local test, both supplied marketplace
 packages were enumerated and mounted by the game; individual content and maps still
@@ -37,7 +40,7 @@ The runtime includes spatial FSR 1/CAS and experimental **FSR 3.1.5 / NVIDIA DLS
 
 FPS targets reach 240, with values above 120 experimental. Physics now uses measured game time instead of a fixed 1/30 second per frame; at 120 FPS the tutorial measured 5.008 simulated seconds over 5.008 real seconds. Other gameplay still needs validation. Video includes **Show in-game FPS counter** and **Use HDR output when available**. HDR10 maps the original SDR image to 200-nit white when Windows HDR is active; it does not add native HDR lighting. VSync limits the presentation queue to one frame. See [implementation, reproduction and remaining work](../docs/VIDEO.md).
 
-The launcher starts centered in the monitor's work area and fits smaller screens. Fullscreen/Restore (F11) and Close are available in its header; Esc exits fullscreen. These controls affect the launcher window. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
+The launcher starts centered in the monitor's work area and fits smaller screens. Use the native window buttons to maximize or close it. F11/Esc remain available as launcher shortcuts. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
 
 Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name changes the primary XAM display name while retaining the existing save folder. LAN is a separate experimental service, not an Xbox Live account. No router ports are opened automatically. Sound and Achievements tabs remain planned.
 
@@ -45,7 +48,15 @@ Windows-owned folder dialogs and external tool diagnostics may follow the instal
 
 ## Installation
 
-Provide an **already extracted folder** containing `default.xex`, `Config` and `Packages`. Launcher builds made with the SDK bundle include the modified SDK and networking component. Missing CMake, Ninja and Clang are downloaded from pinned official releases; Microsoft C++ Build Tools and the Windows SDK are installed when missing, with Windows administrator approval. Base-game STFS extraction is not included.
+Select an extracted folder containing `default.xex`, `Config` and `Packages`,
+`default.xex` itself, or the original Arcade STFS package for title `584109B5`
+(type `000D0000`). A package may have no extension. A folder containing a single
+compatible package is also accepted. The bundled content tool validates and
+extracts it before code generation. Ordinary ZIP/RAR archives are not STFS files.
+Launcher builds made with the SDK bundle include the modified SDK, package
+extractor and networking component. Missing CMake, Ninja and Clang are downloaded
+from pinned official releases; Microsoft C++ Build Tools and the Windows SDK are
+installed when missing, with Windows administrator approval.
 
 The Video tab requires the updated SDK patch. For launcher builds without a bundled SDK, build an isolated SDK installation with `scripts/build-video-sdk.ps1 -SdkSource <source> -Fsr315 -Dlss` for all current video features, then select it in Build tools. This launcher is not yet the completed official installer and has not been published in Releases.
 

@@ -36,6 +36,7 @@ $sdkArchive=Join-Path $OutputDirectory 'sdk.zip'
 if(Test-Path -LiteralPath $sdkArchive){Remove-Item -LiteralPath $sdkArchive}
 $sdkBundle=Test-Path -LiteralPath (Join-Path $SdkRoot 'bin/rexglue.exe') -PathType Leaf
 if($sdkBundle) {
+    if(!(Test-Path -LiteralPath (Join-Path $SdkRoot 'bin/redbaron_content_inspect.exe'))){throw 'Stage the redbaron_content_inspect executable in the SDK bin folder before packaging STFS support.'}
     $network=Join-Path $projectRoot 'network-work/build'
     foreach($file in @('redbaron_net.exe','datachannel.dll','licenses/dependencies.json')) {
         if(!(Test-Path -LiteralPath (Join-Path $network $file))){throw 'Build the online companion with scripts/build-network.py before bundling the SDK.'}

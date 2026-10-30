@@ -23,6 +23,7 @@ namespace RedBaron {
         public int Version { get; set; }
         public string Root { get; set; }
         public string Source { get; set; }
+        public string DlcSource { get; set; }
         public string Destination { get; set; }
         public string Sdk { get; set; }
         public bool ShowLauncher { get; set; }
@@ -83,6 +84,7 @@ namespace RedBaron {
             s.Root = Path.GetFullPath(root);
             if(!File.Exists(file) && File.Exists(s.EosConfig))s.EosEnabled=true;
             s.Source = s.Source ?? Path.Combine(root, "game");
+            s.DlcSource = s.DlcSource ?? "";
             s.Sdk = s.Sdk ?? Path.Combine(root, "sdk_experimental");
             s.Destination = s.Destination ?? "";
             // Runtime settings are authoritative, including edits made outside the launcher.

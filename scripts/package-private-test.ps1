@@ -8,6 +8,9 @@ $root=Split-Path -Parent $PSScriptRoot
 if(!$OutputDirectory){$OutputDirectory=Join-Path $root 'prioridade5_launcher/private_distribution'}
 $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+& cmake --build (Join-Path $root 'build_cpp_release') --target snoopyflyingace redbaron_content_inspect --parallel 4
+if($LASTEXITCODE){throw 'Build the game and package extractor before creating the installer.'}
+Copy-Item -LiteralPath (Join-Path $root 'build_cpp_release/redbaron_content_inspect.exe') -Destination (Join-Path $root 'sdk_experimental/bin/redbaron_content_inspect.exe') -Force
 $build=Join-Path $OutputDirectory 'build'
 & (Join-Path $root 'launcher/build.ps1') -OutputDirectory $build -PrivateEosConfig $EosConfig
 $folder=Join-Path $OutputDirectory 'RedBaron_Recomp-0.10-test'
