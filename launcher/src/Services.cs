@@ -298,7 +298,7 @@ namespace RedBaron {
                 arguments.Add("-OfflineManifest");arguments.Add(manifest);
                 arguments.Add("-OfflineToolsRoot");arguments.Add(Path.Combine(Path.GetDirectoryName(LauncherExe),"Tools"));
             }
-            using(var online=Assembly.GetExecutingAssembly().GetManifestResourceStream("PrivateEosConfig.ini")) {
+            using(var online=Assembly.GetExecutingAssembly().GetManifestResourceStream("EosClientConfig.ini") ?? Assembly.GetExecutingAssembly().GetManifestResourceStream("PrivateEosConfig.ini")) {
                 if(online!=null) {
                     string config=Path.Combine(job,"eos-config.ini");
                     using(var output=File.Create(config))online.CopyTo(output);

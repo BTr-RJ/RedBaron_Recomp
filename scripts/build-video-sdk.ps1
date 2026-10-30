@@ -104,6 +104,9 @@ try {
     $leaderboardPatch=Join-Path $project 'patches/rexglue-native-leaderboards.patch'
     Native 'git' @('apply','--check','--ignore-space-change',$leaderboardPatch)
     Native 'git' @('apply','--ignore-space-change',$leaderboardPatch)
+    $languagePatch=Join-Path $project 'patches/rexglue-language-selection.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$languagePatch)
+    Native 'git' @('apply','--ignore-space-change',$languagePatch)
     if($Fsr315) {
         $stabilityPatch=Join-Path $project 'patches/rexglue-temporal-stability.patch'
         Native 'git' @('apply','--check','--ignore-space-change',$stabilityPatch)

@@ -17,6 +17,7 @@ REXCVAR_DECLARE(bool, redbaron_lan);
 REXCVAR_DECLARE(std::string, redbaron_lan_bind);
 REXCVAR_DECLARE(std::string, redbaron_lan_peer);
 namespace rex::kernel::xam {
+uint32_t XGetLanguage_entry();
 uint32_t NetDll_accept_entry(uint32_t, uint32_t, ppc_ptr_t<system::XSOCKADDR>, mapped_u32);
 }
 static void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
@@ -39,6 +40,11 @@ int main(int argc, char** argv) {
     rex::Runtime runtime({}, std::filesystem::absolute(argv[1]));
     rex::RuntimeConfig config; config.tool_mode = true;
     Check(runtime.Setup(std::move(config)) == 0, "Runtime setup");
+    for(auto language:{1u,2u,3u,4u,5u,6u,9u}) {
+      Check(rex::cvar::SetFlagByName("user_language",std::to_string(language)),"Runtime language preference accepted");
+      Check(rex::kernel::xam::XGetLanguage_entry()==language,"Guest language getter respects the selected language");
+    }
+    rex::cvar::SetFlagByName("user_language","1");
     auto* kernel = runtime.kernel_state(); auto* mem = runtime.memory();
     for (unsigned i = 0; i < 4; ++i) {
       auto* profile = kernel->user_profile(i); Check(profile && profile->index() == i, "Four distinct profiles");

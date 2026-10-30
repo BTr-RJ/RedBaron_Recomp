@@ -1,6 +1,6 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$OutputDirectory = '', [string]$SdkRoot = '', [string]$SdkSourceRoot = '',
-    [string]$PrivateEosConfig = '', [string]$OfflineToolsRoot = '')
+    [Alias('PrivateEosConfig')][string]$EosClientConfig = '', [string]$OfflineToolsRoot = '')
 $ErrorActionPreference = 'Stop'
 if(!$OutputDirectory){$OutputDirectory=Join-Path $PSScriptRoot 'out'}
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
@@ -95,22 +95,22 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'App.config') + ',App.config'))
 if($sdkBundle){$arguments+=('/resource:'+$sdkArchive+',Sdk.zip')}
 if($OfflineToolsRoot){$arguments+=('/resource:'+([IO.Path]::GetFullPath((Join-Path $OfflineToolsRoot 'manifest.json')))+',OfflineTools.json')}
-if($PrivateEosConfig) {
-    if(!$sdkBundle -or !(Test-Path -LiteralPath (Join-Path $SdkRoot 'lib/redbaron_eos_service.lib'))){throw 'The private online installer requires the EOS provider bundle.'}
-    $PrivateEosConfig=[IO.Path]::GetFullPath($PrivateEosConfig)
+if($EosClientConfig) {
+    if(!$sdkBundle -or !(Test-Path -LiteralPath (Join-Path $SdkRoot 'lib/redbaron_eos_service.lib'))){throw 'The online installer requires the EOS provider bundle.'}
+    $EosClientConfig=[IO.Path]::GetFullPath($EosClientConfig)
     $values=@{}
-    foreach($line in [IO.File]::ReadAllLines($PrivateEosConfig)) {
+    foreach($line in [IO.File]::ReadAllLines($EosClientConfig)) {
         if(!$line -or $line.StartsWith('#')){continue}
-        if($line -notmatch '^(product_id|sandbox_id|deployment_id|client_id|client_secret)=([!-~]{1,256})$' -or $values.ContainsKey($Matches[1])){throw 'Invalid private EOS configuration.'}
+        if($line -notmatch '^(product_id|sandbox_id|deployment_id|client_id|client_secret)=([!-~]{1,256})$' -or $values.ContainsKey($Matches[1])){throw 'Invalid EOS game-client configuration.'}
         $values[$Matches[1]]=$true
     }
-    if($values.Count -ne 5){throw 'Incomplete private EOS configuration.'}
-    $arguments+=('/resource:'+$PrivateEosConfig+',PrivateEosConfig.ini')
-    Write-Output 'Building a private online test installer. Keep the resulting binary/package private.'
+    if($values.Count -ne 5){throw 'Incomplete EOS game-client configuration.'}
+    $arguments+=('/resource:'+$EosClientConfig+',EosClientConfig.ini')
+    Write-Output 'Including EOS game-client settings. The player client policy must require a signed-in user.'
 }
 $sources=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 $runtime=Join-Path $OutputDirectory 'RedBaron_Runtime.exe'
-$runtimeArgs=@($arguments | Where-Object {$_ -notlike '/out:*' -and $_ -notmatch ',(Source.zip|Sdk.zip|PrivateEosConfig.ini|OfflineTools.json)$'})
+$runtimeArgs=@($arguments | Where-Object {$_ -notlike '/out:*' -and $_ -notmatch ',(Source.zip|Sdk.zip|EosClientConfig.ini|OfflineTools.json)$'})
 $runtimeArgs+=('/out:'+$runtime);$runtimeArgs+=$sources
 & $compiler @runtimeArgs
 if($LASTEXITCODE -ne 0){throw 'Installed launcher build failed.'}

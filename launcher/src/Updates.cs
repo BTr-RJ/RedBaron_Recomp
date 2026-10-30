@@ -19,7 +19,7 @@ namespace RedBaron {
     public static class Updates {
         public const string CurrentVersion="0.10.0";
         const long MaxBytes=2L*1024*1024*1024-1;
-        const string Endpoint="https://api.github.com/repos/BTr-RJ/RedBaron_Recomp/releases/latest";
+        const string Endpoint="https://api.github.com/repos/BTr-RJ/RedBaron_Recomp/releases?per_page=20";
         static bool ValidAsset(ReleaseAsset asset) {
             if(asset==null || asset.size<=0 || asset.size>MaxBytes || !Regex.IsMatch(asset.digest??"",@"\Asha256:[0-9a-fA-F]{64}\z"))return false;
             var match=Regex.Match(asset.name??"",@"\ARedBaron_Recomp-(v\d+\.\d+(?:\.\d+)?)-windows-x64\.zip\z");
@@ -38,7 +38,7 @@ namespace RedBaron {
         public static ReleaseAsset Parse(string json) {
             var release=new JavaScriptSerializer().Deserialize<ReleaseInfo>(json);
             Version version;
-            if(release==null || release.draft || release.prerelease ||
+            if(release==null || release.draft ||
                String.IsNullOrEmpty(release.tag_name) || !Regex.IsMatch(release.tag_name,@"\Av\d+\.\d+(\.\d+)?\z") ||
                !Version.TryParse(release.tag_name.Substring(1),out version)) throw new InvalidDataException("Invalid release metadata.");
             if(version<=new Version(CurrentVersion))return null;
@@ -61,7 +61,7 @@ namespace RedBaron {
                                 if(memory.Length+count>1024*1024)throw new InvalidDataException("Release metadata is too large.");
                                 memory.Write(buffer,0,count);
                             }
-                            return Parse(System.Text.Encoding.UTF8.GetString(memory.ToArray()));
+                            return ParseFeed(System.Text.Encoding.UTF8.GetString(memory.ToArray()));
                         }
                     }
                 } catch(WebException error) {
@@ -70,6 +70,18 @@ namespace RedBaron {
                     throw new IOException("Could not reach GitHub. Check your internet connection and try again.",error);
                 }
             });
+        }
+        static Version ReleaseVersion(ReleaseInfo release) {
+            Version version;
+            if(release==null || release.draft || !Regex.IsMatch(release.tag_name??"",@"\Av\d+\.\d+(\.\d+)?\z") ||
+               !Version.TryParse(release.tag_name.Substring(1),out version))return null;
+            return version;
+        }
+        public static ReleaseAsset ParseFeed(string json) {
+            var releases=Json.Serializer.Deserialize<ReleaseInfo[]>(json);
+            if(releases==null)throw new InvalidDataException("Invalid release list.");
+            var newest=releases.Where(r=>ReleaseVersion(r)!=null).OrderByDescending(r=>ReleaseVersion(r)).FirstOrDefault();
+            return newest==null?null:Parse(Json.Serializer.Serialize(newest));
         }
         public static Task<string> Download(ReleaseAsset asset,string root) {
             return DownloadCore(asset,root,Request);

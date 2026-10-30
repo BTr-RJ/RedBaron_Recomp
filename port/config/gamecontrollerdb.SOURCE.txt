@@ -1,14 +1,13 @@
 SDL_GameControllerDB
-Projeto: https://github.com/mdqinc/SDL_GameControllerDB
+Project: https://github.com/mdqinc/SDL_GameControllerDB
 Download: 2026-10-28
-Arquivo: https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt
-Licenca: https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/LICENSE
-Licenca local: gamecontrollerdb.LICENSE.txt (zlib)
-SHA256 do gamecontrollerdb.txt:
+File: https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt
+License: https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/LICENSE
+Local license: gamecontrollerdb.LICENSE.txt (zlib)
+SHA256 of gamecontrollerdb.txt:
 0f17831b6a9e0e9fc2f52bf8ab1bef1d30ffd307d966c2118e556db345ea7e96
-Tamanho: 610126 bytes
-Entradas de todas as plataformas: 2280
-Entradas com platform:Windows,: 869
-O SDL seleciona as entradas aplicaveis; o numero informado em runtime pode ser
-menor e nao representa uma contagem de modelos fisicos testados.
-Conteudo do banco e da licenca mantidos sem modificacoes.
+Size: 610126 bytes
+All-platform entries: 2280
+Entries with platform:Windows,: 869
+SDL selects applicable entries. Counts do not represent physically tested models.
+The database and license are unchanged.

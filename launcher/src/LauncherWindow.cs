@@ -66,6 +66,7 @@ namespace RedBaron {
                 if(capture==null && (e.Key==Key.F11 || (e.Key==Key.Escape && layout.Fullscreen))) {layout.Toggle();e.Handled=true;}
             };
             ConfigureGrid();
+            Choices("GameLanguage",new[]{new Choice("English",1),new Choice("Français",4),new Choice("Deutsch",3),new Choice("Italiano",6),new Choice("日本語",2),new Choice("Português",9),new Choice("Español",5)},s.GameLanguage);
             Choices("Player",Enumerable.Range(1,4).Select(i=>new Choice("Player "+i,i-1)),0);
             Choices("KeyboardPlayer",new[]{new Choice("Share with player 1",0),new Choice("Disabled",-1),new Choice("Exclusive · player 1",1),new Choice("Exclusive · player 2",2),new Choice("Exclusive · player 3",3),new Choice("Exclusive · player 4",4)},s.KeyboardPlayer);
             Choices("Resolution",Settings.Resolutions.Select(r=>new Choice(r.Replace("x"," × "),r)),s.Resolution);
@@ -76,7 +77,7 @@ namespace RedBaron {
             Choices("Anisotropic",new[]{new Choice("Game default",-1),new Choice("Off",0),new Choice("1×",1),new Choice("2×",2),new Choice("4×",3),new Choice("8×",4),new Choice("16×",5)},s.Anisotropic);
             ApplySettings();
             foreach(var name in new[]{"SourcePath","DlcSource","DestinationPath","SdkPath","PlayerName"}) Text(name).TextChanged+=(sender,e)=>{Changed();UpdateInstallAction();if(sender==Text("PlayerName")) ValidateName();};
-            foreach(var name in new[]{"Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","DlssMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
+            foreach(var name in new[]{"GameLanguage","Resolution","DisplayMode","RenderScale","FrameRate","FsrSharpness","DlssMode","Anisotropic","Antialiasing","Upscaling","Gpu","KeyboardPlayer"}) Combo(name).SelectionChanged+=(sender,e)=>Changed();
             Combo("Gpu").SelectionChanged+=(sender,e)=> {
                 if(loading || caps.flags.Count==0) return;
                 var selected=Val(Combo("Upscaling"));
@@ -130,6 +131,7 @@ namespace RedBaron {
             Text("SourcePath").Text=settings.Source;Text("DestinationPath").Text=settings.Destination;Text("SdkPath").Text=settings.Sdk;
             Text("DlcSource").Text=settings.DlcSource;
             Text("PlayerName").Text=settings.PlayerName;
+            Select("GameLanguage",settings.GameLanguage);
             Check("ShowLauncher").IsChecked=settings.ShowLauncher; Check("DesktopShortcut").IsChecked=settings.DesktopShortcut;Check("Vsync").IsChecked=settings.Vsync;Check("ShowFps").IsChecked=settings.ShowFps;Check("Hdr").IsChecked=settings.Hdr;
             Select("Resolution",settings.Resolution);Select("DisplayMode",settings.Fullscreen?1:0);
             Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);Select("DlssMode",settings.DlssMode);
@@ -191,6 +193,7 @@ namespace RedBaron {
             settings.Source=Text("SourcePath").Text.Trim();settings.Destination=Text("DestinationPath").Text.Trim();settings.Sdk=Text("SdkPath").Text.Trim();
             settings.DlcSource=Text("DlcSource").Text.Trim();
             settings.PlayerName=Text("PlayerName").Text;settings.ShowLauncher=Check("ShowLauncher").IsChecked==true;
+            settings.GameLanguage=Number(Combo("GameLanguage"));
             settings.DesktopShortcut=Check("DesktopShortcut").IsChecked==true;settings.Vsync=Check("Vsync").IsChecked==true;settings.ShowFps=Check("ShowFps").IsChecked==true;settings.Hdr=Check("Hdr").IsChecked==true;
             settings.Resolution=Val(Combo("Resolution"));settings.Fullscreen=Number(Combo("DisplayMode"))==1;
             settings.DlssMode=Val(Combo("DlssMode"));settings.Scale=Number(Combo("RenderScale"));settings.Fps=Number(Combo("FrameRate"));settings.FsrSharpness=Number(Combo("FsrSharpness"));

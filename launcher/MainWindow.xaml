@@ -173,13 +173,15 @@
           <TextBlock Text="Current version" Margin="0,0,0,7"/><TextBlock Text="0.10 — test build" FontSize="16" Margin="0,0,0,22"/>
           <TextBlock Name="UpdateState" Text="Checking for releases…" Style="{StaticResource Muted}" Margin="0,0,0,18"/>
           <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenLogs" Content="Open logs folder" Margin="0,0,0,8"/></WrapPanel>
-          <TextBlock Text="No game files are included in the download. Public releases are not available until the project is ready." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
+          <TextBlock Text="Updates include the port and installer. You provide the game files. Report test-build issues on GitHub." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
         </StackPanel></ScrollViewer>
       </TabItem>
     </TabControl>
     <Border Grid.Row="2" Background="#1C2028" BorderBrush="#343E4C" BorderThickness="0,1,0,0" Padding="28,16,28,20">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="110"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
-        <StackPanel Margin="0,0,18,0"><TextBlock Name="Status" Text="Loading settings…" TextWrapping="Wrap" Foreground="#B7C6BC" Margin="0,0,0,10"/><CheckBox Name="ShowLauncher" Content="Show launcher next time"/><TextBlock Text="Hold Shift while opening the shortcut to return to settings." Foreground="#AEB9CA" FontSize="11" Margin="0,6,0,0"/></StackPanel>
+        <StackPanel Margin="0,0,18,0"><TextBlock Name="Status" Text="Loading settings…" TextWrapping="Wrap" Foreground="#B7C6BC" Margin="0,0,0,10"/>
+          <WrapPanel VerticalAlignment="Center"><StackPanel Width="210" Margin="0,0,18,10"><Label Content="Game language" Target="{Binding ElementName=GameLanguage}" Foreground="#F1F3F7" Padding="0" Margin="0,0,0,6"/><ComboBox Name="GameLanguage" AutomationProperties.Name="Game language" ToolTip="Changes game text the next time you start the game."/></StackPanel><CheckBox Name="ShowLauncher" Content="Show launcher next time" VerticalAlignment="Center" Margin="0,18,0,10"/></WrapPanel>
+          <TextBlock Text="Hold Shift while opening the shortcut to return to settings." Foreground="#AEB9CA" FontSize="11" Margin="0,0,0,0"/></StackPanel>
         <Button Name="Save" Grid.Column="1" Content="Save" VerticalAlignment="Center" Margin="0,0,12,0" MinHeight="44"/>
         <Button Name="Play" Grid.Column="2" Content="Play" Style="{StaticResource Primary}" VerticalAlignment="Center" FontSize="17" MinHeight="44"/>
       </Grid>

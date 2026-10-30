@@ -134,7 +134,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/snoopyflyingace.toml")
     configure_file(config/snoopyflyingace.toml
         "${CMAKE_CURRENT_BINARY_DIR}/snoopyflyingace.toml" COPYONLY)
 endif()
-foreach(input_asset gamecontrollerdb.txt gamecontrollerdb.LICENSE.txt CONTROLES.txt)
+foreach(input_asset gamecontrollerdb.txt gamecontrollerdb.LICENSE.txt CONTROLS.txt)
     configure_file("config/${input_asset}"
         "${CMAKE_CURRENT_BINARY_DIR}/${input_asset}" COPYONLY)
 endforeach()

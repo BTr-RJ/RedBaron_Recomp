@@ -29,6 +29,8 @@ namespace RedBaron {
         public bool ShowLauncher { get; set; }
         public bool DesktopShortcut { get; set; }
         public string PlayerName { get; set; }
+        public int GameLanguage { get; set; }
+        public static readonly int[] GameLanguages = {1,4,3,6,2,9,5};
         public bool LanEnabled { get; set; }
         public string LanPeer { get; set; }
         public string OnlineServer { get; set; }
@@ -55,6 +57,7 @@ namespace RedBaron {
         public List<Player> Players { get; set; }
         public Settings() {
             Version = 1; ShowLauncher = true; PlayerName = "Player";
+            GameLanguage = 1;
             LanPeer = "255.255.255.255";
             OnlineServer = ""; OnlineMode = "multiplayer"; OnlineLocalPlayers = 1;
             Resolution = "1280x720"; Fullscreen = true; Vsync = true;
@@ -100,6 +103,8 @@ namespace RedBaron {
                 s.ShowFps = t.Bool("redbaron_show_fps", s.ShowFps);
                 s.Hdr = t.Bool("present_hdr", s.Hdr);
                 s.PlayerName = t.String("redbaron_player_name", s.PlayerName);
+                s.GameLanguage = t.Int("user_language", s.GameLanguage);
+                if(!GameLanguages.Contains(s.GameLanguage))s.GameLanguage=1;
                 s.LanEnabled = t.Bool("redbaron_lan", s.LanEnabled);
                 s.LanPeer = t.String("redbaron_lan_peer", s.LanPeer);
                 s.EosAccount = t.Bool("redbaron_eos_account", s.EosAccount);
@@ -139,6 +144,7 @@ namespace RedBaron {
             if (octets.Length != 4 || octets.Any(part => !Regex.IsMatch(part, @"\A(0|[1-9][0-9]{0,2})\z") || !Byte.TryParse(part, out octet)) || LanPeer == "0.0.0.0")
                 throw new InvalidDataException("LAN host: enter an IPv4 address, or 255.255.255.255 for automatic discovery.");
             if (!DlssModes.Contains(DlssMode)) throw new InvalidDataException("Choose a DLSS quality mode from the list.");
+            if (!GameLanguages.Contains(GameLanguage)) throw new InvalidDataException("Choose a supported game language from the list.");
             if (!Regex.IsMatch(PlayerName ?? "", @"^[A-Za-z0-9](?:[A-Za-z0-9 _-]{0,13}[A-Za-z0-9_-])?$"))
                 throw new InvalidDataException("Name: use 1–15 characters; letters A–Z, numbers, internal spaces, hyphens or underscores.");
             if (!Resolutions.Contains(Resolution))
@@ -186,6 +192,7 @@ namespace RedBaron {
                 {"mnk_mode", Bool(KeyboardPlayer >= 0)}, {"mnk_mouse","false"},
                 {"redbaron_keyboard_player",Math.Max(0,KeyboardPlayer).ToString()},
                 {"redbaron_player_name",Json.Quote(PlayerName)},
+                {"user_language",GameLanguage.ToString()}, {"redbaron_skip_splash","true"},
                 {"redbaron_lan", Bool(LanEnabled)}, {"redbaron_lan_peer",Json.Quote(LanPeer)},
                 {"redbaron_pad_slots",Json.Quote(String.Join(";",Players.Select(p => p.Device))) }
             };

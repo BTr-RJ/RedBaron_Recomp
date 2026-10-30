@@ -1,9 +1,8 @@
 # Video / GPU — 29 October 2026
 
 The launcher and the local runtime now expose spatial FSR 1/CAS, monitor VSync,
-internal render scaling, FXAA and anisotropic filtering. This is a development
-build, not the completed installer release. FSR 3.1.5 Super Resolution is now
-available as an opt-in experimental preview. NVIDIA DLSS Super Resolution is also available as an experimental preview. HDR10 output and an FPS counter are implemented. Four-player multiplayer and online remain deferred.
+internal render scaling, FXAA and anisotropic filtering. These options are included in the v0.10 public test release. FSR 3.1.5 Super Resolution is now
+available as an opt-in experimental preview. NVIDIA DLSS Super Resolution is also available as an experimental preview. HDR10 output and an FPS counter are implemented. See [EOS](EOS.md) and [Multiplayer](MULTIPLAYER.md) for current testing limits.
 
 ## Available settings
 
@@ -219,11 +218,9 @@ or bilinear remain available. No FSR/DLSS frame generation.
 - Local evidence is in ignored `prioridade4_video/`; game screenshots and binaries
   must not enter Git history.
 
-No official Release is published. Before packaging the launcher as the official
-installer, finish and validate the agreed video features, package extraction and
-tool preparation, and test installation/play on a clean Windows environment.
-The installer currently requires extracted game files and an installed compatible
-SDK/toolchain. Online and local multiplayer have become the current priority; see MULTIPLAYER.md.
+The v0.10 public test installers include these video updates, content-package
+extraction and automatic tool preparation. A clean Windows 11 installation has
+been exercised; broad GPU/gameplay validation remains a community test item.
 
 The FPS overlay now includes the actual HDR10/SDR output state, taken from
 successful swap-chain color-space negotiation. The preference alone does not
@@ -232,10 +229,12 @@ lighting. The game cursor is hidden in fullscreen and restored in windowed mode.
 
 ## Stability changes (2026-10-30)
 
-The startup splash skip now uses a strong guest entry point so direct generated
-calls cannot bypass it. It advances the image index past the sequence before
-the original update/draw logic runs, preserving loading completion. The probe
-does not link this guest-only entry point.
+The startup image sequence is cleared in its initialization entry point
+before its first frame; the update/draw entry also enforces the skip. Old
+`redbaron_skip_splash=false` preferences cannot re-enable the broken images.
+Original renderer/loading initialization and completion remain intact. The probe
+does not link these guest-only entry points. Both release installers compile
+these hooks into the game.
 
 `rexglue-temporal-stability.patch` removes the depth-only DLSS foreground bias
 mask, handles repeated guest frames whose presentation output resource changed,

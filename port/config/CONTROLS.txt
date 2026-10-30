@@ -1,0 +1,46 @@
+SNOOPY FLYING ACE / RedBaron_Recomp - PC CONTROLS
+
+Use the FlyingAce preset. Other native presets change button functions.
+Mouse movement does not steer or move the camera.
+
+ACTION                         KEYBOARD / MOUSE           XBOX
+Aircraft direction             W A S D                    Left stick
+Loop / split-S                 Up / Down arrows           Right stick
+Roll left / right              Left / Right arrows        Right stick
+Primary weapon                 Left click or J            RT
+Secondary weapon               Right click or K           LT
+Switch weapon                  Q or middle click          LB (or native B)
+Boost / confirm                Space                      A
+Brake / menu option            C                          X
+Action / leave aircraft        E                          Y
+Look behind                    Hold R                     RB
+Pause / start                  Enter or Esc               Menu / Start
+Statistics                     Tab                        View / Back
+Back in menus                  Backspace                  B
+Cancel turret zoom             V                          Right stick press
+Left stick press               F                          Left stick press
+Directional pad                Numpad 8 / 2 / 4 / 6       D-pad
+
+MENUS
+WASD navigates; Space confirms; Backspace goes back. Esc sends Start.
+F4 opens runtime configuration; do not assign it to a gameplay action.
+
+CUSTOMIZATION
+Use the launcher Controls tab. Advanced bindings can be edited with the game
+closed in snoopyflyingace.toml. Comma alternatives such as "LMB,J" accept either.
+Mouse buttons: LMB/RMB/MMB; wheel/side buttons are not mapped. Avoid modifier
+chords for simultaneous flight inputs. Keep mnk_mouse=false. mnk_mode=false
+disables keyboard routing.
+
+LOCAL PLAY
+SDL maps supported controllers to Xbox positions. Xbox Series is the physical
+reference. Other controllers/adapters need testing. Community mappings retain
+their accompanying zlib license.
+
+Keyboard/mouse share player 1 by default. For controller plus keyboard local
+play, select Exclusive player 2 for keyboard, controller on player 1. Save and
+restart before joining. Four input profiles do not create four cameras: native
+local gameplay currently supports two. Avoid virtual controller duplicates.
+
+Mapping source: https://github.com/mdqinc/SDL_GameControllerDB
+License: gamecontrollerdb.LICENSE.txt

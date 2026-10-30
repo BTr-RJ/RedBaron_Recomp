@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation guide
+    url: https://github.com/BTr-RJ/RedBaron_Recomp/blob/main/docs/INSTALLATION.md
+    about: Read requirements and troubleshooting first.

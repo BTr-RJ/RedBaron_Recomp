@@ -16,7 +16,7 @@ REXCVAR_DEFINE_BOOL(redbaron_show_fps, false, "Video",
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 REXCVAR_DEFINE_BOOL(redbaron_skip_splash, true, "Video",
-                    "Skip the incorrectly rendered startup images")
+                    "Legacy setting; startup splash images are always disabled")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 REXCVAR_DEFINE_UINT32(
@@ -27,6 +27,7 @@ REXCVAR_DEFINE_UINT32(
 
 #ifndef REDBARON_NO_GUEST_SPLASH
 extern "C" void __imp__sub_829AE1D8(PPCContext&, uint8_t*);
+extern "C" void __imp__sub_821E0AE8(PPCContext&, uint8_t*);
 #endif
 
 namespace redbaron {
@@ -233,7 +234,25 @@ void InstallVideoHooks(rex::Runtime &runtime) {
 // entry, including the first startup frame before a dispatcher hook can run.
 #ifndef REDBARON_NO_GUEST_SPLASH
 extern "C" void sub_829AE1D8(PPCContext& ctx, uint8_t* base) {
-  if (REXCVAR_GET(redbaron_skip_splash)) redbaron::SkipSplash(ctx, base);
-  else __imp__sub_829AE1D8(ctx, base);
+  redbaron::SkipSplash(ctx, base);
+}
+
+// Disable the image sequence before the first update or presentation. Keep the
+// original renderer/loading initialization and its return value intact.
+extern "C" void sub_821E0AE8(PPCContext& ctx, uint8_t* base) {
+  const auto object=ctx.r3.u32;
+  __imp__sub_821E0AE8(ctx,base);
+  if(ctx.r3.u32 && object) {
+    const auto address=[base](uint32_t guest) {
+#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && REX_ARCH_ARM64)
+      return base+guest+(guest>=0xE0000000u?0x1000u:0u);
+#else
+      return base+guest;
+#endif
+    };
+    *reinterpret_cast<volatile uint32_t*>(address(object+10120))=0;
+    *reinterpret_cast<volatile uint32_t*>(address(object+10124))=0;
+    REXLOG_INFO("Startup splash image sequence removed before its first frame");
+  }
 }
 #endif

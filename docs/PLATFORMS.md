@@ -1,21 +1,7 @@
-# Linux, Android e crossplay
+# Supported platforms
 
-O pedido de ports Linux e Android está em investigação. O projeto atual entrega
-somente Windows; não há builds jogáveis nem crossplay validados para as outras
-plataformas. A primeira versão pública de testes pretendida é 0.10, após cumprir
-e testar o escopo solicitado.
+**v0.10 supports Windows x64 only.** The game uses Direct3D 12; the launcher uses WPF/.NET Framework 4.8. No supported Linux/Android binaries exist.
 
-O [ReXGlue](https://github.com/rexglue/rexglue-sdk/wiki/Getting-Started) oferece
-configuração de build Linux e o [libdatachannel](https://github.com/paullouisageneau/libdatachannel)
-suporta Linux e Android. Isso não torna automaticamente portáveis as adaptações
-locais: o transporte usa WinHTTP e Winsock, o launcher é WPF e partes do vídeo,
-instalador e ferramentas auxiliares dependem de Windows. O SDK modificado precisa
-ser compilado e testado com Vulkan no Linux. Android exige também integração com
-ciclo de vida, armazenamento, entrada e renderização móvel; não existe build
-Android neste repositório.
+Linux needs replacements for Windows networking/helpers, Vulkan integration and another launcher. Android also needs ARM64 build support, mobile graphics, lifecycle, storage and input work. A cross-platform EOS SDK does not make the rest of the port portable automatically.
 
-Crossplay deve manter o mesmo protocolo e regras da sessão em todas as plataformas,
-com arquivos do jogo fornecidos pelo jogador em cada dispositivo. Sua validação
-exige clientes reais nas plataformas participantes, além de uma sala e relay
-disponíveis pela Internet. Este computador de desenvolvimento não tem WSL
-instalado, e a ferramenta ADB não foi encontrada para testar um dispositivo Android.
+Cross-platform gameplay is future work requiring real clients. The Windows package is not a PS5, Linux or Android application.

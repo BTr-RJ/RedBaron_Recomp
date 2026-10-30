@@ -92,6 +92,14 @@ namespace RedBaron {
                 Assert(updated.IndexOf("redbaron_pad_slots")<updated.IndexOf("[custom]"),"New settings ended up in a table");
                 Assert(s.RuntimeText(updated)==updated,"Saving twice is not idempotent");
                 results.Add("TOML: preserve unknown settings/tables, bind roundtrip, idempotence, ROV");
+                foreach(int language in Settings.GameLanguages) {
+                    s.GameLanguage=language;
+                    var text=new Toml(s.RuntimeText("user_language=1\nredbaron_skip_splash=false\ncustom_option=7\n"));
+                    Assert(text.Int("user_language",0)==language,"Game language was not saved");
+                    Assert(text.Bool("redbaron_skip_splash",false) && text.Int("custom_option",0)==7,"Splash removal or unrelated setting changed");
+                }
+                s.GameLanguage=99;Reject(()=>s.Validate(),"Unsupported game language accepted");s.GameLanguage=1;
+                results.Add("Game language: seven native locales, invalid-value rejection and permanent splash skip");
                 s.Resolution="7680x4320";s.Scale=6;s.Vsync=false;s.FsrSharpness=50;
                 var video=new Toml(s.RuntimeText("draw_resolution_scale_x = 2\ndraw_resolution_scale_y = 3\nvsync = false\n"));
                 Assert(video.Int("window_width",0)==7680 && video.Int("window_height",0)==4320,"8K output not saved");
@@ -163,6 +171,9 @@ namespace RedBaron {
                     name="RedBaron_Recomp-v0.11-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
                     browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip"}}};
                 Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Valid release rejected");
+                release.prerelease=true;
+                Assert(Updates.ParseFeed(Json.Serializer.Serialize(new[]{new ReleaseInfo {tag_name="v99.0",draft=true},release}))!=null,"Published test-release updates were not discovered");
+                release.prerelease=false;
                 release.assets[0].browser_download_url="https://example.org/update.zip";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Untrusted update host accepted");
                 release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip";

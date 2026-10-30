@@ -1,73 +1,50 @@
 # RedBaron_Recomp
 
-Port nativo experimental de **Snoopy Flying Ace** para Windows x64, usando ReXGlue SDK / RexAuto 0.10.0. O executável de desenvolvimento é `snoopyflyingace.exe`. O XEX local identifica o título como `584109B5`.
+A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built with ReXGlue/ReXAuto.
 
-## Estado atual
+**v0.10 is a public testing release.** The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
 
-- Build Release funcional, com renderização 3D, áudio e controle Xbox confirmados pelo usuário.
-- Licença completa configurada no runtime; o usuário confirmou que “Unlock Full Game” desapareceu.
-- Duplo clique com descoberta automática da pasta `game` ao lado de `build_cpp_release`.
-- Direct3D 12 em ROV, configuração necessária para o 3D funcionar nesta máquina.
-- Mapeamento inicial de teclado e cliques do mouse, sem movimento de câmera pelo mouse.
-- Backend SDL e base adicional de controles incluídos. O controle Microsoft foi reconhecido; outros modelos ainda exigem teste físico.
-- Roteamento opcional para separar teclado/mouse de controles por jogador. Perfis adicionais e partidas locais ainda dependem de implementação; veja [o diagnóstico de multiplayer](docs/MULTIPLAYER.md).
+[Download v0.10](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.10) | [Installation](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
-O [launcher Windows](launcher/README.md) oferece **Install, Video, Controls, Online e Update**, Save/Play e abertura direta opcional. O instalador utiliza dados locais já extraídos; builds com SDK embutido preparam ferramentas ausentes. Oito instâncias online e dois jogadores locais com bots foram exercitados no mesmo computador; quatro locais, testes pela Internet e rollback continuam pendentes. Som e Conquistas permanecem planejados. Veja o [roadmap](docs/ROADMAP.md) e o [registro das alterações](docs/ESTADO_ATUAL.md).
+## Install and play
 
-## Conteúdo do repositório
+1. Download **RedBaron_Recomp-v0.10-windows-x64.zip** and extract it. Choose the larger **offline** ZIP for bundled build tools; both contain the same port.
+2. Open **RedBaron_Launcher.exe**. In **Install**, select your extracted game folder / `default.xex`, or the compatible original Xbox 360 content package (including packages without an extension).
+3. Optionally select your **DLC files** folder. Select a new, empty installation folder and click **Install**. Missing tools are detected and downloaded, or installed from the offline package. Allow the Microsoft installer elevation prompt if requested.
+4. Wait for extraction, code generation and compilation. Successful installation removes temporary build files and preserves reusable tools, saves and logs.
+5. Choose **Game language**, video settings and controls, then **Save** and **Play**. Epic sign-in enables online features; offline play remains available if authentication is unavailable.
 
-| Pasta | Conteúdo |
-|---|---|
-| `port/src` | Inicialização e ajustes específicos do jogo |
-| `port/config` | Configuração padrão, guia de controles e base SDL com licença |
-| `port/generated/rexglue.cmake` | Integração CMake do toolkit, sem código derivado do jogo |
-| `port/*.toml` | Manifesto e correções de agrupamento de funções |
-| `patches` | Patch do codegen do SDK para os saltos entre chunks |
-| `docs` | Estado validado, limitações e planejamento |
-| `scripts` | Preparação/build local e auditoria do conteúdo versionado |
-| `launcher` | Interface WPF, instalador, preferências, captura de teclas e testes |
+To add DLCs later, select the DLC folder in the installed launcher and click Install. An existing installation receives only the DLCs; the game is not recompiled. DLC files are supplied separately by the player.
 
-O GitHub não distribui o jogo: XEX, assets, ícones extraídos e C++ gerado a partir do XEX ficam apenas na máquina do usuário. SDK instalado, builds, saves, caches, logs e backups também são locais. O histórico publicado é filtrado para excluir fontes derivados, ícones e cópias antigas desses arquivos; o histórico original completo fica em backup local.
+See the [full installation guide](docs/INSTALLATION.md) for requirements, controls, updates, saves and logs.
 
-## Compilar
+## Features
 
-Ambiente utilizado: Windows x64, LLVM/Clang 23.1.4, CMake, Ninja e SDK experimental ReXGlue/RexAuto 0.10.0. O SDK instalado fica em `sdk_experimental`; seu código-fonte é mantido separadamente. Veja [as instruções do patch](patches/README.md).
+- English launcher with installation progress, tool detection, optional shortcut and GitHub update checks.
+- Seven original game languages: English, French, German, Italian, Japanese, Portuguese and Spanish. Select in the launcher and restart the game. The startup splash image sequence is disabled.
+- Keyboard/mouse-button and SDL controller mapping, device assignment and separate keyboard player selection. Mouse movement does not steer the aircraft.
+- Output resolutions through 4K and beyond, windowed/borderless fullscreen, render scaling, VSync, anisotropic filtering, FXAA and an in-game FPS counter.
+- Higher frame-rate targets with an engine/physics timing correction. Targets above 120 FPS remain experimental.
+- Spatial FSR/CAS, experimental FSR 3.1.5 and NVIDIA DLSS Super Resolution/DLAA quality presets. No frame generation.
+- Optional HDR10 output with Windows HDR enabled; the source image is SDR converted to HDR10.
+- EOS P2P transport, public/private lobbies, native matchmaking and Epic friends/invites through the official overlay. Public PvP Quick Game searches compatible modes and chooses the lowest measured reachable ping.
+- Native achievement and leaderboard integration backed by EOS. The catalog is read from the player's local game metadata.
+- Local two-player split-screen and bots. Co-op remains limited to two participants. Supported competitive online sessions have capacity for up to eight.
 
-```text
-RedBaron_Recomp/
-  port/
-  game/                 # default.xex e demais dados extraídos, fornecidos localmente
-  sdk_experimental/     # SDK instalado: bin/, include/, lib/
-  build_cpp_release/    # gerado pelo CMake
-```
+## Testing status and known limitations
 
-Forneça seus dados extraídos em `game/` e instale o SDK em `sdk_experimental/`. Na raiz do projeto, em PowerShell, com as ferramentas no PATH:
+A clean Windows 11 installation and an Internet lobby/flight between two PCs have been exercised. This does **not** establish complete coverage of every mode, eight simultaneous human players, invitation acceptance, end-of-round statistics or achievement synchronization.
 
-```powershell
-.\scripts\build.ps1
-.\launcher\build.ps1
-```
+- Four configurable controller profiles do not enable four cameras. **Four-player local play is not implemented.**
+- Friends/overlay require Epic Account Services authorization. Public access/brand review has not been verified; accounts outside the developer organization or approved test accounts may be restricted. Sign-in failures do not prevent offline play.
+- Temporal upscaling may show HUD shimmer, ghosting and moving-object artifacts. HUD separation and full object motion vectors remain unfinished. Bilinear, FSR 1 or CAS provide alternatives.
+- Leaderboard writes, friend filters, full pagination and weekly rollover need gameplay testing. Weekly periods require service-side administration. Historic Xbox Live scores are not imported.
+- Only Windows x64 is supported. Linux, Android and cross-platform play are future work.
 
-O script valida os caminhos, preserva um backup do build existente, gera os fontes **localmente antes de configurar o CMake**, compila e copia as DLLs. Aceita `-SdkRoot`, `-BuildDirectory`, `-Parallel` e `-ConfigureOnly`. Ele usa dados já extraídos; extração de pacotes no instalador do launcher é uma etapa futura.
+Read [Online](docs/EOS.md), [Multiplayer](docs/MULTIPLAYER.md), [Video](docs/VIDEO.md) and [Leaderboards](docs/LEADERBOARDS.md). Report reproducible problems through [Issues](https://github.com/BTr-RJ/RedBaron_Recomp/issues), with version, hardware and a redacted log. Do not attach game files, EOS configuration or authentication data.
 
-O SDK deve conter o patch experimental compatível com o manifesto e os agrupamentos deste projeto. Um SDK genérico sem esse ajuste pode voltar a produzir erros de labels. Para compilações incrementais após a preparação, use `cmake --build build_cpp_release --target snoopyflyingace --parallel 4`.
+## Build and contribute
 
-## Executar e configurar
+The installer is recommended for players. Developers can follow [Building from source](docs/BUILDING.md). Generated game sources, assets, installed SDKs, saves and credentials are excluded from Git. SDK changes are maintained as [patches](patches/README.md).
 
-Abra `launcher/out/RedBaron_Launcher.exe` para configurar e jogar. A abertura de `build_cpp_release/snoopyflyingace.exe` continua disponível. Mantenha ao lado do jogo as DLLs, `redbaron_probe.exe`, `snoopyflyingace.toml` e `gamecontrollerdb.txt`.
-
-- Edite `build_cpp_release/snoopyflyingace.toml` para ajustes pessoais.
-- `port/config/snoopyflyingace.toml` é o padrão versionado, instalado somente quando o build ainda não tem configuração.
-- Preserve `render_target_path_d3d12 = "rov"` e `mnk_mouse = false`.
-- Consulte [CONTROLES.txt](port/config/CONTROLES.txt), cuja tabela usa o preset **FlyingAce**.
-- O CMake copia o guia e a base SDL e preserva configurações pessoais existentes.
-
-Multiplayer e funções online adicionais ainda dependem de implementação. Não há integração de conquistas com serviços de PC.
-
-## Histórico e componentes
-
-Cada alteração concluída deve receber um commit com descrição do comportamento e da validação, preservando o build funcional. As instruções de trabalho estão em [AGENTS.md](AGENTS.md).
-
-Antes de enviar commits, execute `python scripts/audit_repository.py`. A auditoria verifica os caminhos e tipos de arquivos de todos os commits alcançáveis pelas referências Git, não somente a pasta atual. Ela complementa a revisão humana da origem de arquivos novos.
-
-A base comunitária [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) tem sua [licença zlib](port/config/gamecontrollerdb.LICENSE.txt) e [origem/hash](port/config/gamecontrollerdb.SOURCE.txt) incluídos. Os demais componentes conservam seus avisos e licenças originais.
+See [Contributing](CONTRIBUTING.md) and [Credits](CREDITS.md). This is an independent fan project, not an official release or endorsement by the original game's rights holders or service vendors.

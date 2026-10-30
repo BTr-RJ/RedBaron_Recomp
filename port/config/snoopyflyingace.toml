@@ -1,25 +1,27 @@
-# Snoopy Flying Ace - configuracao carregada ao abrir o executavel.
-# Preserve ROV: o modo automatico/RTV deixa a cena 3D branca na NVIDIA.
+# Default configuration; existing personal settings are preserved.
+# Keep ROV: automatic/RTV can render white 3D on NVIDIA.
 render_target_path_d3d12 = "rov"
+user_language = 1
+redbaron_skip_splash = true
 
-# Controle fisico e teclado/mouse compartilham o jogador 1.
+# Controller and keyboard/mouse share player 1 by default.
 redbaron_keyboard_player = 0
-# 1..4 reserva esse jogador para teclado/mouse e desloca os controles.
-# Apenas roteamento: perfis adicionais/multiplayer ainda em implementacao.
+# 1..4 reserves that slot for keyboard/mouse.
+# Four input profiles do not enable four local cameras.
 input_backend = "sdl"
 hid_mappings_file = "gamecontrollerdb.txt"
 mnk_mode = true
-# Movimento do mouse NAO controla camera/voo; cliques continuam ativos.
+# Mouse movement is disabled; buttons remain enabled.
 mnk_mouse = false
 
-# Layout do jogo: FlyingAce. Os nomes abaixo sao botoes do Xbox 360.
+# FlyingAce preset. Names refer to Xbox 360 buttons.
 keybind_lstick_up = "W"
 keybind_lstick_down = "S"
 keybind_lstick_left = "A"
 keybind_lstick_right = "D"
 keybind_lstick_press = "F"
 
-# Acrobacias no aviao; funcoes originais do analogico direito em outros modos.
+# Aircraft maneuvers / native right-stick actions.
 keybind_rstick_up = "Up"
 keybind_rstick_down = "Down"
 keybind_rstick_left = "Left"
@@ -38,7 +40,7 @@ keybind_start = "Return,Escape"
 keybind_back = "Tab"
 keybind_guide = ""
 
-# Direcional digital separado das setas de acrobacias (Num Lock ligado).
+# Separate digital D-pad (Num Lock enabled).
 keybind_dpad_up = "Numpad8"
 keybind_dpad_down = "Numpad2"
 keybind_dpad_left = "Numpad4"
