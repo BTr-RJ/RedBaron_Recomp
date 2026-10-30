@@ -1,5 +1,16 @@
 # Offline build tools
 
+## Official release variants
+
+User decision: publish both variants of each official Windows release. The default
+is the smaller installer, `RedBaron_Recomp-v<version>-windows-x64.zip`; it detects
+compatible installed tools and downloads only missing components. Offer
+`RedBaron_Recomp-v<version>-windows-x64-offline.zip` as the larger alternative with
+the same launcher plus all tool payloads. Both use the same inventory and game/DLC
+installation workflow. The updater selects the smaller standard asset by default.
+These names describe the future official release; current EOS test packages remain
+private and retain their private-test filenames.
+
 An offline package contains the launcher and its `Tools` directory in one ZIP.
 Extract the entire ZIP and run the launcher. No separate tool download is needed
 for the included build components. EOS multiplayer still requires Internet.
