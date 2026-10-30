@@ -1,9 +1,13 @@
 # Multiplayer local, LAN e salas online experimentais
 
 **Atualização EOS:** o jogo e o launcher agora incluem o provedor de matchmaking
-descrito em [EOS.md](EOS.md). Uma partida criada no menu foi anunciada no EOS
-real. Ingresso de outro usuário e tráfego EOS entre computadores ainda não foram
-validados; as evidências WebRTC abaixo não substituem essa validação.
+descrito em [EOS.md](EOS.md). Em 30/10/2026, dois PCs Windows em conexões de
+Internet diferentes entraram pelo menu em Team Dog Fight e chegaram ao voo.
+A segunda tentativa permaneceu em jogo por cerca de quatro minutos e meio,
+com entrada física no host, até o usuário interromper manualmente o teste.
+A primeira tentativa saiu após uma tela de placar, com causa ainda não determinada.
+Conclusão natural da rodada, combate nos dois lados e latência continuam pendentes.
+As evidências WebRTC abaixo são de testes anteriores e separados do EOS.
 
 ## Salas online em desenvolvimento
 

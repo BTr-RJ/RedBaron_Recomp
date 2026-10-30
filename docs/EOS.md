@@ -1,9 +1,11 @@
 # EOS e matchmaking dentro do jogo
 
 O provedor EOS agora está ligado ao executável e às chamadas nativas de rede.
-O menu do jogo publicou uma partida pública real no EOS; uma consulta separada
-encontrou o registro. Isso ainda **não valida uma partida entre dois usuários
-EOS**, conexões pela Internet ou relay. O release permanece pendente.
+Em 30/10/2026, dois PCs Windows em conexões de Internet diferentes chegaram ao
+lobby e ao voo de Team Dog Fight usando a busca nativa e o EOS. A segunda tentativa
+permaneceu em voo por cerca de quatro minutos e meio e foi interrompida manualmente
+pelo usuário. O encerramento completo da rodada e a qualidade do combate ainda
+precisam de validação. O release permanece pendente.
 
 ## Uso no ambiente de desenvolvimento
 
@@ -53,6 +55,23 @@ O guia está em [PRIVATE_TEST.md](PRIVATE_TEST.md). Play grava logs por sessão;
   como o co-op de dois, são mantidos. Bots não são convertidos em membros EOS.
 
 ## Evidências e limites
+
+Em 30/10/2026, no teste privado com o usuário:
+
+- O usuário confirmou que a instalação no segundo PC Windows 11 abriu o jogo.
+- A busca pelo menu conectou o segundo PC ao lobby público; os dois nomes e a
+  contagem regressiva apareceram no host. O usuário confirmou o voo na primeira
+  tentativa, que depois exibiu uma tela de placar e saiu do lobby; a causa dessa
+  primeira saída não foi determinada.
+- Na segunda tentativa, o host usou o executável de produção, sem o driver de
+  entrada de diagnóstico. SDL reconheceu controle Xbox e teclado/mouse no jogador 1.
+  O host exibiu o voo por cerca de quatro minutos e meio, sem saída de participante
+  registrada nesse intervalo. A sessão terminou com a mensagem Disconnected;
+  o usuário confirmou que havia interrompido manualmente o teste.
+- Logs e capturas permanecem locais em `prioridade3_multiplayer/`, fora do Git.
+  Não houve medição de latência, identificação do caminho direto/relay dessa
+  partida, confirmação do combate nos dois lados nem conclusão natural da rodada.
+  Este teste não valida oito jogadores reais, co-op ou todos os recursos EOS.
 
 Em 29/10/2026:
 
