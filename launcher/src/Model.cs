@@ -81,6 +81,7 @@ namespace RedBaron {
                 }
             }
             s.Root = Path.GetFullPath(root);
+            if(!File.Exists(file) && File.Exists(s.EosConfig))s.EosEnabled=true;
             s.Source = s.Source ?? Path.Combine(root, "game");
             s.Sdk = s.Sdk ?? Path.Combine(root, "sdk_experimental");
             s.Destination = s.Destination ?? "";

@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([string]$OutputDirectory = '', [string]$SdkRoot = '', [string]$SdkSourceRoot = '')
+param([string]$OutputDirectory = '', [string]$SdkRoot = '', [string]$SdkSourceRoot = '',
+    [string]$PrivateEosConfig = '')
 $ErrorActionPreference = 'Stop'
 if(!$OutputDirectory){$OutputDirectory=Join-Path $PSScriptRoot 'out'}
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
@@ -90,6 +91,19 @@ $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf
     ('/resource:' + (Join-Path $PSScriptRoot 'bootstrap-tools.ps1') + ',BootstrapTools.ps1'),
     ('/resource:' + (Join-Path $PSScriptRoot 'App.config') + ',App.config'))
 if($sdkBundle){$arguments+=('/resource:'+$sdkArchive+',Sdk.zip')}
+if($PrivateEosConfig) {
+    if(!$sdkBundle -or !(Test-Path -LiteralPath (Join-Path $SdkRoot 'lib/redbaron_eos_service.lib'))){throw 'The private online installer requires the EOS provider bundle.'}
+    $PrivateEosConfig=[IO.Path]::GetFullPath($PrivateEosConfig)
+    $values=@{}
+    foreach($line in [IO.File]::ReadAllLines($PrivateEosConfig)) {
+        if(!$line -or $line.StartsWith('#')){continue}
+        if($line -notmatch '^(product_id|sandbox_id|deployment_id|client_id|client_secret)=([!-~]{1,256})$' -or $values.ContainsKey($Matches[1])){throw 'Invalid private EOS configuration.'}
+        $values[$Matches[1]]=$true
+    }
+    if($values.Count -ne 5){throw 'Incomplete private EOS configuration.'}
+    $arguments+=('/resource:'+$PrivateEosConfig+',PrivateEosConfig.ini')
+    Write-Output 'Building a private online test installer. Keep the resulting binary/package private.'
+}
 $arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }

@@ -101,4 +101,30 @@ if(!$compiler -or !$sdkFound) {
     if($process.ExitCode -notin @(0,3010)){throw "Microsoft Build Tools installation failed: $($process.ExitCode)"}
     if($process.ExitCode -eq 3010){throw 'Windows requires a restart to finish installing Build Tools. Restart and run installation again.'}
 }
+$compiler=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+if(!$compiler){throw 'Visual C++ Build Tools could not be located after installation.'}
+$devCommand=Join-Path $compiler 'Common7/Tools/VsDevCmd.bat'
+if(!(Test-Path -LiteralPath $devCommand)){throw 'The Visual C++ build environment is missing.'}
+$selectedToolBins=@('cmake','ninja','clang++') | ForEach-Object {Split-Path -Parent (Get-Command $_ -ErrorAction Stop).Source} | Select-Object -Unique
+# Import the environment into this installation process. Ninja needs rc.exe,
+# headers and libraries even when clang is already present on the machine.
+$environmentProcess=New-Object Diagnostics.Process
+$environmentProcess.StartInfo=New-Object Diagnostics.ProcessStartInfo
+$environmentProcess.StartInfo.FileName=$env:ComSpec
+$environmentProcess.StartInfo.Arguments='/d /s /c ""'+$devCommand+'" -no_logo -arch=x64 -host_arch=x64 >nul && set"'
+$environmentProcess.StartInfo.UseShellExecute=$false
+$environmentProcess.StartInfo.CreateNoWindow=$true
+$environmentProcess.StartInfo.RedirectStandardOutput=$true
+$environmentProcess.Start() | Out-Null
+$environmentText=$environmentProcess.StandardOutput.ReadToEnd()
+$environmentProcess.WaitForExit()
+if($environmentProcess.ExitCode -ne 0){throw 'Unable to prepare the Visual C++ build environment.'}
+$environmentProcess.Dispose()
+foreach($line in $environmentText.Split([char]10)){
+    $line=$line.TrimEnd([char]13)
+    $split=$line.IndexOf('=')
+    if($split -gt 0){[Environment]::SetEnvironmentVariable($line.Substring(0,$split),$line.Substring($split+1),'Process')}
+}
+$env:PATH=($selectedToolBins -join ';')+';'+$env:PATH
+foreach($tool in @('cmake','ninja','clang++','rc.exe')){Get-Command $tool -ErrorAction Stop | Out-Null}
 Write-Output 'Build tools are ready.'

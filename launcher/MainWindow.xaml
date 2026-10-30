@@ -202,9 +202,9 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Project updates" Style="{StaticResource Heading}"/>
           <TextBlock Text="Check GitHub for a published RedBaron_Recomp release. The downloaded package is verified using GitHub's SHA-256 before it is saved." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
-          <TextBlock Text="Current version" Margin="0,0,0,7"/><TextBlock Text="Development build" FontSize="16" Margin="0,0,0,22"/>
+          <TextBlock Text="Current version" Margin="0,0,0,7"/><TextBlock Text="0.10 — test build" FontSize="16" Margin="0,0,0,22"/>
           <TextBlock Name="UpdateState" Text="Checking for releases…" Style="{StaticResource Muted}" Margin="0,0,0,18"/>
-          <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Margin="0,0,0,8"/></WrapPanel>
+          <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenLogs" Content="Open logs folder" Margin="0,0,0,8"/></WrapPanel>
           <TextBlock Text="No game files are included in the download. Public releases are not available until the project is ready." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
         </StackPanel></ScrollViewer>
       </TabItem>

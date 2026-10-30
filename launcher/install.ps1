@@ -7,7 +7,8 @@ param(
     [Parameter(Mandatory=$true)][string]$LauncherExe,
     [string]$SdkArchive = '',
     [string]$BootstrapScript = '',
-    [string]$LauncherConfig = ''
+    [string]$LauncherConfig = '',
+    [string]$OnlineConfig = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -121,6 +122,13 @@ try {
     & (Join-Path $Destination 'scripts/build.ps1') -SdkRoot $Sdk -Parallel 4
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/snoopyflyingace.exe'))) { throw 'The build did not produce the game executable.' }
     if (!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/redbaron_probe.exe'))) { throw 'The hardware detector is missing after the build.' }
+    if($OnlineConfig) {
+        if(!(Test-Path -LiteralPath (Join-Path $Destination 'build_cpp_release/EOSSDK-Win64-Shipping.dll'))){throw 'The online runtime is missing after the build.'}
+        $onlineDirectory=Join-Path $Destination 'build_cpp_release/eos'
+        New-Item -ItemType Directory -Path $onlineDirectory -Force | Out-Null
+        Copy-Item -LiteralPath $OnlineConfig -Destination (Join-Path $onlineDirectory 'config.ini')
+        Write-Output 'Online configuration installed. Matchmaking is available from the game menu.'
+    }
     Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $Destination 'RedBaron_Launcher.exe')
     if(!$LauncherConfig){$LauncherConfig=$LauncherExe+'.config'}
     if(!(Test-Path -LiteralPath $LauncherConfig -PathType Leaf)){throw 'Launcher configuration resource is missing.'}

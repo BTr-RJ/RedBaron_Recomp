@@ -149,6 +149,10 @@ namespace RedBaron {
             if(IsGameRunning(s)) throw new InvalidOperationException("The game is already running.");
             var arguments=new List<string>{"--game_data_root="+Path.Combine(s.Root,"game")};
             arguments.AddRange(EosArguments(s,onlineArguments!=null));
+            string logs=Path.Combine(s.Root,"launcher-data","logs");Directory.CreateDirectory(logs);
+            string log=Path.Combine(logs,"game-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
+            arguments.Add("--log_file="+log);
+            AtomicFile.Write(Path.Combine(logs,"last-session.json"),Json.Serializer.Serialize(new {version=Updates.CurrentVersion,startedUtc=DateTime.UtcNow.ToString("o"),eos=s.EosEnabled,gameLog=log}));
             if(onlineArguments!=null)arguments.AddRange(onlineArguments);
             var info=new ProcessStartInfo(s.Exe,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);
@@ -188,8 +192,17 @@ namespace RedBaron {
             record("Log: "+logfile);
             var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe,"-LauncherConfig",appConfig,"-BootstrapScript",bootstrap};
             if(sdkArchive.Length!=0){arguments.Add("-SdkArchive");arguments.Add(sdkArchive);}
+            using(var online=Assembly.GetExecutingAssembly().GetManifestResourceStream("PrivateEosConfig.ini")) {
+                if(online!=null) {
+                    string config=Path.Combine(job,"eos-config.ini");
+                    using(var output=File.Create(config))online.CopyTo(output);
+                    arguments.Add("-OnlineConfig");arguments.Add(config);
+                }
+            }
             int code=await RunAsync(powershell,arguments,s.Root,record,token);
             if(code!=0) throw new IOException("Installation failed. See the log for details; your source files were preserved.");
+            string installedLogs=Path.Combine(s.Destination,"launcher-data","logs");Directory.CreateDirectory(installedLogs);
+            File.Copy(logfile,Path.Combine(installedLogs,"installation.log"),true);
         }
         public static async Task InstallDlc(Settings s,string source,Action<string> log,CancellationToken token) {
             if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before installing downloadable content.");

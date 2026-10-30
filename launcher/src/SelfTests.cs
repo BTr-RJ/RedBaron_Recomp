@@ -127,15 +127,20 @@ namespace RedBaron {
                 Assert(eosArgs.Length==2 && eosArgs[0]=="--redbaron_eos_config="+loaded.EosConfig && eosArgs[1]=="--redbaron_online_players=2","EOS launch arguments are incorrect");
                 Reject(()=>Services.EosArguments(loaded,true),"Concurrent EOS and WebRTC providers accepted");
                 loaded.EosEnabled=false;Assert(Services.EosArguments(loaded,false).Length==0,"Disabled EOS emitted launch arguments");
+                var freshOnline=new Settings {Root=Path.Combine(directory,"fresh online installation")};
+                Directory.CreateDirectory(Path.GetDirectoryName(freshOnline.EosConfig));File.WriteAllText(freshOnline.EosConfig,"fixture");
+                Assert(Settings.Load(freshOnline.Root).EosEnabled,"Fresh online installation did not enable EOS");
+                freshOnline.EosEnabled=false;Json.Write(freshOnline.FileName,freshOnline);
+                Assert(!Settings.Load(freshOnline.Root).EosEnabled,"Existing offline preference was overwritten");
                 Services.Save(loaded,caps);
                 results.Add("EOS: capability gating, missing components, saved preference, launch arguments and provider exclusivity");
-                var release=new ReleaseInfo{tag_name="v0.10",assets=new[]{new ReleaseAsset {
-                    name="RedBaron_Recomp-v0.10-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
-                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.10/RedBaron_Recomp-v0.10-windows-x64.zip"}}};
+                var release=new ReleaseInfo{tag_name="v0.11",assets=new[]{new ReleaseAsset {
+                    name="RedBaron_Recomp-v0.11-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
+                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip"}}};
                 Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Valid release rejected");
                 release.assets[0].browser_download_url="https://example.org/update.zip";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Untrusted update host accepted");
-                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.10/RedBaron_Recomp-v0.10-windows-x64.zip";
+                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip";
                 release.assets[0].digest="sha256:bad";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Unverified update accepted");
                 release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=600L*1024*1024;

@@ -20,6 +20,14 @@ A opção fica desmarcada por padrão; o comportamento offline/LAN anterior é
 preservado. EOS e uma sala WebRTC não podem ser ativados simultaneamente.
 O launcher pode fechar depois de abrir o jogo: o provedor roda no jogo.
 
+Para o teste privado autorizado em dois PCs, `scripts/package-private-test.ps1`
+recebe o caminho do INI local e cria um instalador com esse recurso embutido.
+Ele instala o INI junto ao runtime e habilita EOS automaticamente na primeira
+configuração, preservando a opção de ficar offline em perfis já salvos. Esse
+artefato fica local e privado; não é um pacote autorizado para publicação.
+O guia está em [PRIVATE_TEST.md](PRIVATE_TEST.md). Play grava logs por sessão;
+**Update → Open logs folder** abre a pasta para o diagnóstico.
+
 ## Implementação
 
 - `port/eos/online_service.*`: worker dedicado para autenticação por dispositivo,

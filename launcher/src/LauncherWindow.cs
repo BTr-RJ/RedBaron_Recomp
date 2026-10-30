@@ -112,6 +112,7 @@ namespace RedBaron {
             Button("CheckUpdates").Click+=async(sender,e)=>await CheckForUpdates();
             Button("DownloadUpdate").Click+=async(sender,e)=>await DownloadUpdate();
             Button("OpenUpdates").Click+=(sender,e)=>{if(updateFolder!=null)Process.Start("explorer.exe",Services.QuoteArgument(updateFolder));};
+            Button("OpenLogs").Click+=(sender,e)=>{try {string logs=Path.Combine(settings.Root,"launcher-data","logs");Directory.CreateDirectory(logs);Process.Start("explorer.exe",Services.QuoteArgument(logs));}catch(Exception error){Status(error.Message,true);}};
             Button("RestoreBindings").Click+=(sender,e)=>{settings.Players[playerIndex].Bindings=Actions.Defaults();ShowPlayer();Changed();};
             window.PreviewKeyDown+=CaptureKey;
             window.PreviewMouseDown+=CaptureMouse;

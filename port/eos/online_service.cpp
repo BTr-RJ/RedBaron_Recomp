@@ -93,7 +93,10 @@ struct OnlineService::Impl {
   }
   static void EOS_CALL Found(const EOS_LobbySearch_FindCallbackInfo* data) {
     auto& s=*static_cast<Impl*>(data->ClientData);s.searching=false;++s.generation;
-    if(data->ResultCode==EOS_EResult::EOS_Success && !s.closing)s.directory.Refresh(s.search);
+    if(data->ResultCode==EOS_EResult::EOS_Success && !s.closing) {
+      s.directory.Refresh(s.search);
+      s.Log("EOS directory refreshed: "+std::to_string(s.directory.entries().size())+" public session(s)");
+    }
     else s.Log("EOS room search failed (code "+std::to_string(int(data->ResultCode))+")");
   }
   void Find() {
@@ -191,6 +194,7 @@ struct OnlineService::Impl {
   static void EOS_CALL MemberChanged(const EOS_Lobby_LobbyMemberStatusReceivedCallbackInfo* data) {
     auto& s=*static_cast<Impl*>(data->ClientData);
     if(!data->LobbyId || s.room!=data->LobbyId)return;
+    s.Log("EOS membership status changed: "+std::to_string(int(data->CurrentStatus)));
     s.next_roster={};
     if(data->CurrentStatus!=EOS_ELobbyMemberStatus::EOS_LMS_JOINED) {
       // Revoke stale routes immediately, before the replacement roster arrives.
@@ -335,7 +339,7 @@ struct OnlineService::Impl {
         if(Clock::now()>=next_search)Find();
         r->records=Records(r->title);r->Finish(true);
       } else if(r->kind==Kind::Connect) {
-        if(addressed && addressed->Ready(uint16_t(r->address))){r->Finish(true);continue;}
+        if(addressed && addressed->Ready(uint16_t(r->address))){Log("EOS room admission ready; native game socket may connect");r->Finish(true);continue;}
         if(!r->started)StartJoin(r);
         if(join->state()==LobbyJoin::State::Failed){r->Finish(false);client=false;}
       } else if(r->kind==Kind::Probe) {
