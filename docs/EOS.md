@@ -9,23 +9,29 @@ precisam de validação. O release permanece pendente.
 
 ## Uso no ambiente de desenvolvimento
 
-Na aba Online do launcher, marcar **Enable online play through Epic Online
-Services**, salvar e clicar em Play. No jogo, usar **Online → Player Match →
-Find Game**, escolhendo o mesmo modo. O comportamento original cria uma
-partida pública quando a busca não encontra outra adequada. O anfitrião
-precisa manter o jogo aberto. Clientes usam o menu, sem endereço de servidor
-ou convite do launcher.
+A aba Online do launcher contém somente o nome do jogador. EOS e login Epic
+são automáticos; Play usa o bootstrapper oficial e verifica os componentes Epic.
+O primeiro login pode exigir autenticação e consentimento. Os campos antigos de
+salas WebRTC, servidor, LAN e ativação de EOS foram retirados.
+
+RT no hangar/lobby abre o painel social Epic em vez da tela interna de amigos
+Xbox 360. Em uma sessão publicada, selecionar um amigo e a opção de convite do
+overlay. Private Match publica uma sala EOS somente por convite com as vagas
+privadas nativas. Player Match continua oferecendo descoberta pública. Seu
+hangar anterior a Find Game ainda não publica uma sessão de jogo: selecionar
+ou criar a partida para habilitar o convite da sessão.
 
 O arquivo local `build_cpp_release/eos/config.ini` contém a configuração do
 produto. Não enviar seu conteúdo ao Git, logs, mensagens ou pacotes públicos.
-A opção fica desmarcada por padrão; o comportamento offline/LAN anterior é
-preservado. EOS e uma sala WebRTC não podem ser ativados simultaneamente.
+Configurações antigas não desativam EOS durante a migração. Falha de conexão
+ou login mantém o jogo local disponível. O acesso social público fora da
+organização ainda depende da configuração/aprovação de marca do aplicativo EAS.
 O launcher pode fechar depois de abrir o jogo: o provedor roda no jogo.
 
 Para o teste privado autorizado em dois PCs, `scripts/package-private-test.ps1`
 recebe o caminho do INI local e cria um instalador com esse recurso embutido.
 Ele instala o INI junto ao runtime e habilita EOS automaticamente na primeira
-configuração, preservando a opção de ficar offline em perfis já salvos. Esse
+configuração, migrando os perfis antigos para o provedor automático. Esse
 artefato fica local e privado; não é um pacote autorizado para publicação.
 O guia está em [PRIVATE_TEST.md](PRIVATE_TEST.md). Play grava logs por sessão;
 **Update → Open logs folder** abre a pasta para o diagnóstico.
@@ -107,10 +113,26 @@ Em 29/10/2026:
   completaram os ecos TCP/UDP reais. Foram oito participantes do transporte;
   esse teste não substitui oito pessoas executando o jogo.
 
-Permanecem necessários: partida completa com dois executáveis em redes distintas,
-desconexão/reentrada durante gameplay e teste de oito jogadores no jogo
-e co-op. Amigos Epic, convites privados EOS, ranking, voz, rollback e ports
-Linux/Android não estão implementados por esta integração.
+Validação social de 30/10/2026:
+
+- Login Epic e overlay oficial executados com a conta do proprietário.
+- RT no Private Match abriu diretamente o overlay. Ele exibiu a sala com 1/8
+  participantes e a ação “Convidar para o jogo” para um amigo. Nenhum convite
+  foi enviado a pessoas durante o diagnóstico.
+- O runtime confirmou 12/12 conquistas nativas e consultou o progresso EOS.
+  Três exemplos do portal são ignorados pela sincronização autoral, mas ainda
+  podem aparecer no overlay do servidor. Não foram concedidas conquistas falsas.
+- O código recebe convites EOS e encaminha a sessão ao fluxo nativo. O ingresso
+  por convite entre duas contas reais permanece sem validação.
+- Testes cobrem RT por borda, preservação da arma durante voo, precedência da
+  sessão sobre a party persistente, vagas privadas e pacote nativo de convite.
+  A política de menor ping possui teste; a detecção do Quick Game sem filtro
+  de modo ainda precisa ser conferida no menu real.
+
+Permanecem necessários: convite/entrada de duas contas reais, conquista obtida
+normalmente, rodada completa até o placar, oito jogadores e co-op. Ranking,
+voz, rollback e ports Linux/Android não estão implementados por esta integração.
+O release público permanece pendente.
 
 ## Compilação e instalador
 

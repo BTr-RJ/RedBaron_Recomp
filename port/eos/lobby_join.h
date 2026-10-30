@@ -15,7 +15,7 @@ struct LobbyJoinApi {
 class LobbyJoin {
  public:
   enum class State {Idle,Joining,Joined,Leaving,Failed};
-  LobbyJoin(EOS_HLobby lobby,EOS_ProductUserId user,LobbyJoinApi api={});
+  LobbyJoin(EOS_HLobby lobby,EOS_ProductUserId user,LobbyJoinApi api={},bool presence=false);
   ~LobbyJoin();
   LobbyJoin(const LobbyJoin&)=delete;
   LobbyJoin& operator=(const LobbyJoin&)=delete;
@@ -35,6 +35,7 @@ class LobbyJoin {
   std::string id_;
   State state_=State::Idle;
   EOS_EResult error_=EOS_EResult::EOS_Success;
+  bool presence_=false;
 };
 // Resolves a directory address and transfers its search-result handle to join.
 bool JoinSelected(uint16_t address,const DirectoryMapping& mapping,LobbyDirectory& directory,LobbyJoin& join);

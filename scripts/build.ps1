@@ -70,7 +70,7 @@ Invoke-CheckedNative 'cmake' @('--build', $BuildDirectory, '--target', 'snoopyfl
 foreach ($name in @('rexruntime.dll', 'rexgpu-xenos.dll')) {
     Copy-Item -LiteralPath (Join-Path $SdkRoot ('bin/' + $name)) -Destination $BuildDirectory
 }
-foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt')) {
+foreach ($name in @('amd_fidelityfx_upscaler_dx12.dll', 'FidelityFX-LICENSE.txt', 'nvngx_dlss.dll', 'NVIDIA-DLSS-LICENSE.txt', 'RedBaron_Online.exe', 'RedBaron_Online.ini', 'EpicOnlineServicesInstaller.exe')) {
     $dependency = Join-Path $SdkRoot ('bin/' + $name)
     if (Test-Path -LiteralPath $dependency) { Copy-Item -LiteralPath $dependency -Destination $BuildDirectory }
 }

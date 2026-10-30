@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <utility>
 namespace redbaron::eos {
-LobbyJoin::LobbyJoin(EOS_HLobby lobby,EOS_ProductUserId user,LobbyJoinApi api):lobby_(lobby),user_(user),api_(api) {
+LobbyJoin::LobbyJoin(EOS_HLobby lobby,EOS_ProductUserId user,LobbyJoinApi api,bool presence):lobby_(lobby),user_(user),api_(api),presence_(presence) {
   if(!lobby || !EOS_ProductUserId_IsValid(user) || !api.join || !api.leave || !api.release)
     throw std::invalid_argument("Invalid lobby join configuration");
 }
@@ -12,6 +12,7 @@ bool LobbyJoin::Start(std::string id,EOS_HLobbyDetails details) {
   id_=std::move(id);details_=details;error_=EOS_EResult::EOS_Success;state_=State::Joining;
   EOS_Lobby_JoinLobbyOptions options{};options.ApiVersion=EOS_LOBBY_JOINLOBBY_API_LATEST;
   options.LobbyDetailsHandle=details_;options.LocalUserId=user_;
+  options.bPresenceEnabled=presence_?EOS_TRUE:EOS_FALSE;
   api_.join(lobby_,&options,this,Joined);return true;
 }
 void EOS_CALL LobbyJoin::Joined(const EOS_Lobby_JoinLobbyCallbackInfo* data) {

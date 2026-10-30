@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     return 3;
   std::ostringstream json;
 #ifdef REDBARON_EOS_ENABLED
-  json << "{\"version\":1,\"eosAvailable\":true,\"flags\":{";
+  json << "{\"version\":1,\"eosAvailable\":true,\"eosSocial\":true,\"flags\":{";
 #else
   json << "{\"version\":1,\"eosAvailable\":false,\"flags\":{";
 #endif

@@ -1,0 +1,271 @@
+--- a/include/rex/system/xam/lan_lobby.h
++++ b/include/rex/system/xam/lan_lobby.h
+@@ -12,6 +12,8 @@
+   uint32_t title = 0, owner = 0;
+   std::array<uint8_t, 60> info{};
+   uint32_t open_public = 0, open_private = 0, filled_public = 0, filled_private = 0;
++  bool private_session = false; // Local metadata; never returned by public discovery.
++  uint64_t host_xuid = 0; // Native inviter identity; EOS record header extension.
+   std::map<uint32_t, uint32_t> contexts;
+   std::map<uint32_t, std::vector<uint8_t>> properties;
+ };
+@@ -46,11 +48,23 @@
+   virtual bool Connect(uint32_t guest_address) = 0;
+   virtual bool CanHost() const = 0;
+   virtual void Leave(const LanSessionId& session) = 0;
++  virtual bool ShowFriends(uint32_t) { return false; }
++  virtual bool ShowAchievements(uint32_t) { return false; }
++  virtual bool InputCaptured() const { return false; }
++  virtual void RankMatches(std::vector<LanRecord>&) {}
+ };
+ void LanSetOnlineProvider(std::shared_ptr<LanOnlineProvider> provider);
+ bool LanEnsureConnected(uint32_t guest_address);
+ uint32_t LanOnlinePlayerLimit();
+ void LanLeaveOnline(const LanSessionId& session);
++bool LanShowFriends(uint32_t user);
++bool LanShowAchievements(uint32_t user);
++bool LanInputCaptured();
++bool LanHasOnlineProvider();
++void LanSetGameLobby(const LanSessionId& session, uint32_t user, bool active, bool presence = false);
++void LanRemoveGameLobby(const LanSessionId& session);
++bool LanHandleLobbyInvite(uint32_t user, bool trigger_pressed);
++void LanRankMatches(std::vector<LanRecord>& records);
+ std::vector<LanRecord> LanLocalSnapshot();
+ LanQosResult LanLocalQos(const LanSessionId& session);
+ }
+--- a/include/rex/system/xsession.h
++++ b/include/rex/system/xsession.h
+@@ -21,6 +21,7 @@
+   std::mutex mutex_;
+   bool created_ = false;
+   bool advertised_ = false;
++  bool private_game_ = false;
+   uint32_t flags_ = 0, owner_ = 0, public_slots_ = 0, private_slots_ = 0, state_ = 0;
+   uint64_t nonce_ = 0;
+   std::array<uint8_t, 60> info_{};
+--- a/src/input/input_system.cpp
++++ b/src/input/input_system.cpp
+@@ -17,6 +17,7 @@
+ #include <rex/input/flags.h>
+ #include <rex/input/input_driver.h>
+ #include <rex/input/input_system.h>
++#include <rex/system/xam/lan_lobby.h>
+ #include <rex/input/mnk/mnk_input_driver.h>
+ #include <rex/input/nop/nop_input_driver.h>
+ #include <rex/input/sdl/sdl_input_driver.h>
+@@ -252,6 +253,9 @@
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
+   if (out_state) {
++    if (rex::system::xam::LanHandleLobbyInvite(user_index, merged.gamepad.right_trigger > 30))
++      merged.gamepad.right_trigger = 0;
++    if (rex::system::xam::LanInputCaptured()) merged.gamepad = {};
+     *out_state = merged;
+   }
+   return X_ERROR_SUCCESS;
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -14,6 +14,7 @@
+ #include <rex/string.h>
+ #include <rex/system/flags.h>
+ #include <rex/system/kernel_state.h>
++#include <rex/system/xam/lan_lobby.h>
+ 
+ #include <imgui.h>
+ 
+@@ -583,7 +584,12 @@
+ REX_EXPORT_STUB(__imp__XamNavigateBack);
+ REX_EXPORT_STUB(__imp__XamOverrideHudOpenType);
+ REX_EXPORT_STUB(__imp__XamShowAchievementDetailsUI);
+-REX_EXPORT_STUB(__imp__XamShowAchievementsUI);
++namespace rex::kernel::xam {
++u32 RedBaronShowAchievements_entry(u32 user, u64) {
++  return rex::system::xam::LanShowAchievements(user) ? 0 : 120;
++}
++}
++REX_EXPORT(__imp__XamShowAchievementsUI, rex::kernel::xam::RedBaronShowAchievements_entry);
+ REX_EXPORT_STUB(__imp__XamShowAchievementsUIEx);
+ REX_EXPORT_STUB(__imp__XamShowAndWaitForMessageBoxEx);
+ REX_EXPORT_STUB(__imp__XamShowAvatarAwardGamesUI);
+@@ -609,9 +615,14 @@
+ REX_EXPORT_STUB(__imp__XamShowFofUI);
+ REX_EXPORT_STUB(__imp__XamShowForcedNameChangeUI);
+ REX_EXPORT_STUB(__imp__XamShowFriendRequestUI);
+-REX_EXPORT_STUB(__imp__XamShowFriendsUI);
+-REX_EXPORT_STUB(__imp__XamShowFriendsUIp);
+-REX_EXPORT_STUB(__imp__XamShowGameInviteUI);
++namespace rex::kernel::xam {
++u32 RedBaronShowFriends_entry(u32 user) {
++  return rex::system::xam::LanShowFriends(user) ? 0 : 120;
++}
++}
++REX_EXPORT(__imp__XamShowFriendsUI, rex::kernel::xam::RedBaronShowFriends_entry);
++REX_EXPORT(__imp__XamShowFriendsUIp, rex::kernel::xam::RedBaronShowFriends_entry);
++REX_EXPORT(__imp__XamShowGameInviteUI, rex::kernel::xam::RedBaronShowFriends_entry);
+ REX_EXPORT_STUB(__imp__XamShowGameVoiceChannelUI);
+ REX_EXPORT_STUB(__imp__XamShowGamerCardUI);
+ REX_EXPORT_STUB(__imp__XamShowGamerCardUIForXUID);
+--- a/src/system/xam/lan_lobby.cpp
++++ b/src/system/xam/lan_lobby.cpp
+@@ -97,6 +97,9 @@
+   struct Qos { bool enabled = false; Bytes data; };
+   std::mutex mutex;
+   std::map<LanSessionId, LanRecord> records;
++  struct GameLobby { uint32_t user; bool active, presence; };
++  std::map<LanSessionId, GameLobby> game_lobbies;
++  std::array<bool, 4> invite_trigger{};
+   std::map<LanSessionId, Qos> qos;
+   std::array<LanRecord, 4> attributes;
+   Socket listener;
+@@ -138,7 +141,7 @@
+         uint32_t title = 0; Reader{query + 16, 4}.Get(title);
+         std::vector<LanRecord> snapshot;
+         { std::lock_guard lock(mutex); for (const auto& [id, saved] : records) {
+-            if (saved.title != title) continue;
++            if (saved.title != title || saved.private_session) continue;
+             auto copy = saved; copy.contexts = attributes[copy.owner].contexts; copy.properties = attributes[copy.owner].properties;
+             snapshot.push_back(std::move(copy));
+         } }
+@@ -222,6 +225,35 @@
+   lobby.records[Id(record)] = std::move(record); return true;
+ }
+ void LanRemove(const LanSessionId& id) { auto& s = State(); std::lock_guard lock(s.mutex); s.records.erase(id); }
++void LanSetGameLobby(const LanSessionId& id, uint32_t user, bool active, bool presence) {
++  auto& s = State(); std::lock_guard lock(s.mutex);
++  if (user < 4) s.game_lobbies[id] = {user, active, presence};
++}
++void LanRemoveGameLobby(const LanSessionId& id) {
++  auto& s = State(); std::lock_guard lock(s.mutex); s.game_lobbies.erase(id);
++}
++bool LanHandleLobbyInvite(uint32_t user, bool pressed) {
++  auto provider = online_provider.load();
++  if (!provider || user >= 4) return false;
++  bool open = false, consume = false;
++  {
++    auto& s = State(); std::lock_guard lock(s.mutex);
++    bool have_game = false, game_lobby = false, party_lobby = false;
++    for (const auto& [id, state] : s.game_lobbies) if (state.user == user) {
++      if (state.presence) party_lobby |= state.active;
++      else { have_game = true; game_lobby |= state.active; }
++    }
++    // The persistent hangar party survives during flight. An active gameplay
++    // session takes precedence so RT remains a weapon in the actual match.
++    const bool lobby = have_game ? game_lobby : party_lobby;
++    consume = lobby && pressed;
++    open = consume && !s.invite_trigger[user];
++    s.invite_trigger[user] = pressed;
++  }
++  // Do not hold the lobby lock while the EOS worker handles the UI request.
++  if (open && !provider->InputCaptured()) provider->ShowFriends(user);
++  return consume;
++}
+ bool LanQosListen(const LanSessionId& id, uint32_t flags, std::vector<uint8_t> data) {
+   if (!LanEnabled() || (flags & ~31u) || ((flags & 3) == 3) || data.size() > 1024) return false;
+   auto& s = State(); std::lock_guard lock(s.mutex);
+@@ -321,6 +353,22 @@
+ }
+ void LanSetOnlineProvider(std::shared_ptr<LanOnlineProvider> provider) { online_provider.store(std::move(provider)); }
+ uint32_t LanOnlinePlayerLimit() { return online_provider.load() ? 8 : 32; }
++bool LanHasOnlineProvider() { return bool(online_provider.load()); }
++bool LanShowFriends(uint32_t user) {
++  if (auto provider = online_provider.load()) return provider->ShowFriends(user);
++  return false;
++}
++bool LanShowAchievements(uint32_t user) {
++  if (auto provider = online_provider.load()) return provider->ShowAchievements(user);
++  return false;
++}
++bool LanInputCaptured() {
++  if (auto provider = online_provider.load()) return provider->InputCaptured();
++  return false;
++}
++void LanRankMatches(std::vector<LanRecord>& records) {
++  if (auto provider = online_provider.load()) provider->RankMatches(records);
++}
+ bool LanEnsureConnected(uint32_t address) {
+   auto provider = online_provider.load();
+   return !provider || provider->Connect(address);
+--- a/src/system/xsession.cpp
++++ b/src/system/xsession.cpp
+@@ -37,20 +37,26 @@
+   const uint32_t capacity = Read32(data + 24), address = Read32(data + 28);
+   if (!address || capacity < 8) return 0x80155207;
+   auto records = xam::LanSearch(kernel->title_id());
++  bool quick = kernel->title_id() == 0x584109B5;
++  for (uint32_t i = 0; i < context_count; ++i)
++    if (Read32(contexts + i * 8) == 0x800B && Read32(contexts + i * 8 + 4) != UINT32_MAX) quick = false;
+   if (!records.empty()) {
+     REXKRNL_DEBUG("LAN search procedure={} contexts={} properties={} users={} found={}", Read32(data), context_count, property_count, extended ? Read32(data + 32) : 0, records.size());
+     for (uint32_t i=0;i<context_count;++i) REXKRNL_DEBUG("LAN query context {:08X}={:08X}", Read32(contexts+i*8),Read32(contexts+i*8+4));
+     for (uint32_t i=0;i<property_count;++i) REXKRNL_DEBUG("LAN query property {:08X} type={} value={:08X}",Read32(properties+i*24),properties[i*24+8],Read32(properties+i*24+16));
+   }
+   std::erase_if(records, [&](const auto& record) {
++    if (record.private_session) return true;
+     if (extended && record.open_public + record.open_private < Read32(data + 32)) return true;
+     for (uint32_t i = 0; i < context_count; ++i) {
+       const auto id = Read32(contexts + i * 8), value = Read32(contexts + i * 8 + 4);
++      if (quick && id == 0x800B) continue;
+       auto found = record.contexts.find(id);
+       if (found == record.contexts.end() || found->second != value) return true;
+     }
+     for (uint32_t i = 0; i < property_count; ++i) {
+       auto* property = properties + i * 24; auto found = record.properties.find(Read32(property));
++      if (quick && Read32(property) != 0x10000033) continue;
+       if (found == record.properties.end()) return true;
+       const auto type = property[8]; const size_t count = type == 1 || type == 5 ? 4 : type == 2 || type == 3 || type == 7 ? 8 : 0;
+       // Flying Ace search procedure 1 requests capacity for the joining party
+@@ -64,6 +70,7 @@
+     }
+     return false;
+   });
++  if (quick) xam::LanRankMatches(records);
+   if (records.size() > limit) records.resize(limit);
+   uint32_t required = 8 + uint32_t(records.size()) * 92;
+   for (const auto& record : records) {
+@@ -100,6 +107,7 @@
+ XSession::XSession(KernelState* kernel) : XObject(kernel, kObjectType) {}
+ XSession::~XSession() {
+   xam::LanSessionId id; std::copy_n(info_.begin(), 8, id.begin());
++  xam::LanRemoveGameLobby(id);
+   if (created_ && (flags_ & 0x20)) xam::LanLeaveOnline(id);
+   if (advertised_) xam::LanRemove(id);
+   if (created_ && (flags_ & 1)) xam::LanQosListen(id, 16, {});
+@@ -140,15 +148,21 @@
+   };
+   const auto publish = [&] {
+     xam::LanSessionId id; std::copy_n(s.info_.begin(), 8, id.begin());
++    if (s.state_ == 4) xam::LanRemoveGameLobby(id);
++    else if (s.created_ && (s.flags_ & 0x20))
++      xam::LanSetGameLobby(id, s.owner_, s.state_ < 2, (s.flags_ & 0x800) != 0);
+     // Only public matchmaking games (0x08), not private games/presence parties,
+     // are returned by discovery. Gameplay transport uses peer networking (0x20).
+     if (!xam::LanEnabled() || !(s.flags_ & 1) || !(s.flags_ & 0x20) ||
+-        !(s.flags_ & 8) || !s.public_slots_ || s.state_ == 4 || (s.state_ == 2 && (s.flags_ & 0x400))) {
++        (!(s.flags_ & 8) && !(s.private_game_ && xam::LanHasOnlineProvider())) ||
++        (!s.public_slots_ && !s.private_slots_) || s.state_ == 4 || (s.state_ == 2 && (s.flags_ & 0x400))) {
+       if (s.advertised_) xam::LanRemove(id);
+       s.advertised_ = false; return;
+     }
+     xam::LanRecord record;
+     record.title = kernel->title_id(); record.owner = s.owner_; record.info = s.info_;
++    record.private_session = s.private_game_;
++    record.host_xuid = kernel->user_profile(s.owner_)->xuid();
+     record.filled_public = used(false); record.filled_private = used(true);
+     record.open_public = s.public_slots_ - record.filled_public;
+     record.open_private = s.private_slots_ - record.filled_private;
+@@ -177,6 +191,7 @@
+     auto* nonce = translate(Read32(data + 24), 8);
+     if (!info || !nonce) return X_ERROR_INVALID_PARAMETER;
+     s.flags_ = Read32(data + 4); s.owner_ = owner; s.public_slots_ = pub; s.private_slots_ = priv;
++    s.private_game_ = (s.flags_ & 0x29) == 0x21 && !(s.flags_ & 0x800);
+     std::random_device random;
+     s.nonce_ = (s.flags_ & 1) ? (uint64_t(random()) << 32) | random() : memory::load_and_swap<uint64_t>(nonce);
+     if (s.flags_ & 1) {
+@@ -246,6 +261,7 @@
+     }
+     if (pub + uint64_t(priv) > 32 || pub < used(false) || priv < used(true)) return X_ERROR_INVALID_PARAMETER;
+     s.flags_ = Read32(data + 4); s.public_slots_ = pub; s.private_slots_ = priv;
++      s.private_game_ = (s.flags_ & 0x29) == 0x21 && !(s.flags_ & 0x800);
+     REXKRNL_INFO("RedBaron session modify: flags={:08X} public={} private={}", s.flags_, pub, priv);
+     publish();
+     return X_ERROR_SUCCESS;

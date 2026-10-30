@@ -95,6 +95,9 @@ try {
     $eosPatch=Join-Path $project 'patches/rexglue-online-provider.patch'
     Native 'git' @('apply','--check','--ignore-space-change',$eosPatch)
     Native 'git' @('apply','--ignore-space-change',$eosPatch)
+    $socialPatch=Join-Path $project 'patches/rexglue-eos-social.patch'
+    Native 'git' @('apply','--check','--ignore-space-change',$socialPatch)
+    Native 'git' @('apply','--ignore-space-change',$socialPatch)
 } finally {Pop-Location}
 Native 'cmake' @('-S',$source,'-B',$build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release',
     '-DCMAKE_C_COMPILER=clang','-DCMAKE_CXX_COMPILER=clang++','-DCMAKE_C_FLAGS=-march=x86-64-v2',

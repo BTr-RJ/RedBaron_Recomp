@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -126,7 +126,7 @@ namespace RedBaron {
                 Directory.CreateDirectory(s.Build);
                 File.WriteAllText(s.Exe,"test sentinel, not executable");
                 File.WriteAllText(s.Toml,original);
-                var caps=new Capabilities();caps.flags["present_effect"]=new Flag{allowed=new[]{"bilinear"}};caps.flags["swap_post_effect"]=new Flag{allowed=new[]{"none","fxaa"}};
+                var caps=new Capabilities {eosAvailable=true,eosSocial=true};caps.flags["present_effect"]=new Flag{allowed=new[]{"bilinear"}};caps.flags["swap_post_effect"]=new Flag{allowed=new[]{"none","fxaa"}};
                 caps.flags["present_vsync"]=new Flag();
                 caps.flags["window_size_in_physical_pixels"]=new Flag();
                 s.Upscaling="dlss";Reject(()=>Services.Save(s,caps),"Unsupported DLSS accepted");
@@ -134,53 +134,31 @@ namespace RedBaron {
                 s.Upscaling="bilinear";Services.Save(s,caps);
                 var loaded=Settings.Load(s.Root);
                 Assert(loaded.PlayerName=="Player 2" && new Toml(File.ReadAllText(s.Toml)).String("redbaron_player_name","")=="Player 2","Player name did not reach runtime settings");
-                loaded.LanEnabled=true;loaded.LanPeer="192.168.1.20";
-                string beforeLan=File.ReadAllText(s.Toml);
-                Reject(()=>Services.Save(loaded,caps),"Old runtime accepted LAN play");
-                Assert(File.ReadAllText(s.Toml)==beforeLan,"Rejected LAN save changed the configuration");
-                caps.flags["redbaron_lan"]=new Flag();caps.flags["redbaron_lan_peer"]=new Flag();
+                loaded.LanEnabled=true;loaded.OnlineServer="ws://obsolete.invalid";loaded.OnlineMode="old-mode";
                 Services.Save(loaded,caps);
-                Assert(Settings.Load(s.Root).LanEnabled && Settings.Load(s.Root).LanPeer=="192.168.1.20","LAN settings did not roundtrip");
-                foreach(string invalid in new[]{"localhost","1.2.3","999.1.2.3","1.02.3.4","0.0.0.0","1.2.3.4\n"}) {
-                    loaded.LanPeer=invalid;Reject(()=>loaded.Validate(),"Invalid LAN IPv4 accepted");
-                }
-                loaded.LanPeer="255.255.255.255";loaded.LanEnabled=false;Services.Save(loaded,caps);
-                results.Add("LAN: runtime gating, IPv4 validation, persistence and rejected-save preservation");
-                foreach(string invalid in new[]{"http://example.org","ws://example.org:8787","wss://user:pass@example.org","wss://example.org/#fragment"})
-                    Reject(()=>Settings.ValidateOnlineServer(invalid,true),"Invalid room server accepted");
-                Reject(()=>Settings.ValidateOnlineServer("",true),"Missing room server accepted");
-                loaded.OnlineServer="wss://play.example.org/rooms";loaded.OnlineMode="coop";loaded.OnlineLocalPlayers=2;
-                Services.Save(loaded,caps);
-                var onlineLoaded=Settings.Load(s.Root);
-                Assert(onlineLoaded.OnlineServer==loaded.OnlineServer && onlineLoaded.OnlineMode=="coop" && onlineLoaded.OnlineLocalPlayers==2,"Online room settings did not roundtrip");
-                Assert(!File.ReadAllText(s.Toml).Contains("redbaron_p2p_namespace"),"Temporary room identity leaked into persistent game settings");
-                string invite=OnlineSession.Invitation("wss://play.example.org/rooms?region=sa","0123456789ABCDEF"), inviteServer;
-                Assert(OnlineSession.ParseInvitation(invite,out inviteServer)=="0123456789ABCDEF" && inviteServer=="wss://play.example.org/rooms?region=sa","Invitation did not roundtrip");
-                Assert(OnlineSession.ParseInvitation("0123456789abcdef",out inviteServer)=="0123456789ABCDEF" && inviteServer==null,"Plain room code did not roundtrip");
-                foreach(string invalidInvite in new[]{"", "redbaron://join/0123456789ABCDEF?server=ws%3A%2F%2Fevil.example", "redbaron://join/0123456789ABCDEF?server=wss%3A%2F%2Fexample.org&extra=1", "redbaron://join/invalid?server=wss%3A%2F%2Fexample.org"})
-                    Reject(()=>{string ignored;OnlineSession.ParseInvitation(invalidInvite,out ignored);},"Invalid invitation accepted");
-                results.Add("Online invitations: server and room roundtrip; empty and unsafe inputs rejected");
-                results.Add("Online: TLS URL validation, room preferences and temporary identity separation");
-                loaded.EosEnabled=true;
-                Reject(()=>Services.Save(loaded,caps),"Unsupported EOS build accepted");
-                caps.eosAvailable=true;
+                Assert(!loaded.LanEnabled && loaded.OnlineServer=="" && loaded.OnlineMode=="multiplayer","Legacy room options survived migration");
+                results.Add("Online: obsolete room and LAN preferences cannot block saving after migration");
+                string beforeOnline=File.ReadAllText(s.Toml);
+                caps.eosAvailable=false;Reject(()=>Services.Save(loaded,caps),"Unsupported EOS build accepted");
+                caps.eosAvailable=true;caps.eosSocial=false;Reject(()=>Services.Save(loaded,caps),"Missing Epic social runtime accepted");
+                Assert(File.ReadAllText(s.Toml)==beforeOnline,"Rejected online save changed runtime settings");
+                caps.eosSocial=true;
                 Reject(()=>Services.EosArguments(loaded,false),"Missing EOS installation accepted");
                 Directory.CreateDirectory(Path.GetDirectoryName(loaded.EosConfig));
                 File.WriteAllText(loaded.EosConfig,"test fixture, not credentials");
                 File.WriteAllText(Path.Combine(loaded.Build,"EOSSDK-Win64-Shipping.dll"),"test fixture");
-                Services.Save(loaded,caps);
-                Assert(Settings.Load(loaded.Root).EosEnabled,"EOS preference did not roundtrip");
+                loaded.OnlineLocalPlayers=2;Services.Save(loaded,caps);
                 var eosArgs=Services.EosArguments(loaded,false);
-                Assert(eosArgs.Length==2 && eosArgs[0]=="--redbaron_eos_config="+loaded.EosConfig && eosArgs[1]=="--redbaron_online_players=2","EOS launch arguments are incorrect");
+                Assert(eosArgs.Length==4 && eosArgs[0]=="--redbaron_eos_config="+loaded.EosConfig && eosArgs[1]=="--redbaron_online_players=2" && eosArgs[2]=="--redbaron_eos_account=true" && eosArgs[3]=="--redbaron_eos_enabled=true","Automatic EOS/Epic launch arguments are incorrect");
                 Reject(()=>Services.EosArguments(loaded,true),"Concurrent EOS and WebRTC providers accepted");
-                loaded.EosEnabled=false;Assert(Services.EosArguments(loaded,false).Length==0,"Disabled EOS emitted launch arguments");
-                var freshOnline=new Settings {Root=Path.Combine(directory,"fresh online installation")};
-                Directory.CreateDirectory(Path.GetDirectoryName(freshOnline.EosConfig));File.WriteAllText(freshOnline.EosConfig,"fixture");
-                Assert(Settings.Load(freshOnline.Root).EosEnabled,"Fresh online installation did not enable EOS");
-                freshOnline.EosEnabled=false;Json.Write(freshOnline.FileName,freshOnline);
-                Assert(!Settings.Load(freshOnline.Root).EosEnabled,"Existing offline preference was overwritten");
+                loaded.EosEnabled=false;loaded.EosAccount=false;
+                Assert(loaded.EosEnabled && loaded.EosAccount && Services.EosArguments(loaded,false).Length==4,"Obsolete opt-out flags disabled built-in EOS");
+                string obsoleteOnlineJson=Json.Serializer.Serialize(loaded).Replace("\"EosEnabled\":true","\"EosEnabled\":false").Replace("\"EosAccount\":true","\"EosAccount\":false");
+                File.WriteAllText(loaded.FileName,obsoleteOnlineJson);
+                Assert(Settings.Load(loaded.Root).EosEnabled && Settings.Load(loaded.Root).EosAccount,"Old opt-in settings were not migrated");
                 Services.Save(loaded,caps);
-                results.Add("EOS: capability gating, missing components, saved preference, launch arguments and provider exclusivity");
+                Assert(new Toml(File.ReadAllText(loaded.Toml)).Bool("redbaron_eos_enabled",false) && new Toml(File.ReadAllText(loaded.Toml)).Bool("redbaron_eos_account",false),"Built-in EOS preferences were not saved");
+                results.Add("EOS: automatic Epic sign-in, legacy profile migration, capability gating and launch arguments");
                 var release=new ReleaseInfo{tag_name="v0.11",assets=new[]{new ReleaseAsset {
                     name="RedBaron_Recomp-v0.11-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
                     browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip"}}};

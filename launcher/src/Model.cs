@@ -34,7 +34,10 @@ namespace RedBaron {
         public string OnlineServer { get; set; }
         public string OnlineMode { get; set; }
         public int OnlineLocalPlayers { get; set; }
-        public bool EosEnabled { get; set; }
+        // Keep old JSON fields readable while migrating every launcher profile
+        // to the single built-in online provider. There is no opt-in UI now.
+        public bool EosEnabled { get { return true; } set { } }
+        public bool EosAccount { get { return true; } set { } }
         public string Resolution { get; set; }
         public bool Fullscreen { get; set; }
         public bool Vsync { get; set; }
@@ -99,6 +102,8 @@ namespace RedBaron {
                 s.PlayerName = t.String("redbaron_player_name", s.PlayerName);
                 s.LanEnabled = t.Bool("redbaron_lan", s.LanEnabled);
                 s.LanPeer = t.String("redbaron_lan_peer", s.LanPeer);
+                s.EosAccount = t.Bool("redbaron_eos_account", s.EosAccount);
+                s.EosEnabled = t.Bool("redbaron_eos_enabled", s.EosEnabled);
                 s.Anisotropic = t.Int("anisotropic_override", s.Anisotropic);
                 s.Adapter = t.Int("d3d12_adapter", s.Adapter);
                 s.Scale = t.Int("resolution_scale", s.Scale);
@@ -125,9 +130,10 @@ namespace RedBaron {
             return s;
         }
         public void Validate() {
-            ValidateOnlineServer(OnlineServer, false);
-            if ((OnlineMode != "multiplayer" && OnlineMode != "coop") || OnlineLocalPlayers < 1 || OnlineLocalPlayers > 2)
-                throw new InvalidDataException("Choose an online mode and one or two local players.");
+            // Legacy room-server preferences are no longer part of the launcher.
+            // They must not prevent saving video/input/name changes after upgrade.
+            OnlineServer="";OnlineMode="multiplayer";LanEnabled=false;LanPeer="255.255.255.255";
+            OnlineLocalPlayers=Math.Max(1,Math.Min(2,OnlineLocalPlayers));
             string[] octets = (LanPeer ?? "").Split('.');
             byte octet;
             if (octets.Length != 4 || octets.Any(part => !Regex.IsMatch(part, @"\A(0|[1-9][0-9]{0,2})\z") || !Byte.TryParse(part, out octet)) || LanPeer == "0.0.0.0")
@@ -158,7 +164,7 @@ namespace RedBaron {
                 }
             }
         }
-        public string RuntimeText(string original) {
+        public string RuntimeText(string original,bool socialSupported=true) {
             Validate();
             var t = new Toml(original);
             var values = new Dictionary<string,string> {
@@ -183,6 +189,10 @@ namespace RedBaron {
                 {"redbaron_lan", Bool(LanEnabled)}, {"redbaron_lan_peer",Json.Quote(LanPeer)},
                 {"redbaron_pad_slots",Json.Quote(String.Join(";",Players.Select(p => p.Device))) }
             };
+            if(socialSupported) {
+                values["redbaron_eos_account"]=Bool(EosAccount);
+                values["redbaron_eos_enabled"]=Bool(EosEnabled);
+            }
             for (int p = 0; p < 4; p++) values["redbaron_pad_map_p"+(p+1)] = Json.Quote(String.Join(",", Players[p].Bindings.Select(b=>b.Pad.ToString())));
             foreach (var b in Players[Math.Max(0,KeyboardPlayer-1)].Bindings) values[b.Key] = Json.Quote(b.Keyboard ?? "");
             return t.Patch(values);

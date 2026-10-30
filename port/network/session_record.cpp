@@ -19,7 +19,9 @@ bool ValidSessionRecord(std::string_view hex) {
                                 (uint32_t(bytes[i+2])<<8)|uint32_t(bytes[i+3]);};
   const uint64_t slots=uint64_t(u32(80))+u32(84)+u32(88)+u32(92);
   const auto contexts=u32(96),properties=u32(100);
-  if(!u32(80) || slots>32 || contexts>32 || properties>32)return false;
+  // Invite-only native sessions have no public slots. They still need their
+  // original private slots in the EOS record used by the invitation join flow.
+  if(uint64_t(u32(80))+u32(84)==0 || slots>32 || contexts>32 || properties>32)return false;
   size_t pos=104;std::set<uint32_t> keys;
   for(uint32_t i=0;i<contexts;++i) {
     if(pos+8>bytes.size() || !keys.insert(u32(pos)).second)return false;

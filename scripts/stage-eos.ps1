@@ -20,4 +20,5 @@ if(!(Test-Path -LiteralPath $notices -PathType Leaf)){throw 'EOS third-party not
 $licenses=Join-Path $RuntimeSdk 'licenses/eos'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 Copy-Item -LiteralPath $notices -Destination $licenses -Force
+& (Join-Path $PSScriptRoot 'prepare-eos-social.ps1') -EosSdk $EosSdk -SdkRoot $RuntimeSdk
 Write-Output 'Online libraries and runtime staged. No product configuration or credentials were copied.'

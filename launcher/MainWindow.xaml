@@ -1,4 +1,4 @@
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RedBaron_Recomp" Width="1060" Height="820" MinWidth="920" MinHeight="680"
         WindowStartupLocation="CenterScreen" Background="#15191F" Foreground="#F1F3F7"
@@ -160,46 +160,10 @@
       <TabItem Header="Online">
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Online play" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Your player name is shown in game and in the room." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
+          <TextBlock Text="Your player name is shown in game." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
           <TextBlock Text="Player name" Margin="0,0,0,7"/>
           <TextBox Name="PlayerName" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="Online player name"/>
           <TextBlock Name="NameValidation" Text="1–15 characters: A–Z, numbers, internal spaces, hyphens or underscores." Style="{StaticResource Muted}" Margin="0,8,0,14"/>
-          <Border BorderBrush="#333D4B" BorderThickness="0,1,0,0" Padding="0,14,0,0"><StackPanel>
-            <TextBlock Text="In-game matchmaking" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14"/>
-            <CheckBox Name="EosEnabled" Content="Enable online play through Epic Online Services" Margin="0,0,0,10"/>
-            <TextBlock Text="Click Play, then open Online → Player Match in the game. Public matches are found in game without an invitation or a room server address. The host's game must stay open." Style="{StaticResource Muted}" Margin="0,0,0,10" MaxWidth="740" HorizontalAlignment="Left"/>
-            <TextBlock Name="EosState" Style="{StaticResource Muted}" Margin="0,0,0,14"/>
-            <TextBlock Text="Epic friends, private invitations and ranked services are not available in this test build." Style="{StaticResource Muted}" Margin="0,0,0,20"/>
-            <TextBlock Text="Players on this PC" Margin="0,0,0,7"/>
-            <ComboBox Name="OnlineLocalPlayers" Width="360" HorizontalAlignment="Left" AutomationProperties.Name="Local players in online room" Margin="0,0,0,20"/>
-            <Expander Header="Legacy WebRTC rooms" Foreground="#F1F3F7" Margin="0,0,0,20"><StackPanel Margin="0,12,0,0">
-            <TextBlock Text="Host: create a room and send the invitation to your friends. To join, paste the invitation below. A public room server is not available yet; the host must configure one." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
-            <Expander Header="Room server settings" Foreground="#F1F3F7" Margin="0,0,0,18"><StackPanel Margin="0,12,0,0">
-              <TextBlock Text="Room server address" Margin="0,0,0,7"/>
-              <TextBox Name="OnlineServer" MaxWidth="700" HorizontalAlignment="Stretch" MaxLength="512" AutomationProperties.Name="Room server address"/>
-              <TextBlock Text="Hosts enter their room server address here. Invitations fill this in for joining players." Style="{StaticResource Muted}" Margin="0,8,0,0"/>
-            </StackPanel></Expander>
-            <TextBlock Text="Room mode" Margin="0,0,0,7"/><ComboBox Name="OnlineMode" AutomationProperties.Name="Online room mode" Margin="0,0,0,18"/>
-            <TextBlock Text="Invitation or room code" Margin="0,0,0,7"/>
-            <TextBox Name="RoomCode" MaxWidth="700" HorizontalAlignment="Stretch" MaxLength="1024" AutomationProperties.Name="Invitation or room code"/>
-            <WrapPanel Margin="0,12,0,12">
-              <Button Name="CreateRoom" Content="Create room" Margin="0,0,10,8"/>
-              <Button Name="JoinRoom" Content="Join room" Margin="0,0,10,8"/>
-              <Button Name="CopyRoom" Content="Copy invitation" IsEnabled="False" Margin="0,0,10,8"/>
-              <Button Name="LeaveRoom" Content="Leave room" IsEnabled="False" Margin="0,0,0,8"/>
-            </WrapPanel>
-            <TextBlock Name="OnlineState" Text="No room connected." Style="{StaticResource Muted}" Margin="0,0,0,14"/>
-            <TextBlock Text="After connecting, click Play. In the game, choose Online → Player Match → Find Game. The host selects a mode first; friends then select the same mode. Keep the launcher open while playing." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
-            </StackPanel></Expander>
-            <Expander Header="Local network" Foreground="#F1F3F7" Margin="0,0,0,14"><StackPanel Margin="0,12,0,0">
-            <CheckBox Name="LanEnabled" Content="Enable experimental LAN play" Margin="0,0,0,14"/>
-            <TextBlock Text="Host IPv4 address" Margin="0,0,0,7"/>
-            <TextBox Name="LanPeer" Width="360" HorizontalAlignment="Left" MaxLength="15" AutomationProperties.Name="LAN host IPv4 address"/>
-            <TextBlock Text="255.255.255.255 discovers hosts on your local network. If discovery fails, enter the host PC's IPv4 address on joining PCs." Style="{StaticResource Muted}" Margin="0,8,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
-            <TextBlock Text="In game: Online → Player Match → Find Game. Choose the same mode and options on each PC. An empty search creates a public match. Team DogFight has been tested between two local game instances; testing on separate PCs is still needed." Style="{StaticResource Muted}" Margin="0,0,0,14" MaxWidth="740" HorizontalAlignment="Left"/>
-            <TextBlock Text="A connected online room takes precedence over LAN. Direct connections use WebRTC; a configured TURN server provides relay fallback. Ranked services and rollback are not implemented." Style="{StaticResource Muted}" Margin="0,10,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
-            </StackPanel></Expander>
-          </StackPanel></Border>
         </StackPanel></ScrollViewer>
       </TabItem>
       <TabItem Header="Update">

@@ -18,7 +18,7 @@ may still compile at runtime and become available for preparation on later launc
 | Install | Select extracted game files, validate XEX/Title ID `584109B5`, copy to an empty destination, generate C++, build and optionally create a desktop shortcut; select a folder with owned DLC packages to install compatible game content |
 | Video | GPU, window resolutions through 8K, internal 1×–6× scaling, fullscreen/windowed mode, monitor VSync, anisotropic filtering, FXAA, spatial FSR 1/CAS, experimental FSR 3.1.5/DLSS, FSR sharpness, FPS counter and HDR10 output; options are checked against the installed runtime |
 | Controls | Four configurable profiles, SDL controller selection, button/trigger/stick-direction remapping, keyboard and mouse-button editing/capture |
-| Online | Primary player name, experimental WebRTC room creation/joining and LAN host IPv4; public server not hosted yet; UPnP disabled |
+| Online | Primary in-game player name; EOS and Epic sign-in start automatically when Play is used |
 | Update | Check public GitHub releases and download the matching Windows ZIP after SHA-256 verification |
 | Save / Play | Save with backups and start the game; Play saves first, and errors prevent launch and appear in the footer |
 
@@ -51,7 +51,7 @@ FPS targets reach 240, with values above 120 experimental. Physics now uses meas
 
 The launcher starts centered in the monitor's work area and fits smaller screens. Use the native window buttons to maximize or close it. F11/Esc remain available as launcher shortcuts. The Video tab's display mode affects the game. Borderless game fullscreen uses the desktop resolution; window resolution is measured in physical pixels. Ultrawide output retains the game's 16:9 framing.
 
-Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name changes the primary XAM display name while retaining the existing save folder. LAN is a separate experimental service, not an Xbox Live account. No router ports are opened automatically. Sound and Achievements tabs remain planned.
+Player names use the project's rule: 1–15 ASCII characters, starting with a letter or number; letters, numbers, internal spaces, hyphens and underscores are allowed. Trailing spaces are rejected. The name changes the primary XAM display name while retaining the existing save folder. Friends and game invitations use the Epic social overlay opened with RT in an online lobby or Shift+F3. The launcher no longer exposes WebRTC rooms, server addresses, LAN setup or EOS opt-in checkboxes. No router ports are opened automatically. Sound and Achievements tabs remain planned.
 
 Windows-owned folder dialogs and external tool diagnostics may follow the installed Windows/tool language. The launcher requests English UI resources for its process without changing Windows language settings.
 

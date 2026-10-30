@@ -21,6 +21,8 @@ void ConfigureLauncherInput(rex::RuntimeConfig& config);
 void ConfigureVideoTiming();
 void ConfigureOnline();
 void ShutdownOnline();
+void BindOnlineRuntime(rex::Runtime& runtime);
+std::unique_ptr<rex::ui::ImGuiDialog> CreateOnlineDialogs(rex::ui::ImGuiDrawer* drawer);
 void InstallVideoHooks(rex::Runtime& runtime);
 void ApplyWindowBranding(rex::ui::Window* window);
 std::unique_ptr<rex::ui::ImGuiDialog> CreateFpsCounter(rex::ui::ImGuiDrawer* drawer);
@@ -100,15 +102,17 @@ class SnoopyflyingaceApp : public rex::ReXApp {
   }
 
   void OnPreLaunchModule() override {
+    redbaron::BindOnlineRuntime(*runtime());
     redbaron::InstallVideoHooks(*runtime());
   }
 
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
     redbaron::ApplyWindowBranding(window());
     fps_counter_ = redbaron::CreateFpsCounter(drawer);
+    online_dialogs_ = redbaron::CreateOnlineDialogs(drawer);
   }
 
-  void OnShutdown() override { fps_counter_.reset(); redbaron::ShutdownOnline(); }
+  void OnShutdown() override { fps_counter_.reset(); online_dialogs_.reset(); redbaron::ShutdownOnline(); }
   bool OnWindowCloseRequested() override {
     // The SDK's window close path terminates the process without OnShutdown.
     // Leave EOS rooms while the service and guest runtime are still alive.
@@ -118,6 +122,7 @@ class SnoopyflyingaceApp : public rex::ReXApp {
 
  private:
   std::unique_ptr<rex::ui::ImGuiDialog> fps_counter_;
+  std::unique_ptr<rex::ui::ImGuiDialog> online_dialogs_;
 
   // Override virtual hooks for customization:
   // void OnPostInitLogging() override {}

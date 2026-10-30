@@ -24,6 +24,10 @@ set(SNOOPYFLYINGACE_SOURCES
     src/branding.cpp
     src/online.cpp
 )
+add_executable(redbaron_achievement_export src/achievement_export.cpp)
+target_link_libraries(redbaron_achievement_export PRIVATE rex::runtime)
+add_custom_command(TARGET redbaron_achievement_export POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:rex::runtime>" "$<TARGET_FILE_DIR:redbaron_achievement_export>")
 
 if(WIN32)
     enable_language(RC)
@@ -68,6 +72,18 @@ if(TARGET redbaron_eos_service)
     endif()
     add_custom_command(TARGET snoopyflyingace POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${REDBARON_EOS_DLL}" "$<TARGET_FILE_DIR:snoopyflyingace>")
+    get_filename_component(REDBARON_SOCIAL_BIN "${REDBARON_EOS_DLL}" DIRECTORY)
+    get_filename_component(REDBARON_SOCIAL_BUNDLE "${rexglue_DIR}/../../.." ABSOLUTE)
+    foreach(component RedBaron_Online.exe RedBaron_Online.ini EpicOnlineServicesInstaller.exe)
+        set(REDBARON_SOCIAL_COMPONENT "${REDBARON_SOCIAL_BIN}/${component}")
+        if(NOT EXISTS "${REDBARON_SOCIAL_COMPONENT}")
+            set(REDBARON_SOCIAL_COMPONENT "${REDBARON_SOCIAL_BUNDLE}/bin/${component}")
+        endif()
+        if(EXISTS "${REDBARON_SOCIAL_COMPONENT}")
+            add_custom_command(TARGET snoopyflyingace POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${REDBARON_SOCIAL_COMPONENT}" "$<TARGET_FILE_DIR:snoopyflyingace>")
+        endif()
+    endforeach()
 endif()
 option(REDBARON_INPUT_FEED "Enable scripted controllers in a diagnostic build only" OFF)
 if(REDBARON_INPUT_FEED)

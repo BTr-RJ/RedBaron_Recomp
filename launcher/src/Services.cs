@@ -20,6 +20,7 @@ namespace RedBaron {
         public string inputError {get;set;}
         public bool hdrActive {get;set;}
         public bool eosAvailable {get;set;}
+        public bool eosSocial {get;set;}
         public int refreshHz {get;set;}
         public int desktopWidth {get;set;}
         public int desktopHeight {get;set;}
@@ -167,6 +168,7 @@ namespace RedBaron {
         public static void Save(Settings s,Capabilities caps) {
             s.Validate();
             if(s.EosEnabled && !caps.eosAvailable)throw new InvalidDataException("Update the game build to enable in-game EOS matchmaking.");
+            if(s.EosEnabled && s.EosAccount && !caps.eosSocial)throw new InvalidDataException("Update the game and Epic online components to use this launcher.");
             if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before saving settings.");
             if(s.LanEnabled && (!caps.flags.ContainsKey("redbaron_lan") || !caps.flags.ContainsKey("redbaron_lan_peer")))
                 throw new InvalidDataException("Update the game runtime to use experimental LAN play.");
@@ -188,18 +190,39 @@ namespace RedBaron {
                 s.Scale=s.DlssRenderScale(width,height);
             }
             string original=File.Exists(s.Toml)?File.ReadAllText(s.Toml):"";
-            string updated=s.RuntimeText(original);
+            string updated=s.RuntimeText(original,caps.eosSocial);
             string json=Json.Serializer.Serialize(s);
             AtomicFile.Write(s.Toml,updated);
             try {AtomicFile.Write(s.FileName,json);}
             catch {AtomicFile.Write(s.Toml,original);throw;}
         }
         internal static string[] EosArguments(Settings s,bool hasWebRtc) {
-            if(!s.EosEnabled)return new string[0];
             if(hasWebRtc)throw new InvalidDataException("Leave the WebRTC room before starting in-game matchmaking.");
             if(!File.Exists(s.EosConfig) || !File.Exists(Path.Combine(s.Build,"EOSSDK-Win64-Shipping.dll")))
-                throw new InvalidDataException("Online components are missing. Repair the online installation, or turn off in-game matchmaking to play offline.");
-            return new[]{"--redbaron_eos_config="+s.EosConfig,"--redbaron_online_players="+s.OnlineLocalPlayers};
+                throw new InvalidDataException("Online components are missing. Repair this installation using the updated installer.");
+            var arguments=new List<string>{"--redbaron_eos_config="+s.EosConfig,"--redbaron_online_players="+s.OnlineLocalPlayers};
+            if(s.EosAccount)arguments.Add("--redbaron_eos_account=true");
+            arguments.Add("--redbaron_eos_enabled=true");
+            return arguments.ToArray();
+        }
+        static void EnsureEpicRuntime(Settings s) {
+            string installer=Path.Combine(s.Build,"EpicOnlineServicesInstaller.exe");
+            string service=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Epic Games","Epic Online Services","service","EpicOnlineServicesHost.exe");
+            string marker=Path.Combine(s.Build,"eos","redistributable-installed.txt");
+            string product=null;
+            foreach(string line in File.ReadAllLines(s.EosConfig))
+                if(line.StartsWith("product_id=",StringComparison.Ordinal))product=line.Substring(11).Trim();
+            if(product==null || !System.Text.RegularExpressions.Regex.IsMatch(product,"^[0-9a-fA-F]{32}$"))
+                throw new InvalidDataException("The local Epic product configuration is incomplete.");
+            if(File.Exists(service) && File.Exists(marker) && File.ReadAllText(marker).Trim()==product)return;
+            if(!File.Exists(installer))throw new FileNotFoundException("Epic social components are missing. Use the updated installer.");
+            var setup=new ProcessStartInfo(installer,"/install productId="+product+" /quiet") {UseShellExecute=true,Verb="runas",WindowStyle=ProcessWindowStyle.Hidden};
+            using(var process=Process.Start(setup)) {
+                process.WaitForExit();
+                if(process.ExitCode!=0 && process.ExitCode!=3010)throw new IOException("Epic Online Services setup failed (code "+process.ExitCode+"). Run Play again to retry setup.");
+            }
+            if(!File.Exists(service))throw new IOException("Epic Online Services setup did not complete. Restart Windows if requested, then try again.");
+            AtomicFile.Write(marker,product);
         }
         public static Process Play(Settings s, IEnumerable<string> onlineArguments=null) {
             if(!File.Exists(s.Exe)) throw new FileNotFoundException("Game not installed. Open Install and select your local game files.");
@@ -212,15 +235,29 @@ namespace RedBaron {
             arguments.Add("--log_file="+log);
             AtomicFile.Write(Path.Combine(logs,"last-session.json"),Json.Serializer.Serialize(new {version=Updates.CurrentVersion,startedUtc=DateTime.UtcNow.ToString("o"),eos=s.EosEnabled,gameLog=log}));
             if(onlineArguments!=null)arguments.AddRange(onlineArguments);
-            var info=new ProcessStartInfo(s.Exe,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
+            string executable=s.Exe;
+            if(s.EosEnabled && s.EosAccount) {
+                executable=Path.Combine(s.Build,"RedBaron_Online.exe");
+                if(!File.Exists(executable) || !File.Exists(Path.ChangeExtension(executable,".ini")))
+                    throw new InvalidDataException("Epic social components are missing. Use the updated installer before enabling Epic account sign-in.");
+                EnsureEpicRuntime(s);
+                arguments.Add("--redbaron_eos_bootstrapped=true");
+            }
+            var info=new ProcessStartInfo(executable,String.Join(" ",arguments.Select(QuoteArgument))) {WorkingDirectory=s.Build,UseShellExecute=false};
             return Process.Start(info);
         }
         public static async Task WaitForGameWindow(Process game) {
-            var deadline=DateTime.UtcNow.AddMinutes(3);
+            var deadline=DateTime.UtcNow.AddMinutes(6);
             while(DateTime.UtcNow<deadline) {
                 game.Refresh();
                 if(game.HasExited)throw new IOException("The game closed during startup. Check the game log and installation.");
                 if(game.MainWindowHandle!=IntPtr.Zero)return;
+                if(Path.GetFileName(game.StartInfo.FileName).Equals("RedBaron_Online.exe",StringComparison.OrdinalIgnoreCase)) {
+                    foreach(var child in Process.GetProcessesByName("snoopyflyingace"))using(child) {
+                        try {if(child.MainWindowHandle!=IntPtr.Zero && Path.GetDirectoryName(child.MainModule.FileName).Equals(game.StartInfo.WorkingDirectory,StringComparison.OrdinalIgnoreCase))return;}
+                        catch(System.ComponentModel.Win32Exception){}
+                    }
+                }
                 await Task.Delay(100);
             }
             throw new IOException("The game is still starting. Wait for its window or close it before trying again.");

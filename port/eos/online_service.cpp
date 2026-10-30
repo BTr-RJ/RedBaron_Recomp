@@ -8,6 +8,10 @@
 #include "lobby_publisher.h"
 #include "lobby_roster.h"
 #include "native_record.h"
+#include "lobby_record.h"
+#include "social.h"
+#include "achievement_sync.h"
+#include "matchmaking_policy.h"
 #include "../network/socket_bridge.h"
 #include <eos_lobby.h>
 #include <algorithm>
@@ -46,10 +50,11 @@ std::string SocketName(std::string_view id) {
 }
 }
 struct OnlineService::Impl {
-  enum class Kind {Search,Connect,Probe,Leave};
+  enum class Kind {Search,Connect,Probe,Leave,Friends,Rank};
   struct Request {
     Kind kind;uint32_t address=0,title=0;LanSessionId session{};
     std::vector<LanQosTarget> targets;std::vector<LanQosResult> qos;std::vector<LanRecord> records;
+    std::vector<std::vector<uint16_t>> samples;
     std::mutex mutex;std::condition_variable cv;bool done=false,ok=false,started=false;
     uint64_t search_generation=0;Clock::time_point deadline=Clock::now()+std::chrono::seconds(20);
     explicit Request(Kind k):kind(k){}
@@ -61,6 +66,9 @@ struct OnlineService::Impl {
   std::mutex requests_mutex;std::deque<std::shared_ptr<Request>> incoming;
   std::vector<std::shared_ptr<Request>> requests;
   std::unique_ptr<Platform> platform;
+  std::unique_ptr<Social> social;
+  std::unique_ptr<AchievementSync> achievement_sync;
+  std::atomic<bool> overlay_captured{false};
   EOS_HLobby lobby{};EOS_HP2P p2p{};EOS_HLobbySearch search{};
   EOS_NotificationId updates=EOS_INVALID_NOTIFICATIONID,members=EOS_INVALID_NOTIFICATIONID,qos_notify=EOS_INVALID_NOTIFICATIONID;
   EOS_P2P_SocketId qos_socket{};
@@ -70,8 +78,15 @@ struct OnlineService::Impl {
   std::unique_ptr<EosWire> wire;
   std::unique_ptr<AddressWire> addressed;
   std::unique_ptr<redbaron::net::SocketBridge> bridge;
+  std::optional<LobbyEntry> invitation;
+  EOS_UI_EventId invitation_event=EOS_UI_EVENTID_INVALID;
+  Clock::time_point invitation_deadline{};
+  std::map<uint32_t,MatchPing> pings;
+  std::shared_ptr<Request> directory_probe;
+  Clock::time_point next_ping{};
   std::string room,pending_record;LanSessionId native_session{};
   bool owned=false,creating=false,destroying=false,searching=false,roster_busy=false,closing=false,host_ending=false;
+  bool private_room=false;
   bool failed=false;uint64_t generation=0;
   uint32_t selected_address=0;bool cancel_join=false;
   Roster published_roster{},submitted_roster{};
@@ -95,6 +110,7 @@ struct OnlineService::Impl {
     auto& s=*static_cast<Impl*>(data->ClientData);s.searching=false;++s.generation;
     if(data->ResultCode==EOS_EResult::EOS_Success && !s.closing) {
       s.directory.Refresh(s.search);
+      s.next_ping={};
       s.Log("EOS directory refreshed: "+std::to_string(s.directory.entries().size())+" public session(s)");
     }
     else s.Log("EOS room search failed (code "+std::to_string(int(data->ResultCode))+")");
@@ -126,6 +142,10 @@ struct OnlineService::Impl {
     std::erase_if(out,[&](const LanRecord& r){return addresses[HostAddress(r)]!=1;});return out;
   }
   const LobbyEntry* Entry(uint32_t address) {
+    if(invitation) {
+      const auto native=DecodeNativeRecord(invitation->record);
+      if(native && HostAddress(*native)==address)return &*invitation;
+    }
     const LobbyEntry* result=nullptr;
     for(const auto& entry:directory.entries()) {
       auto record=DecodeNativeRecord(entry.record);
@@ -141,7 +161,7 @@ struct OnlineService::Impl {
     if(data->ResultCode!=EOS_EResult::EOS_Success || !data->LobbyId){s.failed=true;s.Log("EOS room creation failed");return;}
     s.room=data->LobbyId;s.owned=true;
     s.publisher=std::make_unique<LobbyPublisher>(s.lobby,s.platform->user(),s.room);
-    s.publisher->Offer(s.pending_record);s.next_roster={};s.Log("EOS public room created from the native game session");
+    s.publisher->Offer(s.pending_record);s.next_roster={};s.Log(s.private_room?"EOS private room created from the native game session":"EOS public room created from the native game session");
   }
   void Snapshot() {
     if(client || closing || destroying)return;
@@ -162,9 +182,15 @@ struct OnlineService::Impl {
     if(pending_record.empty())return;
     if(creating)return;
     native_session=SessionId(record);creating=true;
+    private_room=record.private_session;
     EOS_Lobby_CreateLobbyOptions create{};create.ApiVersion=EOS_LOBBY_CREATELOBBY_API_LATEST;
-    create.LocalUserId=platform->user();create.MaxLobbyMembers=std::clamp(record.open_public+record.filled_public,2u,8u);
-    create.PermissionLevel=EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
+    create.LocalUserId=platform->user();create.MaxLobbyMembers=std::clamp(record.open_public+record.filled_public+record.open_private+record.filled_private,2u,8u);
+    create.PermissionLevel=record.private_session?EOS_ELobbyPermissionLevel::EOS_LPL_INVITEONLY:EOS_ELobbyPermissionLevel::EOS_LPL_PUBLICADVERTISED;
+    create.bAllowInvites=EOS_TRUE;
+    create.bPresenceEnabled=platform->epic_user()?EOS_TRUE:EOS_FALSE;
+    create.bEnableJoinById=EOS_FALSE;
+    create.bRejoinAfterKickRequiresInvite=EOS_TRUE;
+    Log(record.private_session?"Creating an invite-only EOS room":"Creating a public EOS room");
     create.BucketId=options.bucket.c_str();create.bDisableHostMigration=EOS_TRUE;
     EOS_Lobby_CreateLobby(lobby,&create,this,Created);
   }
@@ -182,6 +208,29 @@ struct OnlineService::Impl {
     destroy.LocalUserId=platform->user();destroy.LobbyId=room.c_str();EOS_Lobby_DestroyLobby(lobby,&destroy,this,Destroyed);
   }
   void ResetTransport(){bridge.reset();addressed.reset();wire.reset();}
+  void ClearInvitation(EOS_EResult result) {
+    if(invitation && invitation->details)EOS_LobbyDetails_Release(invitation->details);
+    invitation.reset();if(social)social->Acknowledge(invitation_event,result);invitation_event=EOS_UI_EVENTID_INVALID;
+  }
+  void AcceptInvitation(EOS_HLobbyDetails details,EOS_UI_EventId event) {
+    EOS_LobbyDetails_CopyInfoOptions copy{};copy.ApiVersion=EOS_LOBBYDETAILS_COPYINFO_API_LATEST;
+    EOS_LobbyDetails_Info* info{};const auto record=ReadLobbyRecord(details);
+    const auto native=record?DecodeNativeRecord(*record):std::nullopt;
+    if(EOS_LobbyDetails_CopyInfo(details,&copy,&info)!=EOS_EResult::EOS_Success || !info || !native ||
+       !info->BucketId || options.bucket!=info->BucketId || !info->LobbyId || info->AvailableSlots==0 ||
+       info->LobbyOwnerUserId==platform->user() || native->title!=0x584109B5 ||
+       uint64_t(native->open_public)+native->open_private==0 ||
+       HostAddress(*native)!=(0x0acb0000u|NetworkId(ProductUserString(info->LobbyOwnerUserId)))) {
+      if(info)EOS_LobbyDetails_Info_Release(info);EOS_LobbyDetails_Release(details);
+      social->Acknowledge(event,EOS_EResult::EOS_InvalidParameters);Log("Epic invitation rejected: incompatible, full or invalid room");return;
+    }
+    ClearInvitation(EOS_EResult::EOS_Canceled);
+    invitation=LobbyEntry{info->LobbyId,*record,info->LobbyOwnerUserId,details};invitation_event=event;
+    invitation_deadline=Clock::now()+std::chrono::minutes(2);EOS_LobbyDetails_Info_Release(info);
+    if(options.invite_accepted)options.invite_accepted(*native);
+    else {ClearInvitation(EOS_EResult::EOS_NotImplemented);return;}
+    Log("Epic invitation accepted; handing the session to the native in-game join flow");
+  }
   static void EOS_CALL Updated(const EOS_Lobby_UpdateLobbyCallbackInfo* data) {
     auto& s=*static_cast<Impl*>(data->ClientData);s.roster_busy=false;
     if(data->ResultCode==EOS_EResult::EOS_Success)s.published_roster=s.submitted_roster;
@@ -249,13 +298,19 @@ struct OnlineService::Impl {
   uint8_t options_namespace() const{return options.name_space;}
   void StartJoin(const std::shared_ptr<Request>& r) {
     if(client && selected_address==r->address) {r->started=true;return;}
-    if(owned || creating || destroying || !room.empty()){r->Finish(false);return;}
+    if(owned || creating || destroying || !room.empty()) {
+      if(invitation){if(owned || creating)host_ending=true;return;}
+      r->Finish(false);return;
+    }
     const auto* entry=Entry(r->address);if(!entry){r->Finish(false);return;}
     const auto id=entry->id;const auto record=DecodeNativeRecord(entry->record);
     if(!record){r->Finish(false);return;}
-    auto details=directory.TakeDetails(id);if(!details){r->Finish(false);return;}
+    const bool invited=invitation && invitation->id==id;
+    auto details=invited?invitation->details:directory.TakeDetails(id);if(!details){r->Finish(false);return;}
+    if(invited){invitation->details=nullptr;invitation.reset();}
     if(join->state()==LobbyJoin::State::Failed)join->Reset();
-    if(!join->Start(id,details)){EOS_LobbyDetails_Release(details);r->Finish(false);return;}
+    if(!join->Start(id,details)){EOS_LobbyDetails_Release(details);ClearInvitation(EOS_EResult::EOS_UnexpectedError);r->Finish(false);return;}
+    private_room=invited;
     native_session=SessionId(*record);selected_address=r->address;cancel_join=false;client=true;r->started=true;
     Log("Joining the room selected by the native game");
   }
@@ -276,6 +331,7 @@ struct OnlineService::Impl {
   }
   void StartProbe(const std::shared_ptr<Request>& r) {
     r->started=true;r->deadline=Clock::now()+std::chrono::seconds(6);r->qos.resize(r->targets.size());
+    r->samples.resize(r->targets.size());
     for(size_t i=0;i<r->targets.size();++i) {
       const auto* entry=Entry(r->targets[i].address);if(!entry)continue;
       const auto native=DecodeNativeRecord(entry->record);if(!native || SessionId(*native)!=r->targets[i].id)continue;
@@ -312,10 +368,15 @@ struct OnlineService::Impl {
         const auto found=pending_qos.find(nonce);if(found==pending_qos.end() || found->second.peer!=remote || found->second.session!=session)continue;
         const size_t count=(size_t(packet[21])<<8)|packet[22];if(count>1024 || size!=23+count || packet[20]>1)continue;
         if(auto request=found->second.request.lock();request && !request->done) {
-          auto& out=request->qos[found->second.index];out.contacted=true;out.disabled=!packet[20];out.received=1;
+          auto& out=request->qos[found->second.index];out.contacted=true;out.disabled=!packet[20];++out.received;
           out.data.assign(packet.begin()+23,packet.begin()+size);
           auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-found->second.sent).count();
-          out.minimum_ms=out.median_ms=uint16_t(std::clamp<int64_t>(elapsed,1,65535));
+          auto& samples=request->samples[found->second.index];samples.push_back(uint16_t(std::clamp<int64_t>(elapsed,1,65535)));
+          std::sort(samples.begin(),samples.end());out.minimum_ms=samples.front();out.median_ms=samples[samples.size()/2];
+          if(samples.size()<3 && Clock::now()<request->deadline) {
+            packet[2]='Q';std::vector<uint8_t> probe(packet.begin(),packet.begin()+20);
+            if(SendQos(remote,probe)){++out.sent;found->second.sent=Clock::now();continue;}
+          }
         }
         pending_qos.erase(found);
       }
@@ -332,7 +393,28 @@ struct OnlineService::Impl {
     {std::lock_guard lock(requests_mutex);while(!incoming.empty()){requests.push_back(incoming.front());incoming.pop_front();}}
     for(const auto& r:requests) {
       if(r->done)continue;
-      if(r->kind==Kind::Search) {
+      if(r->kind==Kind::Friends) {r->Finish(social && social->ShowFriends());}
+      else if(r->kind==Kind::Rank) {
+        const auto now=Clock::now();
+        if(!r->started) {
+          for(const auto& record:r->records) {
+            const auto found=pings.find(HostAddress(record));
+            if(found==pings.end() || found->second.expires<=now || found->second.session!=SessionId(record))
+              r->targets.push_back({HostAddress(record),SessionId(record)});
+          }
+          if(!r->targets.empty()){StartProbe(r);Log("Measuring candidate hosts before choosing a match");}
+          else r->started=true;
+        }
+        const bool waiting=std::any_of(pending_qos.begin(),pending_qos.end(),[&](const auto& item){return item.second.request.lock()==r;});
+        if(waiting && now<r->deadline)continue;
+        for(size_t i=0;i<r->qos.size();++i)if(r->qos[i].contacted)
+          pings[r->targets[i].address]={r->targets[i].id,r->qos[i].median_ms,now+std::chrono::seconds(30)};
+        const auto count=r->records.size();
+        if(const auto best=SelectBestMatch(r->records,pings,Clock::now()))
+          Log("Matchmaking selected the lowest measured ping: "+std::to_string(*best)+" ms from "+std::to_string(count)+" compatible host(s)");
+        else r->records.clear();
+        r->Finish(true);
+      } else if(r->kind==Kind::Search) {
         // XGI invokes search on the guest thread. Never freeze rendering while
         // EOS performs an Internet request; refresh independently and return
         // the most recent authenticated directory snapshot immediately.
@@ -371,10 +453,12 @@ struct OnlineService::Impl {
       if(updates!=EOS_INVALID_NOTIFICATIONID)EOS_Lobby_RemoveNotifyLobbyUpdateReceived(lobby,updates);
       if(members!=EOS_INVALID_NOTIFICATIONID)EOS_Lobby_RemoveNotifyLobbyMemberStatusReceived(lobby,members);
       if(qos_notify!=EOS_INVALID_NOTIFICATIONID)EOS_P2P_RemoveNotifyPeerConnectionRequest(p2p,qos_notify);
+      ClearInvitation(EOS_EResult::EOS_Canceled);
+      if(social)social->Detach();
       ResetTransport();
       if(search) {EOS_LobbySearch_Release(search);search=nullptr;}
       // Join/publisher callback contexts outlive platform release.
-      directory.Clear();platform->Release();join.reset();publisher.reset();platform.reset();
+      directory.Clear();platform->Release();social.reset();achievement_sync.reset();join.reset();publisher.reset();platform.reset();
     }
     {std::lock_guard lock(requests_mutex);running=false;for(auto& r:incoming)r->Finish(false);incoming.clear();}
     for(auto& r:requests)if(!r->done)r->Finish(false);requests.clear();
@@ -382,12 +466,12 @@ struct OnlineService::Impl {
   void Run(std::stop_token stop) {
     bool announced=false;
     try {
-      platform=std::make_unique<Platform>(options.config,options.player_name);
-      const auto deadline=Clock::now()+std::chrono::seconds(45);
+      platform=std::make_unique<Platform>(options.config,options.player_name,options.epic_account,[this](auto message){Log(message);});
+      const auto deadline=Clock::now()+std::chrono::seconds(options.epic_account?300:45);
       while(!stop.stop_requested() && !platform->LoginDone() && Clock::now()<deadline) {
         platform->Tick();std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
-      if(!platform->LoggedIn())throw std::runtime_error("EOS device login failed or timed out");
+      if(!platform->LoggedIn())throw std::runtime_error("EOS login failed or timed out: "+std::string(EOS_EResult_ToString(platform->result())));
       local_address=NetworkId(ProductUserString(platform->user()));
       lobby=EOS_Platform_GetLobbyInterface(platform->handle());p2p=EOS_Platform_GetP2PInterface(platform->handle());
       if(options.force_relay) {
@@ -395,7 +479,9 @@ struct OnlineService::Impl {
         relay.RelayControl=EOS_ERelayControl::EOS_RC_ForceRelays;
         if(EOS_P2P_SetRelayControl(p2p,&relay)!=EOS_EResult::EOS_Success)throw std::runtime_error("EOS relay configuration failed");
       }
-      join=std::make_unique<LobbyJoin>(lobby,platform->user());
+      join=std::make_unique<LobbyJoin>(lobby,platform->user(),LobbyJoinApi{},bool(platform->epic_user()));
+      social=std::make_unique<Social>(*platform,[this](auto message){Log(message);},[this](auto details,auto event){AcceptInvitation(details,event);});
+      if(options.achievements)achievement_sync=std::make_unique<AchievementSync>(*platform,[this](auto message){Log(message);},options.achievements,options.restore_achievement);
       EOS_Lobby_AddNotifyLobbyUpdateReceivedOptions update{};update.ApiVersion=EOS_LOBBY_ADDNOTIFYLOBBYUPDATERECEIVED_API_LATEST;
       updates=EOS_Lobby_AddNotifyLobbyUpdateReceived(lobby,&update,this,LobbyChanged);
       EOS_Lobby_AddNotifyLobbyMemberStatusReceivedOptions member{};member.ApiVersion=EOS_LOBBY_ADDNOTIFYLOBBYMEMBERSTATUSRECEIVED_API_LATEST;
@@ -414,7 +500,31 @@ struct OnlineService::Impl {
         if(join->state()==LobbyJoin::State::Joined && room.empty()){room=join->lobby_id();next_roster={};}
         if(client && join->state()==LobbyJoin::State::Idle){ResetTransport();room.clear();client=false;selected_address=0;cancel_join=false;}
         const auto now=Clock::now();
+        overlay_captured=social->captured();
+        if(achievement_sync)achievement_sync->Poll();
+        if(invitation && now>=invitation_deadline)ClearInvitation(EOS_EResult::EOS_TimedOut);
+        if(join->state()==LobbyJoin::State::Failed && invitation_event!=EOS_UI_EVENTID_INVALID) {
+          social->Acknowledge(invitation_event,join->error());invitation_event=EOS_UI_EVENTID_INVALID;
+        }
+        if(join->state()==LobbyJoin::State::Joined && invitation_event!=EOS_UI_EVENTID_INVALID) {
+          social->Acknowledge(invitation_event,EOS_EResult::EOS_Success);invitation_event=EOS_UI_EVENTID_INVALID;
+        }
+        if(directory_probe && (directory_probe->done || now>=directory_probe->deadline ||
+           std::none_of(pending_qos.begin(),pending_qos.end(),[&](const auto& item){return item.second.request.lock()==directory_probe;}))) {
+          for(size_t i=0;i<directory_probe->targets.size();++i)if(directory_probe->qos[i].contacted)
+            pings[directory_probe->targets[i].address]={directory_probe->targets[i].id,directory_probe->qos[i].median_ms,now+std::chrono::seconds(30)};
+          directory_probe.reset();
+        }
+        if(!directory_probe && !client && now>=next_ping) {
+          next_ping=now+std::chrono::seconds(10);auto records=Records(0x584109B5);
+          if(!records.empty()) {
+            directory_probe=std::make_shared<Request>(Kind::Probe);
+            for(const auto& r:records)directory_probe->targets.push_back({HostAddress(r),SessionId(r)});
+            StartProbe(directory_probe);
+          }
+        }
         if(now>=next_snapshot){next_snapshot=now+std::chrono::seconds(1);Snapshot();}
+        social->Presence(room.empty()?"In menus":private_room?"In a private match":"In a public match");
         if(now>=next_roster){next_roster=now+std::chrono::milliseconds(250);SyncRoster();}
         if(publisher && owned && !destroying && !roster_busy){publisher->Poll();if(publisher->error()!=EOS_EResult::EOS_Success)failed=true;}
         if(!client && now>=next_search)Find();
@@ -450,5 +560,17 @@ bool OnlineService::Connect(uint32_t address) {
 }
 void OnlineService::Leave(const LanSessionId& session) {
   auto r=std::make_shared<Impl::Request>(Impl::Kind::Leave);r->session=session;impl_->Submit(r);
+}
+bool OnlineService::ShowFriends(uint32_t user) {
+  if(user!=0)return false;return impl_->Submit(std::make_shared<Impl::Request>(Impl::Kind::Friends));
+}
+bool OnlineService::ShowAchievements(uint32_t user) {
+  if(user || !impl_->options.show_achievements)return false;impl_->options.show_achievements();return true;
+}
+bool OnlineService::InputCaptured() const {return impl_->overlay_captured.load();}
+void OnlineService::RankMatches(std::vector<LanRecord>& records) {
+  if(records.size()<2)return;
+  auto r=std::make_shared<Impl::Request>(Impl::Kind::Rank);r->records=records;
+  if(impl_->Submit(r))records=std::move(r->records);
 }
 }
