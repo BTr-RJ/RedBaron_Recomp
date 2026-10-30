@@ -112,6 +112,17 @@ other operations without measurable totals show activity rather than a fabricate
 percentage. Errors/cancellation stop the bar; only a completed game/DLC workflow
 shows installation complete at 100%. Structured progress remains in the log.
 
+After the entire selected game/DLC workflow succeeds, installer-owned working
+trees, generated sources, SDK copies, compiler objects and temporary jobs are
+removed. Runtime executables/DLLs, game data, settings, saves, shader caches, logs
+and third-party licenses remain. The installed launcher omits embedded installer
+payloads; it can still save settings, play, install DLCs and check updates.
+Reusable portable tools move to one shared per-user cache, with inventory paths
+updated; system Microsoft components are not uninstalled. Original input folders
+and the downloaded installer package are preserved. Failed workflows keep their
+working files. Cleanup requires an ownership marker, refuses links/developer
+checkouts and user-data/input overlaps, and never deletes the installation root.
+
 Validated: C++ build, routing/remapping tests, C# settings/validation/argument/shortcut tests, old-label migration without binding changes, a complete clean installation, rejection of overlapping/occupied/incompatible destinations, and Save/Play/direct launch/return via UIAutomation. The English UI was checked at normal and compact window sizes. The embedded source ZIP was checked against current sources and contains no game data. Local evidence lives in the ignored `prioridade5_launcher/` folder. Custom mappings, multiple physical controllers and higher resolutions still need gameplay testing.
 
 ## DLSS modes and LAN preview

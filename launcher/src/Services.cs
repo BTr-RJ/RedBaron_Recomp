@@ -37,13 +37,14 @@ namespace RedBaron {
             using(var manifest=Assembly.GetExecutingAssembly().GetManifestResourceStream("OfflineTools.json"))return manifest!=null;
         }
         public static async Task<List<BuildTool>> CheckBuildTools(Settings s) {
-            string job=Path.Combine(s.Root,"launcher-data","tool-check-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
+            string job=InstallationCleanup.CreateJob(s.Root,"tool-check");
             string script=Path.Combine(job,"tool-inventory.ps1");ExtractResource("ToolInventory.ps1",script);
             string powershell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe");
             var output=new List<string>();object gate=new object();
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-AsJson"},s.Root,line=>{lock(gate)output.Add(line);},CancellationToken.None);
             if(code!=0)throw new IOException("Could not check installed build tools.");
-            return Json.Serializer.Deserialize<List<BuildTool>>(String.Join(Environment.NewLine,output));
+            var result=Json.Serializer.Deserialize<List<BuildTool>>(String.Join(Environment.NewLine,output));
+            InstallationCleanup.CleanJob(job);return result;
         }
         public static bool HasInstallation(string root) {
             try {return !String.IsNullOrWhiteSpace(root) && File.Exists(Path.Combine(root,"build_cpp_release","snoopyflyingace.exe")) && File.Exists(Path.Combine(root,"game","default.xex"));}
@@ -62,13 +63,26 @@ namespace RedBaron {
         }
         public static async Task<Settings> InstallContent(Settings s,Action<string> log,CancellationToken token) {
             var plan=PlanInstallation(s);
-            if(plan.InstallGame){s.Destination=plan.Root;await Install(s,log,token);}
+            string logDirectory=Path.Combine(s.Root,"launcher-data","logs");Directory.CreateDirectory(logDirectory);
+            string workflowLog=Path.Combine(logDirectory,"install-workflow-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
+            var display=log;object workflowGate=new object();
+            log=line=>{lock(workflowGate)File.AppendAllText(workflowLog,line+Environment.NewLine,Encoding.UTF8);display(line);};
+            string gameJob=null,dlcJob=null;
+            if(plan.InstallGame){s.Destination=plan.Root;gameJob=await Install(s,log,token);}
             var installed=Settings.Load(plan.Root);
             if(plan.InstallGame){installed.Sdk=HasBundledSdk()?Path.Combine(plan.Root,"sdk_experimental"):s.Sdk;installed.DesktopShortcut=s.DesktopShortcut;}
             installed.DlcSource=s.DlcSource;
             Json.Write(installed.FileName,installed);
             if(plan.InstallGame && installed.DesktopShortcut)CreateShortcut(installed,Path.Combine(plan.Root,"RedBaron_Launcher.exe"));
-            if(plan.InstallDlc)await InstallDlc(installed,s.DlcSource,log,token);
+            if(plan.InstallDlc)dlcJob=await InstallDlc(installed,s.DlcSource,log,token);
+            await Task.Run(()=>{
+                try {InstallationCleanup.Run(installed,log,token);}
+                catch(IOException error){log("Game installed; some working files were preserved: "+error.Message);}
+                foreach(string job in new[]{gameJob,dlcJob})try {InstallationCleanup.CleanJob(job);}catch(IOException error){log("Temporary job preserved: "+error.Message);}
+            });
+            string finalLogs=Path.Combine(installed.Root,"launcher-data","logs");Directory.CreateDirectory(finalLogs);
+            string finalWorkflowLog=Path.Combine(finalLogs,Path.GetFileName(workflowLog));
+            if(!String.Equals(Path.GetFullPath(workflowLog),Path.GetFullPath(finalWorkflowLog),StringComparison.OrdinalIgnoreCase))File.Copy(workflowLog,finalWorkflowLog,false);
             return installed;
         }
         public static bool HasBundledSdk() {
@@ -217,10 +231,11 @@ namespace RedBaron {
                 using(var output=File.Create(path)) source.CopyTo(output);
             }
         }
-        public static async Task Install(Settings s,Action<string> log,CancellationToken token) {
+        public static bool HasInstallerPayload(){using(var source=Assembly.GetExecutingAssembly().GetManifestResourceStream("Source.zip"))return source!=null;}
+        public static async Task<string> Install(Settings s,Action<string> log,CancellationToken token) {
+            if(!HasInstallerPayload())throw new InvalidOperationException("Use the full installer to create or repair a game installation.");
             if(String.IsNullOrWhiteSpace(s.Destination)) throw new InvalidDataException("Choose a destination folder.");
-            string job=Path.Combine(s.Root,"launcher-data","install-"+DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
-            Directory.CreateDirectory(job);
+            string job=InstallationCleanup.CreateJob(s.Root,"install");
             string archive=Path.Combine(job,"source.zip"), script=Path.Combine(job,"install.ps1");
             log("@@RBPROGRESS {\"stage\":\"Preparing installer\",\"completed\":0,\"total\":0}");
             ExtractResource("Source.zip",archive); ExtractResource("Install.ps1",script);
@@ -239,6 +254,8 @@ namespace RedBaron {
             record("Log: "+logfile);
             var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe,"-LauncherConfig",appConfig,"-BootstrapScript",bootstrap};
             if(sdkArchive.Length!=0){arguments.Add("-SdkArchive");arguments.Add(sdkArchive);}
+            string runtime=Path.Combine(job,"installed-launcher.exe");ExtractResource("RuntimeLauncher.exe",runtime);
+            arguments.Add("-RuntimeLauncher");arguments.Add(runtime);
             if(HasOfflineTools()) {
                 string manifest=Path.Combine(job,"offline-tools.json");ExtractResource("OfflineTools.json",manifest);
                 arguments.Add("-OfflineManifest");arguments.Add(manifest);
@@ -255,15 +272,16 @@ namespace RedBaron {
             if(code!=0) throw new IOException("Installation failed. See the log for details; your source files were preserved.");
             string installedLogs=Path.Combine(s.Destination,"launcher-data","logs");Directory.CreateDirectory(installedLogs);
             File.Copy(logfile,Path.Combine(installedLogs,"installation.log"),true);
+            return job;
         }
-        public static async Task InstallDlc(Settings s,string source,Action<string> log,CancellationToken token) {
+        public static async Task<string> InstallDlc(Settings s,string source,Action<string> log,CancellationToken token) {
             if(IsGameRunning(s)) throw new InvalidOperationException("Close the game before installing downloadable content.");
             string inspector=Path.Combine(s.Build,"redbaron_content_inspect.exe");
             if(!File.Exists(inspector))throw new FileNotFoundException("Update the game installation to enable DLC installation.");
             string userRoot=File.Exists(s.Toml)?new Toml(File.ReadAllText(s.Toml)).String("user_data_root",""):"";
             if(String.IsNullOrWhiteSpace(userRoot))userRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"snoopyflyingace");
             else if(!Path.IsPathRooted(userRoot))userRoot=Path.GetFullPath(Path.Combine(s.Build,userRoot));
-            string job=Path.Combine(s.Root,"launcher-data","dlc-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
+            string job=InstallationCleanup.CreateJob(s.Root,"dlc");
             string logs=Path.Combine(s.Root,"launcher-data","logs");Directory.CreateDirectory(logs);
             string logfile=Path.Combine(logs,"dlc-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
             object gate=new object();Action<string> record=line=>{lock(gate)File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
@@ -273,6 +291,7 @@ namespace RedBaron {
             int code=await RunAsync(powershell,new[]{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,
                 "-Source",source,"-UserRoot",userRoot,"-Inspector",inspector},s.Root,record,token);
             if(code!=0)throw new IOException("DLC installation failed. Check the installation log above; existing content was preserved.");
+            return job;
         }
         public static void CreateShortcut(Settings s,string launcher) {
             string desktop=Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);

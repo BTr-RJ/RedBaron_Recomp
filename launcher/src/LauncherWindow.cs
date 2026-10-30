@@ -61,6 +61,7 @@ namespace RedBaron {
             window=w; settings=s;args=a;
             layout=new WindowLayout(window);
             Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+(Services.HasOfflineTools()?"Offline build tools are included. Compatible installed tools are reused; only missing components are installed. ":"Missing tools can be downloaded during installation. ")+"Microsoft Build Tools may request administrator approval. No game files are downloaded.";
+            if(!Services.HasInstallerPayload())Label("SdkInfo").Text="Build files are not needed to play or add DLCs. Use the full installer to create another game installation.";
             window.SourceInitialized+=(sender,e)=>{int dark=1;DwmSetWindowAttribute(new WindowInteropHelper(window).Handle,20,ref dark,4);layout.Center();};
             window.PreviewKeyDown+=(sender,e)=>{
                 if(capture==null && (e.Key==Key.F11 || (e.Key==Key.Escape && layout.Fullscreen))) {layout.Toggle();e.Handled=true;}

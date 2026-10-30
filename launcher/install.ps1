@@ -9,7 +9,7 @@ param(
     [string]$BootstrapScript = '',
     [string]$LauncherConfig = '',
     [string]$OnlineConfig = '',
-    [string]$OfflineToolsRoot = '', [string]$OfflineManifest = ''
+    [string]$OfflineToolsRoot = '', [string]$OfflineManifest = '', [string]$RuntimeLauncher = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -168,11 +168,12 @@ try {
         Copy-Item -LiteralPath $OnlineConfig -Destination (Join-Path $onlineDirectory 'config.ini')
         Write-Output 'Online configuration installed. Matchmaking is available from the game menu.'
     }
-    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $Destination 'RedBaron_Launcher.exe')
+    $installedLauncher=if($RuntimeLauncher){$RuntimeLauncher}else{$LauncherExe}
+    Copy-Item -LiteralPath $installedLauncher -Destination (Join-Path $Destination 'RedBaron_Launcher.exe')
     if(!$LauncherConfig){$LauncherConfig=$LauncherExe+'.config'}
     if(!(Test-Path -LiteralPath $LauncherConfig -PathType Leaf)){throw 'Launcher configuration resource is missing.'}
     Copy-Item -LiteralPath $LauncherConfig -Destination (Join-Path $Destination 'RedBaron_Launcher.exe.config')
-    @{status='ready';titleId='584109B5';completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
+    @{status='ready';titleId='584109B5';owner='RedBaronInstaller/v1';cleanupPending=$true;completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
     Write-Output 'Installation complete.'
 } catch {
     @{status='failed';error=$_.Exception.Message} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8

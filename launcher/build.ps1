@@ -108,7 +108,14 @@ if($PrivateEosConfig) {
     $arguments+=('/resource:'+$PrivateEosConfig+',PrivateEosConfig.ini')
     Write-Output 'Building a private online test installer. Keep the resulting binary/package private.'
 }
-$arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
+$sources=@(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
+$runtime=Join-Path $OutputDirectory 'RedBaron_Runtime.exe'
+$runtimeArgs=@($arguments | Where-Object {$_ -notlike '/out:*' -and $_ -notmatch ',(Source.zip|Sdk.zip|PrivateEosConfig.ini|OfflineTools.json)$'})
+$runtimeArgs+=('/out:'+$runtime);$runtimeArgs+=$sources
+& $compiler @runtimeArgs
+if($LASTEXITCODE -ne 0){throw 'Installed launcher build failed.'}
+$arguments+=('/resource:'+$runtime+',RuntimeLauncher.exe')
+$arguments += $sources
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'App.config') -Destination ($exe + '.config')
