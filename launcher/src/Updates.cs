@@ -17,7 +17,7 @@ namespace RedBaron {
         public ReleaseAsset[] assets {get;set;}
     }
     public static class Updates {
-        public const string CurrentVersion="0.20.0";
+        public const string CurrentVersion="0.21.0";
         const long MaxBytes=2L*1024*1024*1024-1;
         const string Endpoint="https://api.github.com/repos/BTr-RJ/RedBaron_Recomp/releases?per_page=20";
         static bool ValidAsset(ReleaseAsset asset) {
@@ -83,8 +83,8 @@ namespace RedBaron {
             var newest=releases.Where(r=>ReleaseVersion(r)!=null).OrderByDescending(r=>ReleaseVersion(r)).FirstOrDefault();
             return newest==null?null:Parse(Json.Serializer.Serialize(newest));
         }
-        public static Task<string> Download(ReleaseAsset asset,string root) {
-            return DownloadCore(asset,root,Request);
+        public static Task<string> Download(ReleaseAsset asset,string root,Action<InstallProgress> progress=null) {
+            return DownloadCore(asset,root,Request,progress);
         }
         internal static Task<string> DownloadFromLocalTest(ReleaseAsset asset,string root,string localUrl) {
             Uri local;
@@ -92,22 +92,23 @@ namespace RedBaron {
                 throw new InvalidDataException("Invalid local test server.");
             return DownloadCore(asset,root,ignored=>{var request=Request(localUrl);request.Proxy=null;return request;});
         }
-        static Task<string> DownloadCore(ReleaseAsset asset,string root,Func<string,HttpWebRequest> requestFactory) {
+        static Task<string> DownloadCore(ReleaseAsset asset,string root,Func<string,HttpWebRequest> requestFactory,Action<InstallProgress> progress=null) {
             return Task.Run(()=>{
                 // Revalidate the URL and metadata immediately before starting the transfer.
                 if(!ValidAsset(asset))
                     throw new InvalidDataException("Invalid update package metadata.");
                 var url=new Uri(asset.browser_download_url);
-                string directory=Path.Combine(root,"launcher-data","updates");Directory.CreateDirectory(directory);
+                string directory=Path.Combine(root,"launcher-data","updates");AutomaticUpdate.NoLinks(directory);Directory.CreateDirectory(directory);
                 string partial=Path.Combine(directory,Guid.NewGuid().ToString("N")+".partial");
                 try {
                     using(var response=(HttpWebResponse)requestFactory(url.AbsoluteUri).GetResponse())
                     using(var input=response.GetResponseStream()) using(var file=new FileStream(partial,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {
                         if(response.ContentLength>asset.size)throw new InvalidDataException("Update package is larger than expected.");
-                        byte[] buffer=new byte[65536];int count;long total=0;
+                        byte[] buffer=new byte[65536];int count;long total=0;var report=System.Diagnostics.Stopwatch.StartNew();
                         while((count=input.Read(buffer,0,buffer.Length))>0) {
                             total+=count;if(total>asset.size)throw new InvalidDataException("Update package is larger than expected.");
                             file.Write(buffer,0,count);
+                            if(progress!=null && (report.ElapsedMilliseconds>=150 || total==asset.size)) {progress(new InstallProgress{stage="Downloading update",completed=total,total=asset.size});report.Restart();}
                         }
                         if(total!=asset.size)throw new InvalidDataException("Update package download is incomplete.");
                     }

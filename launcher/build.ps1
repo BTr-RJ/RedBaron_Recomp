@@ -81,7 +81,7 @@ $iconPath = Join-Path $OutputDirectory 'RedBaron.ico'
 & (Join-Path $projectRoot 'scripts/make-icon.ps1') -Output $iconPath
 $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output',
     ('/out:' + $exe), ('/win32icon:' + $iconPath), '/r:System.dll', '/r:System.Core.dll', '/r:System.Web.Extensions.dll',
-    '/r:System.Windows.Forms.dll', '/r:Microsoft.CSharp.dll', '/r:System.Xaml.dll',
+    '/r:System.Windows.Forms.dll', '/r:Microsoft.CSharp.dll', '/r:System.Xaml.dll', '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll',
     ('/r:' + (Join-Path $wpf 'WindowsBase.dll')),
     ('/r:' + (Join-Path $wpf 'PresentationCore.dll')),
     ('/r:' + (Join-Path $wpf 'PresentationFramework.dll')),

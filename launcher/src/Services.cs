@@ -62,14 +62,14 @@ namespace RedBaron {
             if(dlc && !Directory.Exists(s.DlcSource))throw new InvalidDataException("The selected DLC folder does not exist.");
             return new InstallPlan {Root=target,InstallGame=game,InstallDlc=dlc};
         }
-        public static async Task<Settings> InstallContent(Settings s,Action<string> log,CancellationToken token) {
+        public static async Task<Settings> InstallContent(Settings s,Action<string> log,CancellationToken token,string offlineToolsRoot=null) {
             var plan=PlanInstallation(s);
             string logDirectory=Path.Combine(s.Root,"launcher-data","logs");Directory.CreateDirectory(logDirectory);
             string workflowLog=Path.Combine(logDirectory,"install-workflow-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+".log");
             var display=log;object workflowGate=new object();
             log=line=>{lock(workflowGate)File.AppendAllText(workflowLog,line+Environment.NewLine,Encoding.UTF8);display(line);};
             string gameJob=null,dlcJob=null;
-            if(plan.InstallGame){s.Destination=plan.Root;gameJob=await Install(s,log,token);}
+            if(plan.InstallGame){s.Destination=plan.Root;gameJob=await Install(s,log,token,offlineToolsRoot);}
             var installed=Settings.Load(plan.Root);
             if(plan.InstallGame){installed.Sdk=HasBundledSdk()?Path.Combine(plan.Root,"sdk_experimental"):s.Sdk;installed.DesktopShortcut=s.DesktopShortcut;}
             installed.DlcSource=s.DlcSource;
@@ -269,7 +269,7 @@ namespace RedBaron {
             }
         }
         public static bool HasInstallerPayload(){using(var source=Assembly.GetExecutingAssembly().GetManifestResourceStream("Source.zip"))return source!=null;}
-        public static async Task<string> Install(Settings s,Action<string> log,CancellationToken token) {
+        public static async Task<string> Install(Settings s,Action<string> log,CancellationToken token,string offlineToolsRoot=null) {
             if(!HasInstallerPayload())throw new InvalidOperationException("Use the full installer to create or repair a game installation.");
             if(String.IsNullOrWhiteSpace(s.Destination)) throw new InvalidDataException("Choose a destination folder.");
             string job=InstallationCleanup.CreateJob(s.Root,"install");
@@ -290,13 +290,14 @@ namespace RedBaron {
             Action<string> record=line=>{lock(gate) File.AppendAllText(logfile,line+Environment.NewLine,Encoding.UTF8);log(line);};
             record("Log: "+logfile);
             var arguments=new List<string>{"-NoProfile","-ExecutionPolicy","Bypass","-File",script,"-Source",s.Source,"-Destination",s.Destination,"-Sdk",s.Sdk,"-SourceArchive",archive,"-LauncherExe",LauncherExe,"-LauncherConfig",appConfig,"-BootstrapScript",bootstrap};
+            arguments.Add("-PackageVersion");arguments.Add(Updates.CurrentVersion);
             if(sdkArchive.Length!=0){arguments.Add("-SdkArchive");arguments.Add(sdkArchive);}
             string runtime=Path.Combine(job,"installed-launcher.exe");ExtractResource("RuntimeLauncher.exe",runtime);
             arguments.Add("-RuntimeLauncher");arguments.Add(runtime);
             if(HasOfflineTools()) {
                 string manifest=Path.Combine(job,"offline-tools.json");ExtractResource("OfflineTools.json",manifest);
                 arguments.Add("-OfflineManifest");arguments.Add(manifest);
-                arguments.Add("-OfflineToolsRoot");arguments.Add(Path.Combine(Path.GetDirectoryName(LauncherExe),"Tools"));
+                arguments.Add("-OfflineToolsRoot");arguments.Add(offlineToolsRoot??Path.Combine(Path.GetDirectoryName(LauncherExe),"Tools"));
             }
             using(var online=Assembly.GetExecutingAssembly().GetManifestResourceStream("EosClientConfig.ini") ?? Assembly.GetExecutingAssembly().GetManifestResourceStream("PrivateEosConfig.ini")) {
                 if(online!=null) {

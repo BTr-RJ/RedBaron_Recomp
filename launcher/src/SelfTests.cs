@@ -292,6 +292,7 @@ namespace RedBaron {
                     Assert(((string)shortcut.IconLocation).StartsWith(Services.LauncherExe,StringComparison.OrdinalIgnoreCase),"Shortcut icon missing");
                 } finally {Marshal.FinalReleaseComObject(shortcut);Marshal.FinalReleaseComObject(shell);}
                 results.Add("Windows shortcut target, root argument and original launcher icon");
+                AutomaticUpdateTests.Run(directory,results);
                 Json.Write(Path.Combine(directory,"results.json"),new {passed=true,checks=results});return 0;
             } catch(Exception error) {Json.Write(Path.Combine(directory,"results.json"),new {passed=false,checks=results,error=error.ToString()});return 1;}
         }

@@ -5,7 +5,11 @@ param(
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
-if(!$OutputDirectory){$OutputDirectory=Join-Path $root 'dist/v0.20'}
+$versionSource=[IO.File]::ReadAllText((Join-Path $root 'launcher/src/Updates.cs'))
+$versionMatch=[regex]::Match($versionSource,'CurrentVersion="(\d+\.\d+\.\d+)"')
+if(!$versionMatch.Success){throw 'Launcher version was not found.'}
+$releaseTag='v'+($versionMatch.Groups[1].Value -replace '\.0$','')
+if(!$OutputDirectory){$OutputDirectory=Join-Path $root ('dist/'+$releaseTag)}
 if(!$BuildDirectory){$BuildDirectory=Join-Path $root 'build_cpp_release'}
 $BuildDirectory=[IO.Path]::GetFullPath($BuildDirectory)
 $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
@@ -16,7 +20,7 @@ Copy-Item -LiteralPath (Join-Path $BuildDirectory 'redbaron_content_inspect.exe'
 $variant=if($OfflineToolsRoot){'offline'}else{'standard'}
 $build=Join-Path $OutputDirectory ('build-'+$variant)
 & (Join-Path $root 'launcher/build.ps1') -OutputDirectory $build -EosClientConfig $EosClientConfig -OfflineToolsRoot $OfflineToolsRoot
-$folder=Join-Path (Join-Path $OutputDirectory ('stage-'+$variant)) 'RedBaron_Recomp-v0.20'
+$folder=Join-Path (Join-Path $OutputDirectory ('stage-'+$variant)) ('RedBaron_Recomp-'+$releaseTag)
 New-Item -ItemType Directory -Path $folder -Force | Out-Null
 foreach($name in @('RedBaron_Launcher.exe','RedBaron_Launcher.exe.config')){
     Copy-Item -LiteralPath (Join-Path $build $name) -Destination $folder -Force
@@ -51,7 +55,7 @@ foreach($entry in Get-ChildItem -LiteralPath $folder -Force){
     if($OfflineToolsRoot -and $entry.Name -eq 'Tools' -and $entry.PSIsContainer -and !($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)){continue}
     if($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.Name -notin @('RedBaron_Launcher.exe','RedBaron_Launcher.exe.config','INSTALLATION.md','CREDITS.md')){throw 'Unexpected file in package staging folder. Choose a new output directory.'}
 }
-$archive=Join-Path $OutputDirectory $(if($OfflineToolsRoot){'RedBaron_Recomp-v0.20-windows-x64-offline.zip'}else{'RedBaron_Recomp-v0.20-windows-x64.zip'})
+$archive=Join-Path $OutputDirectory ('RedBaron_Recomp-'+$releaseTag+'-windows-x64'+$(if($OfflineToolsRoot){'-offline'})+'.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if(Test-Path -LiteralPath $archive){Remove-Item -LiteralPath $archive}
 [IO.Compression.ZipFile]::CreateFromDirectory($folder,$archive,[IO.Compression.CompressionLevel]::Optimal,$true)

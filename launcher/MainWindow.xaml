@@ -169,11 +169,14 @@
       <TabItem Header="Update">
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Project updates" Style="{StaticResource Heading}"/>
-          <TextBlock Text="Check GitHub for a published RedBaron_Recomp release. The downloaded package is verified using GitHub's SHA-256 before it is saved." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
-          <TextBlock Text="Current version" Margin="0,0,0,7"/><TextBlock Text="0.20 — test build" FontSize="16" Margin="0,0,0,22"/>
+          <TextBlock Text="Download and install the latest release. The launcher verifies the download, prepares the updated game and reopens when it is ready. Your settings, saves and DLCs are kept." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
+          <TextBlock Text="Launcher version: 0.21 — test build" FontSize="16" Margin="0,0,0,16"/>
+          <Button Name="ApplyInstallerUpdate" Content="Update selected installation" Style="{StaticResource Primary}" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,0,0,14"/>
           <TextBlock Name="UpdateState" Text="Checking for releases…" Style="{StaticResource Muted}" Margin="0,0,0,18"/>
-          <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenLogs" Content="Open logs folder" Margin="0,0,0,8"/></WrapPanel>
-          <TextBlock Text="Updates include the port and installer. You provide the game files. Report test-build issues on GitHub." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
+          <ProgressBar Name="UpdateProgress" Height="8" Minimum="0" Maximum="100" Visibility="Collapsed" Margin="0,0,0,16"/>
+          <WrapPanel><Button Name="CheckUpdates" Content="Check for updates" Margin="0,0,10,8"/><Button Name="DownloadUpdate" Content="Download and install update" IsEnabled="False" Margin="0,0,10,8"/><Button Name="OpenUpdates" Content="Open downloads folder" IsEnabled="False" Visibility="Collapsed" Margin="0,0,10,8"/><Button Name="OpenLogs" Content="Open logs folder" Margin="0,0,0,8"/></WrapPanel>
+          <TextBlock Text="Close the game before updating. Preparing the update can take several minutes. You can cancel preparation; file replacement finishes before the launcher reopens. A previous-version backup is kept for recovery." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
+          <TextBlock Text="Using this installer to update v0.10 or v0.20? Select your game with Install → Use existing installation, then choose Update selected installation here." Style="{StaticResource Muted}" Margin="0,14,0,0" MaxWidth="740" HorizontalAlignment="Left"/>
         </StackPanel></ScrollViewer>
       </TabItem>
     </TabControl>

@@ -104,6 +104,7 @@ namespace RedBaron {
             Button("UseExisting").Click+=async(sender,e)=>await UseExisting();
             Button("CheckUpdates").Click+=async(sender,e)=>await CheckForUpdates();
             Button("DownloadUpdate").Click+=async(sender,e)=>await DownloadUpdate();
+            Button("ApplyInstallerUpdate").Click+=async(sender,e)=>await ApplyInstallerUpdate();
             Button("OpenUpdates").Click+=(sender,e)=>{if(updateFolder!=null)Process.Start("explorer.exe",Services.QuoteArgument(updateFolder));};
             Button("OpenLogs").Click+=(sender,e)=>{try {string logs=Path.Combine(settings.Root,"launcher-data","logs");Directory.CreateDirectory(logs);Process.Start("explorer.exe",Services.QuoteArgument(logs));}catch(Exception error){Status(error.Message,true);}};
             Button("RestoreBindings").Click+=(sender,e)=>{settings.Players[playerIndex].Bindings=Actions.Defaults();ShowPlayer();Changed();};
@@ -137,6 +138,8 @@ namespace RedBaron {
             Select("RenderScale",settings.Scale);Select("FsrSharpness",settings.FsrSharpness);Select("DlssMode",settings.DlssMode);
             Select("Anisotropic",settings.Anisotropic);Select("KeyboardPlayer",settings.KeyboardPlayer);
             Label("HeaderStatus").Text=Services.HasInstallation(settings.Root)?"Installation found":"Installation required";
+            Button("ApplyInstallerUpdate").Visibility=Services.HasInstallerPayload() && Services.HasInstallation(settings.Root)?Visibility.Visible:Visibility.Collapsed;
+            Button("DownloadUpdate").Content=Services.HasInstallation(settings.Root)?"Download and install update":"Download installer";
             UpdateInstallAction();
             Label("InstallState").Text=Services.HasInstallation(settings.Root)?"Current installation: "+settings.Root:"Select a game source and an installation folder to begin.";
             ShowPlayer();loading=false;
@@ -327,7 +330,7 @@ namespace RedBaron {
             ApplySettings();await Refresh(false);await CheckBuildTools();Status(outcome,failed);
         }
         async Task CheckForUpdates() {
-            if(updateBusy)return;
+            if(updateBusy||installation!=null||launchingGame)return;
             updateBusy=true;Button("CheckUpdates").IsEnabled=false;Button("DownloadUpdate").IsEnabled=false;
             Label("UpdateState").Text="Checking GitHub for a public release…";
             try {
@@ -343,15 +346,37 @@ namespace RedBaron {
             finally {updateBusy=false;Button("CheckUpdates").IsEnabled=true;}
         }
         async Task DownloadUpdate() {
-            if(updateBusy || availableUpdate==null)return;
+            if(updateBusy || availableUpdate==null||installation!=null||launchingGame)return;
+            bool automatic=Services.HasInstallation(settings.Root);
+            if(dirty && !Save())return;
+            try {if(automatic)AutomaticUpdate.ValidateInstallation(settings.Root);}catch(Exception error){Label("UpdateState").Text=error.Message;return;}
             updateBusy=true;downloadingUpdate=true;Button("CheckUpdates").IsEnabled=false;Button("DownloadUpdate").IsEnabled=false;
+            Get<TabControl>("Tabs").IsEnabled=false;Button("Save").IsEnabled=false;Button("Play").IsEnabled=false;
             Label("UpdateState").Text="Downloading and verifying the update…";
             try {
-                string file=await Updates.Download(availableUpdate,settings.Root);
-                updateFolder=Path.GetDirectoryName(file);Button("OpenUpdates").IsEnabled=true;
-                Label("UpdateState").Text="Verified package downloaded: "+file;
+                Get<ProgressBar>("UpdateProgress").Visibility=Visibility.Visible;
+                string file=await Updates.Download(availableUpdate,settings.Root,value=>window.Dispatcher.BeginInvoke(new Action(()=>{
+                    Label("UpdateState").Text=value.ToString();Get<ProgressBar>("UpdateProgress").Value=value.Percent;
+                })));
+                updateFolder=Path.GetDirectoryName(file);Button("OpenUpdates").IsEnabled=true;Button("OpenUpdates").Visibility=automatic?Visibility.Collapsed:Visibility.Visible;
+                if(automatic) {
+                    Label("UpdateState").Text="Preparing the verified installer…";
+                    string job=await AutomaticUpdate.Prepare(availableUpdate,file,settings.Root);
+                    AutomaticUpdate.Start(settings.Root,job);dirty=false;downloadingUpdate=false;window.Close();
+                }else Label("UpdateState").Text="Installer downloaded and verified. Open the downloads folder to create an installation.";
             } catch(Exception error){Label("UpdateState").Text=error.Message;}
-            finally {updateBusy=false;downloadingUpdate=false;Button("CheckUpdates").IsEnabled=true;Button("DownloadUpdate").IsEnabled=availableUpdate!=null;}
+            finally {updateBusy=false;downloadingUpdate=false;Get<TabControl>("Tabs").IsEnabled=true;Button("Save").IsEnabled=true;Button("Play").IsEnabled=true;Button("CheckUpdates").IsEnabled=true;Button("DownloadUpdate").IsEnabled=availableUpdate!=null;}
+        }
+        async Task ApplyInstallerUpdate() {
+            if(updateBusy||installation!=null||launchingGame)return;
+            if(dirty && !Save())return;
+            updateBusy=true;downloadingUpdate=true;Get<TabControl>("Tabs").IsEnabled=false;Button("Save").IsEnabled=false;Button("Play").IsEnabled=false;
+            try {
+                Label("UpdateState").Text="Preparing the installer for your selected installation…";
+                string job=await Task.Run(()=>AutomaticUpdate.PrepareLocal(settings.Root));
+                AutomaticUpdate.Start(settings.Root,job);dirty=false;downloadingUpdate=false;window.Close();
+            }catch(Exception error){Label("UpdateState").Text=error.Message;}
+            finally {updateBusy=false;downloadingUpdate=false;Get<TabControl>("Tabs").IsEnabled=true;Button("Save").IsEnabled=true;Button("Play").IsEnabled=true;}
         }
         async Task UseExisting() {
             if(dirty && MessageBox.Show(window,"Discard unsaved changes and switch installations?","RedBaron_Recomp",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return;

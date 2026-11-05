@@ -9,7 +9,8 @@ param(
     [string]$BootstrapScript = '',
     [string]$LauncherConfig = '',
     [string]$OnlineConfig = '',
-    [string]$OfflineToolsRoot = '', [string]$OfflineManifest = '', [string]$RuntimeLauncher = ''
+    [string]$OfflineToolsRoot = '', [string]$OfflineManifest = '', [string]$RuntimeLauncher = '',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$PackageVersion = '0.21.0'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -173,7 +174,7 @@ try {
     if(!$LauncherConfig){$LauncherConfig=$LauncherExe+'.config'}
     if(!(Test-Path -LiteralPath $LauncherConfig -PathType Leaf)){throw 'Launcher configuration resource is missing.'}
     Copy-Item -LiteralPath $LauncherConfig -Destination (Join-Path $Destination 'RedBaron_Launcher.exe.config')
-    @{status='ready';titleId='584109B5';owner='RedBaronInstaller/v1';cleanupPending=$true;completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
+    @{status='ready';titleId='584109B5';owner='RedBaronInstaller/v1';version=$PackageVersion;cleanupPending=$true;completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
     Write-Output 'Installation complete.'
 } catch {
     @{status='failed';error=$_.Exception.Message} | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8

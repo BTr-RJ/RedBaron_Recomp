@@ -5,8 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
@@ -25,12 +23,12 @@ namespace RedBaron {
                 Thread.CurrentThread.CurrentUICulture = english;
                 SetThreadUILanguage(0x0409);
                 if(args.Contains("--self-test")) return SelfTests.Run(args);
+                if(args.Length>0 && (args[0]=="--apply-update"||args[0]=="--recover-update"))return UpdateWindow.Run(args);
                 string root=Services.FindRoot(args);
-                using(var sha=SHA256.Create()) {
-                    string key=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(root.ToLowerInvariant()))).Replace("-","");
-                    bool created;
-                    using(var mutex=new Mutex(true,"Local\\RedBaron_Launcher_"+key,out created)) {
+                bool created;
+                using(var mutex=new Mutex(true,AutomaticUpdate.MutexName(root),out created)) {
                         if(!created) {MessageBox.Show("The launcher is already open for this installation.","RedBaron_Recomp");return 0;}
+                        if(AutomaticUpdate.StartRecovery(root))return 0;
                         Settings settings=Settings.Load(root);
                         bool force=args.Contains("--settings") || args.Contains("--capture") || GetAsyncKeyState(0x10)<0;
                         if(!force && !settings.ShowLauncher) {
@@ -44,7 +42,6 @@ namespace RedBaron {
                             new LauncherWindow(window,settings,args);
                             return app.Run(window);
                         }
-                    }
                 }
             } catch(Exception error) {
                 MessageBox.Show(error.ToString(),"RedBaron_Recomp — unable to start",MessageBoxButton.OK,MessageBoxImage.Error);
