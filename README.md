@@ -2,13 +2,13 @@
 
 A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built with ReXGlue/ReXAuto.
 
-**v0.10 is a public testing release.** The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
+**v0.20 is a public testing release.** The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
 
-[Download v0.10](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.10) | [Installation](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
+[Download v0.20](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.20) | [Installation](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
 ## Install and play
 
-1. Download **RedBaron_Recomp-v0.10-windows-x64.zip** and extract it. Choose the larger **offline** ZIP for bundled build tools; both contain the same port.
+1. Download **RedBaron_Recomp-v0.20-windows-x64.zip** and extract it. Choose the larger **offline** ZIP for bundled build tools; both contain the same port.
 2. Open **RedBaron_Launcher.exe**. In **Install**, select your extracted game folder / `default.xex`, or the compatible original Xbox 360 content package (including packages without an extension).
 3. Optionally select your **DLC files** folder. Select a new, empty installation folder and click **Install**. Missing tools are detected and downloaded, or installed from the offline package. Allow the Microsoft installer elevation prompt if requested.
 4. Wait for extraction, code generation and compilation. Successful installation removes temporary build files and preserves reusable tools, saves and logs.

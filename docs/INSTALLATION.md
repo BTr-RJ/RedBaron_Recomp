@@ -11,8 +11,8 @@
 
 | Package | Includes |
 |---|---|
-| `RedBaron_Recomp-v0.10-windows-x64.zip` | Launcher, authored port sources and runtime/SDK payload; detects tools and downloads missing dependencies |
-| `RedBaron_Recomp-v0.10-windows-x64-offline.zip` | The same port plus portable tools and Microsoft Build Tools layout |
+| `RedBaron_Recomp-v0.20-windows-x64.zip` | Launcher, authored port sources and runtime/SDK payload; detects tools and downloads missing dependencies |
+| `RedBaron_Recomp-v0.20-windows-x64-offline.zip` | The same port plus portable tools and Microsoft Build Tools layout |
 
 Download from [project releases](https://github.com/BTr-RJ/RedBaron_Recomp/releases). Extract the complete ZIP before opening the launcher. Keep the offline package's `Tools` folder beside it until installation finishes. No game files or DLCs are bundled.
 
@@ -53,11 +53,11 @@ Successful installation removes owned temporary compilation/extraction files and
 
 **Update > Check for updates** checks published releases, including test prereleases. Downloaded ZIP size and SHA-256 are checked against GitHub metadata. A matching version is already up to date.
 
-For v0.10, updates are downloaded installer ZIPs; they do not replace a running game in place. Extract the new installer and install into a new empty folder using your game files/original package. Keep the old installation until the new one works, and preserve saves/settings. An existing installation's Install action adds DLCs; it does not rebuild the port.
+For v0.10 and v0.20, updates are downloaded installer ZIPs; they do not replace a running game in place. Extract the new installer and install into a new empty folder using your game files/original package. Keep the old installation until the new one works, and preserve saves/settings. An existing installation's Install action adds DLCs; it does not rebuild the port.
 
 ## Troubleshooting
 
-- A compile error mentioning `std::chrono::clock_time_conversion` can occur in v0.10 when the installer reuses a MinGW/LLVM-MinGW Clang (including tools installed by another recompilation launcher). The bundled SDK needs **x64 Clang targeting `x86_64-pc-windows-msvc`**, plus Visual C++ Build Tools. A recent Clang version alone is not sufficient. Updated installer source checks the target before reusing Clang. For the original v0.10 installer, start the launcher from a terminal where official Windows LLVM is first on `PATH` (`clang++ --version` must show that target), then install into a new empty folder to avoid reusing the failed CMake cache. Keep the original game files and saves.
+- A compile error mentioning `std::chrono::clock_time_conversion` can occur in v0.10 when the installer reuses a MinGW/LLVM-MinGW Clang (including tools installed by another recompilation launcher). The bundled SDK needs **x64 Clang targeting `x86_64-pc-windows-msvc`**, plus Visual C++ Build Tools. A recent Clang version alone is not sufficient. The v0.20 installer checks the target before reusing Clang. For the original v0.10 installer, start the launcher from a terminal where official Windows LLVM is first on `PATH` (`clang++ --version` must show that target), then install into a new empty folder to avoid reusing the failed CMake cache. Keep the original game files and saves.
 - Keep `render_target_path_d3d12 = "rov"`; automatic/RTV can produce a white 3D scene on NVIDIA.
 - For temporal artifacts, try Bilinear, FSR 1 or CAS. HDR needs Windows HDR enabled on the active monitor.
 - Hold **Shift** while opening the shortcut, or pass `--settings`, to return to the launcher when direct play is enabled.

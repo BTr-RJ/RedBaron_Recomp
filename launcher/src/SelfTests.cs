@@ -167,16 +167,16 @@ namespace RedBaron {
                 Services.Save(loaded,caps);
                 Assert(new Toml(File.ReadAllText(loaded.Toml)).Bool("redbaron_eos_enabled",false) && new Toml(File.ReadAllText(loaded.Toml)).Bool("redbaron_eos_account",false),"Built-in EOS preferences were not saved");
                 results.Add("EOS: automatic Epic sign-in, legacy profile migration, capability gating and launch arguments");
-                var release=new ReleaseInfo{tag_name="v0.11",assets=new[]{new ReleaseAsset {
-                    name="RedBaron_Recomp-v0.11-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
-                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip"}}};
+                var release=new ReleaseInfo{tag_name="v99.1",assets=new[]{new ReleaseAsset {
+                    name="RedBaron_Recomp-v99.1-windows-x64.zip",size=1234,digest="sha256:"+new string('a',64),
+                    browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v99.1/RedBaron_Recomp-v99.1-windows-x64.zip"}}};
                 Assert(Updates.Parse(Json.Serializer.Serialize(release))!=null,"Valid release rejected");
                 release.prerelease=true;
                 Assert(Updates.ParseFeed(Json.Serializer.Serialize(new[]{new ReleaseInfo {tag_name="v99.0",draft=true},release}))!=null,"Published test-release updates were not discovered");
                 release.prerelease=false;
                 release.assets[0].browser_download_url="https://example.org/update.zip";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Untrusted update host accepted");
-                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v0.11/RedBaron_Recomp-v0.11-windows-x64.zip";
+                release.assets[0].browser_download_url="https://github.com/BTr-RJ/RedBaron_Recomp/releases/download/v99.1/RedBaron_Recomp-v99.1-windows-x64.zip";
                 release.assets[0].digest="sha256:bad";
                 Reject(()=>Updates.Parse(Json.Serializer.Serialize(release)),"Unverified update accepted");
                 release.assets[0].digest="sha256:"+new string('a',64);release.assets[0].size=1600L*1024*1024;

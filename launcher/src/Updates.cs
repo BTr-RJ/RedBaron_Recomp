@@ -17,7 +17,7 @@ namespace RedBaron {
         public ReleaseAsset[] assets {get;set;}
     }
     public static class Updates {
-        public const string CurrentVersion="0.10.0";
+        public const string CurrentVersion="0.20.0";
         const long MaxBytes=2L*1024*1024*1024-1;
         const string Endpoint="https://api.github.com/repos/BTr-RJ/RedBaron_Recomp/releases?per_page=20";
         static bool ValidAsset(ReleaseAsset asset) {

@@ -31,7 +31,7 @@ function Expand-RBArchive([string]$Archive,[string]$Destination,[string]$Stage) 
     }finally{$zip.Dispose()}
 }
 function Receive-RBDownload([string]$Url,[string]$Destination,[string]$Stage) {
-    $request=[Net.HttpWebRequest]::Create($Url);$request.UserAgent='RedBaron_Recomp/0.10';$request.Timeout=60000;$request.ReadWriteTimeout=120000
+    $request=[Net.HttpWebRequest]::Create($Url);$request.UserAgent='RedBaron_Recomp/0.20';$request.Timeout=60000;$request.ReadWriteTimeout=120000
     $response=$request.GetResponse()
     try {
         [long]$total=[Math]::Max(0,$response.ContentLength);[long]$done=0;$last=-1

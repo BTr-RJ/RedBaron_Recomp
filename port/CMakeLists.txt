@@ -5,8 +5,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(snoopyflyingace LANGUAGES CXX)
 
+# clang++ uses GNU-style command-line flags even with the Microsoft ABI.
+# MSVC tests the frontend syntax; SIMULATE_ID identifies ABI compatibility.
 if(WIN32 AND (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
-        NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8))
+        NOT CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC" OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8))
     message(FATAL_ERROR
         "The Windows SDK requires x64 Clang targeting x86_64-pc-windows-msvc "
         "with the Microsoft C++ standard library. MinGW/LLVM-MinGW and 32-bit "
