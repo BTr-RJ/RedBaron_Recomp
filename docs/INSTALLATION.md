@@ -57,6 +57,7 @@ For v0.10, updates are downloaded installer ZIPs; they do not replace a running 
 
 ## Troubleshooting
 
+- A compile error mentioning `std::chrono::clock_time_conversion` can occur in v0.10 when the installer reuses a MinGW/LLVM-MinGW Clang (including tools installed by another recompilation launcher). The bundled SDK needs **x64 Clang targeting `x86_64-pc-windows-msvc`**, plus Visual C++ Build Tools. A recent Clang version alone is not sufficient. Updated installer source checks the target before reusing Clang. For the original v0.10 installer, start the launcher from a terminal where official Windows LLVM is first on `PATH` (`clang++ --version` must show that target), then install into a new empty folder to avoid reusing the failed CMake cache. Keep the original game files and saves.
 - Keep `render_target_path_d3d12 = "rov"`; automatic/RTV can produce a white 3D scene on NVIDIA.
 - For temporal artifacts, try Bilinear, FSR 1 or CAS. HDR needs Windows HDR enabled on the active monitor.
 - Hold **Shift** while opening the shortcut, or pass `--settings`, to return to the launcher when direct play is enabled.

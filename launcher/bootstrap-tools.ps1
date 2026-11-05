@@ -99,11 +99,9 @@ if(!(Have 'ninja')) {
     }
     $env:PATH=$target+';'+$env:PATH
 }
-$clangOk=$false
-if(Have 'clang++') {
-    $version=@(& clang++ --version)[0]
-    if($version -match 'clang version (\d+)'){$clangOk=([int]$Matches[1] -ge 20)}
-}
+# Use the same ABI check as the inventory, including after offline tools were
+# added to PATH. A version-only check would reuse an incompatible MinGW Clang.
+$clangOk=(@(Get-RedBaronToolInventory) | Where-Object {$_.key -eq 'clang'}).available
 if(!$clangOk) {
     $archive=Download 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/clang%2Bllvm-23.1.4-x86_64-pc-windows-msvc.tar.xz' '854BFFCFC84528E0EE92490FF5C178920ABD358A79C3E98F053E41E3E8E4C6D2' 'llvm.tar.xz'
     $target=Join-Path $ToolRoot 'llvm'

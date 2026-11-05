@@ -12,7 +12,19 @@ function Get-RedBaronToolInventory {
         $candidates=@();if($command){$candidates+=$command.Source};if($cached.ContainsKey($definition[0])){$candidates+=$cached[$definition[0]]}
         foreach($candidate in $candidates | Select-Object -Unique){
             if(!(Test-Path -LiteralPath $candidate -PathType Leaf) -or $candidate -match '(?i)\\WindowsApps\\'){continue}
-            try {$line=(@(& $candidate --version 2>$null) -join ' ');if($LASTEXITCODE -eq 0 -and $line -match $definition[3]){$version=$Matches[1];$path=$candidate;$ready=([version]$version -ge [version]$definition[4]);if($ready){break}}}catch{}
+            try {
+                $line=(@(& $candidate --version 2>$null) -join ' ')
+                if($LASTEXITCODE -eq 0 -and $line -match $definition[3]) {
+                    $version=$Matches[1];$path=$candidate
+                    $ready=([version]$version -ge [version]$definition[4])
+                    # The bundled SDK uses the x64 Microsoft C++ ABI/STL.
+                    # MinGW/LLVM-MinGW can have a recent Clang but are incompatible.
+                    if($definition[0] -eq 'clang') {
+                        $ready=$ready -and ($line -match '\bTarget:\s+x86_64-[^\s]+-windows-msvc(?:[\d.]+)?(?=\s|$)')
+                    }
+                    if($ready){break}
+                }
+            }catch{}
         }
         $result.Add([pscustomobject]@{key=$definition[0];name=$definition[1];available=$ready;version=$version;path=$path})
     }
