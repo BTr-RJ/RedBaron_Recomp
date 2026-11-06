@@ -1,14 +1,14 @@
 # Install, update and add DLCs
 
-This guide is for **RedBaron_Recomp v0.21 Public Test** on Windows. The launcher interface and the button names below are in English.
+This guide is for **RedBaron_Recomp v0.22 Public Test** on Windows. The launcher interface and the button names below are in English.
 
 ## Start here
 
 | Your situation | Follow these steps |
 |---|---|
 | You have never installed the game, or an earlier installation failed | [Install the game](#install-the-game-or-retry-a-failed-installation) in a new, empty folder |
-| Your v0.10 or v0.20 installation already works | [Move your existing installation to v0.21](#move-a-working-v010-or-v020-installation-to-v021) |
-| You already use v0.21 and a newer release becomes available | [Install future updates](#install-future-updates-from-v021-onward) |
+| Your v0.10 or v0.20 installation already works | [Move your existing installation to v0.22](#move-a-working-v010-or-v020-installation-to-v022) |
+| You use v0.21 or newer and want to install v0.22 or a later release | [Install future updates](#install-future-updates-from-v021-onward) |
 | You want to add your own DLC packages | [Add DLCs](#add-dlcs-to-an-installed-game) |
 
 ## What you need
@@ -22,16 +22,16 @@ The installer compiles the game on your computer. You do not need to enter comma
 
 ## Choose and extract a download
 
-Open the [v0.21 release page](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.21) and expand **Assets** if the downloads are hidden.
+Open the [v0.22 release page](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.22) and expand **Assets** if the downloads are hidden.
 
 | Download | Choose this when… |
 |---|---|
-| `RedBaron_Recomp-v0.21-windows-x64.zip` | You want the smaller, recommended download. Missing build tools are downloaded when needed. |
-| `RedBaron_Recomp-v0.21-windows-x64-offline.zip` | You want build tools included in the download. It contains the same game port as the smaller package. |
+| `RedBaron_Recomp-v0.22-windows-x64.zip` | You want the smaller, recommended download. Missing build tools are downloaded when needed. |
+| `RedBaron_Recomp-v0.22-windows-x64-offline.zip` | You want build tools included in the download. It contains the same game port as the smaller package. |
 | `SHA256SUMS.txt` | You want to check the ZIP's file checksum yourself. The launcher updater already checks downloaded packages automatically. |
 
 1. Download **one** of the Windows ZIPs. GitHub's **Source code** downloads are for developers; they are not the player installer.
-2. In File Explorer, right-click the ZIP and select **Extract All**. Extract it into its own folder, separate from your installed game; for example, `Desktop\RedBaron-v0.21-Installer`.
+2. In File Explorer, right-click the ZIP and select **Extract All**. Extract it into its own folder, separate from your installed game; for example, `Desktop\RedBaron-v0.22-Installer`.
 3. Open the extracted folder and find `RedBaron_Launcher.exe`. Do not run it from inside the ZIP. Keep `RedBaron_Launcher.exe.config` beside it.
 4. If you chose the offline ZIP, also keep its entire **Tools** folder beside the launcher. Do not move only the EXE out of that folder.
 
@@ -39,7 +39,7 @@ Open the [v0.21 release page](https://github.com/BTr-RJ/RedBaron_Recomp/releases
 
 Use these steps when there is no complete working installation. If your older version already plays correctly, use the migration steps in the next section instead.
 
-1. Open the extracted **v0.21** `RedBaron_Launcher.exe` and select **Install**.
+1. Open the extracted **v0.22** `RedBaron_Launcher.exe` and select **Install**.
 2. Under **Game files**, choose your extracted game folder, its `default.xex`, or your compatible original Xbox 360 content package. Content packages without a file extension are accepted. The installer checks that the files belong to this game.
 3. Optional: under **DLC files**, choose the folder containing your supported gameplay DLC packages. You can leave this empty and add DLCs later.
 4. Choose a **new, empty installation folder**, such as `C:\Games\RedBaron`. Choose a different folder if that example already contains files. Keep the installer download folder and the game installation folder separate.
@@ -47,16 +47,18 @@ Use these steps when there is no complete working installation. If your older ve
 6. When installation is complete, select **Game language**, set your preferred **Video** and **Controls**, and enter your **Player name** under **Online**.
 7. Click **Save**, then **Play**. Use the installed launcher or its desktop shortcut next time.
 
-**If v0.10 or v0.20 failed during compilation:** follow these same steps with v0.21 and a new empty destination. Keep your original game files and any saves. Do not reuse the failed build folder as the new destination: it can retain the incompatible compiler settings. You do not need to install v0.20 first.
+**If v0.10 or v0.20 failed during compilation:** follow these same steps with v0.22 and a new empty destination. Keep your original game files and any saves. Do not reuse the failed build folder as the new destination: it can retain the incompatible compiler settings. You do not need to install v0.20 first.
 
-## Move a working v0.10 or v0.20 installation to v0.21
+<a id="move-a-working-v010-or-v020-installation-to-v021"></a>
+
+## Move a working v0.10 or v0.20 installation to v0.22
 
 This is a **one-time manual transition**. Already distributed v0.10/v0.20 launchers can download the new installer, but cannot apply the update themselves.
 
 1. Close the game. Open your old launcher and select **Update > Check for updates**. If your shortcut starts the game directly, hold **Shift** while opening it to show the launcher.
-2. Click **Download update** and wait for the verified download to finish. Click **Open downloads folder** to find the ZIP. Alternatively, download either v0.21 Windows ZIP directly from the [release page](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.21).
+2. Click **Download update** and wait for the verified download to finish. Click **Open downloads folder** to find the ZIP. Alternatively, download either v0.22 Windows ZIP directly from the [release page](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.22).
 3. **Close the old launcher.** Extract the new ZIP into a separate installer folder, following [the extraction steps above](#choose-and-extract-a-download). Keep the offline package's **Tools** folder beside its launcher.
-4. Open the **new extracted v0.21 launcher**. Select **Install > Use existing installation…**.
+4. Open the **new extracted v0.22 launcher**. Select **Install > Use existing installation…**.
 5. Select your **existing installed game folder**. It is the folder containing both `game` and `build_cpp_release`, usually with `RedBaron_Launcher.exe` beside them. For example, choose `C:\Games\RedBaron`, not `C:\Games\RedBaron\build_cpp_release` and not the newly extracted installer folder.
 6. Confirm that the launcher shows **Installation found**. Open **Update** and click **Update selected installation**. This button is provided by the full installer; the ordinary Install action on an existing game is for adding DLCs.
 7. Wait for the update window to prepare and check the new build. It uses the game files already in your installation. You do not need to select the original game files again.
@@ -68,6 +70,8 @@ The **Launcher version** shown in the extracted installer identifies that instal
 
 ## Install future updates from v0.21 onward
 
+**Already using v0.21? These steps install v0.22 automatically after you click Download and install update.** No ZIP extraction or game-file selection is needed.
+
 1. Close the game and open your **installed** launcher. Hold **Shift** when opening the shortcut if it normally starts the game directly.
 2. Save any settings you have changed. Open **Update** and click **Check for updates**.
 3. If a newer release is available, click **Download and install update** once. This is the action that starts the download; checking for updates alone does not download or install anything.
@@ -76,7 +80,7 @@ The **Launcher version** shown in the extracted installer identifies that instal
 
 For these future updates, you do not have to find or extract a ZIP, choose your game files again, or select an installation folder. The updater chooses the smaller standard package and reuses compatible cached build tools. Missing dependencies may still need Internet access and Microsoft approval.
 
-**No newer public release is available** means this launcher is up to date. A v0.21 launcher will not offer v0.21 as another update. Published test releases are included in update checks.
+**No newer public release is available** means this launcher is up to date. A v0.22 launcher will not offer v0.22 as another update. Published test releases are included in update checks.
 
 ### If you cancel, lose power or see an update error
 
@@ -127,10 +131,9 @@ Successful installation removes owned temporary compilation files and keeps reus
 
 ## Troubleshooting and reporting a problem
 
-- **LLVM extraction error mentioning `xz -d -qq`:** older standard installers call a `tar.exe` that may need an unavailable external XZ program. Use the complete **offline** package with a **new, empty installation folder**. Keep its **Tools** folder and `.config` file beside the launcher. Preserve the failed installation and its log for diagnosis.
-
-- **Compilation failed in v0.10:** use the v0.21 installer in a new empty destination. It includes the v0.20 fix for incompatible Clang selection, including errors mentioning `std::chrono::clock_time_conversion`.
-- **Update selected installation is missing:** open the extracted **full v0.21 installer**, select **Install > Use existing installation…**, choose the folder containing `game` and `build_cpp_release`, and return to **Update**. The lightweight installed launcher uses **Download and install update** for newer releases instead.
+- **LLVM extraction error mentioning `xz -d -qq` in an older installer:** use the **v0.22** standard or offline installer in a **new, empty installation folder**. v0.22 extracts LLVM with CMake and does not require external `tar` or `xz` for that step. Keep the failed installation and its log for diagnosis. You cannot update an installation that never finished.
+- **Compilation failed in v0.10:** use the v0.22 installer in a new empty destination. It includes the v0.20 fix for incompatible Clang selection, including errors mentioning `std::chrono::clock_time_conversion`.
+- **Update selected installation is missing:** open the extracted **full v0.22 installer**, select **Install > Use existing installation…**, choose the folder containing `game` and `build_cpp_release`, and return to **Update**. The lightweight installed launcher uses **Download and install update** for newer releases instead.
 - **Another launcher is open:** close the other launcher for this game installation, then retry. Close the game before updating or adding DLCs.
 - **White 3D scene:** keep `render_target_path_d3d12 = "rov"` in the runtime settings.
 - **Temporal image artifacts:** try Bilinear, FSR 1 or CAS. HDR requires Windows HDR to be enabled.

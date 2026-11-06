@@ -2,20 +2,20 @@
 
 A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built with ReXGlue/ReXAuto.
 
-**v0.21 is a public testing release.** It adds automatic installation of future updates and keeps the v0.20 compiler-selection fix. The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
+**v0.22 is a public testing release.** It fixes LLVM extraction on PCs where `tar.exe` requires an unavailable external `xz` program. The fix was confirmed by the player who reported the installation failure. It keeps automatic updates from v0.21 and the v0.20 compiler-selection fix. The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
 
-[Download v0.21](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.21) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
+[Download v0.22](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.22) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
 | Start here | Instructions |
 |---|---|
-| First installation, or an earlier installation failed | [Install v0.21 into a new empty folder](docs/INSTALLATION.md#install-the-game-or-retry-a-failed-installation) |
-| Working v0.10/v0.20 installation | [One-time migration to v0.21](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v021) |
-| Future updates from v0.21 onward | [Download and install from the new launcher](docs/INSTALLATION.md#install-future-updates-from-v021-onward) |
+| First installation, or an earlier installation failed | [Install v0.22 into a new empty folder](docs/INSTALLATION.md#install-the-game-or-retry-a-failed-installation) |
+| Working v0.10/v0.20 installation | [One-time migration to v0.22](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v022) |
+| Working v0.21 or newer installation | [Download and install from the new launcher](docs/INSTALLATION.md#install-future-updates-from-v021-onward) |
 | Add your own DLCs | [DLC installation steps](docs/INSTALLATION.md#add-dlcs-to-an-installed-game) |
 
 ## Install and play
 
-1. Download **RedBaron_Recomp-v0.21-windows-x64.zip** and use **Extract All**. Choose the larger **offline** ZIP for bundled build tools; both contain the same port. Keep the offline **Tools** folder beside its launcher.
+1. Download **RedBaron_Recomp-v0.22-windows-x64.zip** and use **Extract All**. Choose the larger **offline** ZIP for bundled build tools; both contain the same port. Keep the offline **Tools** folder beside its launcher.
 2. Open **RedBaron_Launcher.exe**. In **Install**, select your extracted game folder / `default.xex`, or the compatible original Xbox 360 content package (including packages without an extension).
 3. Optionally select your **DLC files** folder. Select a new, empty installation folder and click **Install**. Missing tools are detected and downloaded, or installed from the offline package. Allow the Microsoft installer elevation prompt if requested.
 4. Wait for extraction, code generation and compilation. Successful installation removes temporary build files and preserves reusable tools, saves and logs.
@@ -27,9 +27,11 @@ See the [full installation guide](docs/INSTALLATION.md) for requirements, contro
 
 ## Updating an existing game
 
-The v0.10/v0.20 updater can find and download v0.21 after **Check for updates > Download update**. Close the old launcher, extract the new ZIP into a separate folder and open its launcher. Select **Install > Use existing installation…**, choose your installed game folder (the one containing `game` and `build_cpp_release`), then select **Update > Update selected installation**. Wait for the updater to finish and reopen the installed launcher. Your installed game files, saves, settings and DLCs are kept.
+If you already use **v0.21**, close the game, open the installed launcher and select **Update > Check for updates > Download and install update**. The updater downloads v0.22, verifies it, rebuilds and installs the new components, then reopens the launcher. No manual ZIP extraction is needed. Checking alone does not start the download.
 
-This manual extraction is needed once to move from the old launcher. From v0.21 onward, **Update > Download and install update** prepares and applies future releases automatically after you click it. Checking alone does not start a download. If your original installation failed, use a new empty destination for v0.21 instead. See the [full migration steps](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v021).
+The v0.10/v0.20 updater can find and download v0.22 after **Check for updates > Download update**. Close the old launcher, extract the new ZIP into a separate folder and open its launcher. Select **Install > Use existing installation…**, choose your installed game folder (the one containing `game` and `build_cpp_release`), then select **Update > Update selected installation**. Wait for the updater to finish and reopen the installed launcher. Your installed game files, saves, settings and DLCs are kept.
+
+This manual extraction is needed once to move from the old launcher. From v0.21 onward, **Update > Download and install update** prepares and applies future releases automatically after you click it. Checking alone does not start a download. If your original installation failed, use a new empty destination for v0.22 instead. See the [full migration steps](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v022).
 
 ## Features
 
