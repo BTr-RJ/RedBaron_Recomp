@@ -110,7 +110,10 @@ if(!$clangOk) {
         if(Test-Path -LiteralPath $target){throw "Incomplete tool folder preserved: $target"}
         New-Item -ItemType Directory -Path $target | Out-Null
         Write-RBProgress 'Extracting Clang'
-        & tar.exe -xf $archive -C $target
+        # CMake is ready above and includes XZ support. Windows/PATH tar.exe
+        # may require an external xz executable that clean PCs do not have.
+        $cmake=(Get-Command cmake -CommandType Application -ErrorAction Stop).Source
+        & $cmake -E chdir $target $cmake -E tar xf $archive
         if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath (Join-Path $bin 'clang++.exe'))){throw "LLVM extraction failed; work retained at $target"}
     }
     $env:PATH=$bin+';'+$env:PATH

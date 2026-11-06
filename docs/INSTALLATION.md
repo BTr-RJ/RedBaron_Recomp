@@ -127,6 +127,8 @@ Successful installation removes owned temporary compilation files and keeps reus
 
 ## Troubleshooting and reporting a problem
 
+- **LLVM extraction error mentioning `xz -d -qq`:** older standard installers call a `tar.exe` that may need an unavailable external XZ program. Use the complete **offline** package with a **new, empty installation folder**. Keep its **Tools** folder and `.config` file beside the launcher. Preserve the failed installation and its log for diagnosis.
+
 - **Compilation failed in v0.10:** use the v0.21 installer in a new empty destination. It includes the v0.20 fix for incompatible Clang selection, including errors mentioning `std::chrono::clock_time_conversion`.
 - **Update selected installation is missing:** open the extracted **full v0.21 installer**, select **Install > Use existing installation…**, choose the folder containing `game` and `build_cpp_release`, and return to **Update**. The lightweight installed launcher uses **Download and install update** for newer releases instead.
 - **Another launcher is open:** close the other launcher for this game installation, then retry. Close the game before updating or adding DLCs.
