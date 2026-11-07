@@ -172,7 +172,10 @@ $compiler=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Com
 if(!$compiler){throw 'Visual C++ Build Tools could not be located after installation.'}
 $devCommand=Join-Path $compiler 'Common7/Tools/VsDevCmd.bat'
 if(!(Test-Path -LiteralPath $devCommand)){throw 'The Visual C++ build environment is missing.'}
-$selectedToolBins=@('cmake','ninja','clang++') | ForEach-Object {Split-Path -Parent (Get-Command $_ -ErrorAction Stop).Source} | Select-Object -Unique
+# Keep the chosen compiler ahead of directories reused for CMake/Ninja. Those
+# directories may also contain an older or MinGW clang++. Putting them first
+# would silently undo the compatible compiler selection above.
+$selectedToolBins=@('clang++','cmake','ninja') | ForEach-Object {Split-Path -Parent (Get-Command $_ -CommandType Application -ErrorAction Stop).Source} | Select-Object -Unique
 # Import the environment into this installation process. Ninja needs rc.exe,
 # headers and libraries even when clang is already present on the machine.
 $environmentProcess=New-Object Diagnostics.Process
@@ -196,7 +199,9 @@ $systemFolder=[Environment]::GetFolderPath('System')
 $env:PATH=($selectedToolBins -join ';')+';'+$systemFolder+';'+(Join-Path $systemFolder 'WindowsPowerShell/v1.0')+';'+$env:PATH
 foreach($tool in @('cmake','ninja','clang++','rc.exe')){Get-Command $tool -ErrorAction Stop | Out-Null}
 $finalInventory=@(Get-RedBaronToolInventory)
-if(@($finalInventory | Where-Object {!$_.available}).Count){throw 'One or more build tools are still unavailable.'}
+foreach($entry in $finalInventory){Write-Output ($entry.name+': '+$(if($entry.available){$entry.version+' - ready'}else{'missing or incompatible'})+' ['+$entry.path+']')}
+$unavailable=@($finalInventory | Where-Object {!$_.available})
+if($unavailable.Count){throw ('Build tools are still unavailable or incompatible: '+(($unavailable | ForEach-Object {$_.name}) -join ', ')+'. See the selected paths above.')}
 New-Item -ItemType Directory -Path (Split-Path -Parent $CatalogFile) -Force | Out-Null
 ConvertTo-Json -InputObject $finalInventory -Depth 3 | Set-Content -LiteralPath $CatalogFile -Encoding UTF8
 Write-Output 'Build tools are ready.'

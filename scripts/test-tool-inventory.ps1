@@ -1,8 +1,9 @@
 [CmdletBinding()]
-param()
+param([string]$BootstrapScript='')
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $root=Split-Path -Parent $PSScriptRoot
+if(!$BootstrapScript){$BootstrapScript=Join-Path $root 'launcher/bootstrap-tools.ps1'}
 $work=Join-Path ([IO.Path]::GetTempPath()) ('redbaron-tool-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
 $originalPath=$env:PATH
@@ -14,8 +15,8 @@ using System.IO;
 using System.Reflection;
 class ToolStub {
     static int Main(string[] args) {
-        if (args.Length != 1 || args[0] != "--version") return 2;
         string path = Assembly.GetExecutingAssembly().Location;
+        if (Path.GetFileName(path) != "vswhere.exe" && (args.Length != 1 || args[0] != "--version")) return 2;
         Console.WriteLine(File.ReadAllText(path + ".txt"));
         return File.Exists(path + ".fail") ? 1 : 0;
     }
@@ -97,7 +98,7 @@ try {
     $bootstrapError=''
     try {
         ${env:ProgramFiles(x86)}=$work
-        & (Join-Path $root 'launcher/bootstrap-tools.ps1') -ToolRoot $toolRoot -OfflineToolsRoot $offline -OfflineManifest $manifest -InventoryFile $catalog | Out-Null
+        & $BootstrapScript -ToolRoot $toolRoot -OfflineToolsRoot $offline -OfflineManifest $manifest -InventoryFile $catalog | Out-Null
     } catch {$bootstrapError=$_.Exception.Message}
     finally {${env:ProgramFiles(x86)}=$programFilesX86}
     if($bootstrapError -ne 'The offline Microsoft Build Tools layout is missing.') {
@@ -108,5 +109,61 @@ try {
         throw 'Offline bootstrap did not replace incompatible Clang with the verified bundled tool.'
     }
     $checks++;Write-Output 'PASS offline bootstrap selects bundled MSVC Clang over PATH/cache MinGW without downloading'
+
+    # Complete the bootstrap through VsDevCmd and the final inventory. A shared
+    # tools directory can contain working CMake/Ninja and an incompatible Clang.
+    # Reordering their directories after selection must not reselect that Clang.
+    $fakeProgramFiles=Join-Path $work 'Program Files (x86)'
+    $fakeVs=Join-Path $work 'Visual Studio'
+    $fakeSdk=Join-Path $work 'Windows Kits/10'
+    foreach($file in @(
+        (Join-Path $fakeProgramFiles 'Microsoft Visual Studio/Installer/vswhere.exe'),
+        (Join-Path $fakeVs 'VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt'),
+        (Join-Path $fakeVs 'VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe'),
+        (Join-Path $fakeVs 'VC/Tools/MSVC/14.51.36231/include/vector'),
+        (Join-Path $fakeVs 'VC/Tools/MSVC/14.51.36231/lib/x64/msvcprt.lib'),
+        (Join-Path $fakeVs 'Common7/Tools/VsDevCmd.bat'),
+        (Join-Path $fakeSdk 'Include/10.0.28000.0/um/Windows.h'),
+        (Join-Path $fakeSdk 'Lib/10.0.28000.0/um/x64/kernel32.lib'),
+        (Join-Path $fakeSdk 'Lib/10.0.28000.0/ucrt/x64/ucrt.lib'),
+        (Join-Path $fakeSdk 'bin/10.0.28000.0/x64/rc.exe')
+    )) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null
+        [IO.File]::WriteAllText($file,'fixture')
+    }
+    $vswhereFixture=Join-Path $fakeProgramFiles 'Microsoft Visual Studio/Installer/vswhere.exe'
+    Copy-Item -LiteralPath (Join-Path $work 'ToolStub.exe') -Destination $vswhereFixture -Force
+    [IO.File]::WriteAllText(($vswhereFixture+'.txt'),$fakeVs)
+    [IO.File]::WriteAllText((Join-Path $fakeVs 'VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt'),'14.51.36231')
+    function Get-ItemProperty {
+        param($Path,$Name,$ErrorAction)
+        if($Path -ne 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots' -or $Name -ne 'KitsRoot10'){throw 'Unexpected registry fixture request.'}
+        return [pscustomobject]@{KitsRoot10=$fakeSdk}
+    }
+    $sharedBin=Split-Path -Parent $mingw
+    [IO.File]::WriteAllText((Join-Path $fakeVs 'Common7/Tools/VsDevCmd.bat'),('@set "PATH='+$sharedBin+';'+(Join-Path $fakeSdk 'bin/10.0.28000.0/x64')+';%PATH%"'+"`r`n@exit /b 0`r`n"))
+    try {
+        ${env:ProgramFiles(x86)}=$fakeProgramFiles
+        foreach($mode in @('offline','cached')) {
+            $env:PATH=$sharedBin
+            $fullCatalog=Join-Path $work ($mode+'-full-inventory.json')
+            if($mode -eq 'cached') {
+                ConvertTo-Json -InputObject @(@{key='clang';path=$msvc}) | Set-Content -LiteralPath $fullCatalog -Encoding UTF8
+            }
+            $arguments=@{ToolRoot=(Join-Path $work ($mode+'-full-cache'));InventoryFile=$fullCatalog}
+            if($mode -eq 'offline'){$arguments.OfflineToolsRoot=$offline;$arguments.OfflineManifest=$manifest}
+            $bootstrapOutput=@(& $BootstrapScript @arguments)
+            $expectedClang=if($mode -eq 'offline'){Join-Path $arguments.ToolRoot 'portable/llvm/bin/clang++.exe'}else{$msvc}
+            $stored=Get-Content -LiteralPath $fullCatalog -Raw | ConvertFrom-Json
+            if(@($stored | Where-Object {!$_.available}).Count -or (Get-Command clang++).Source -ne $expectedClang -or ($stored | Where-Object {$_.key -eq 'clang'}).path -ne $expectedClang) {
+                throw ('Full '+$mode+' bootstrap lost the selected compatible compiler. Expected: '+$expectedClang+'; command: '+(Get-Command clang++).Source+'; catalog: '+($stored | Where-Object {$_.key -eq 'clang'}).path)
+            }
+            if($bootstrapOutput -notcontains 'Build tools are ready.'){throw 'Full bootstrap did not finish.'}
+            $checks++;Write-Output ('PASS full '+$mode+' bootstrap preserves MSVC Clang with shared CMake/Ninja/MinGW directory and imported VS environment')
+        }
+    } finally {
+        ${env:ProgramFiles(x86)}=$programFilesX86
+        Remove-Item Function:\Get-ItemProperty
+    }
 } finally {$env:PATH=$originalPath}
 Write-Output ("Passed $checks tool inventory checks. Fixtures: $work")
