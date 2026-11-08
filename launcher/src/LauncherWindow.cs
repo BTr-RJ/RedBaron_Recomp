@@ -58,6 +58,7 @@ namespace RedBaron {
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr window,int attr,ref int value,int size);
         public LauncherWindow(Window w,Settings s,string[] a) {
             window=w; settings=s;args=a;
+            Label("LauncherVersion").Text="Launcher version: "+Updates.CurrentVersion+" — test build";
             layout=new WindowLayout(window);
             Label("SdkInfo").Text=(Services.HasBundledSdk()?"This launcher includes the ReXGlue SDK and online components. ":"Select an installed compatible ReXGlue SDK. ")+(Services.HasOfflineTools()?"Offline build tools are included. Compatible installed tools are reused; only missing components are installed. ":"Missing tools can be downloaded during installation. ")+"Microsoft Build Tools may request administrator approval. No game files are downloaded.";
             if(!Services.HasInstallerPayload())Label("SdkInfo").Text="Build files are not needed to play or add DLCs. Use the full installer to create another game installation.";
@@ -336,7 +337,7 @@ namespace RedBaron {
             try {
                 availableUpdate=await Updates.Check();
                 if(availableUpdate==null) {
-                    Label("UpdateState").Text="No newer public release is available.";
+                    Label("UpdateState").Text="No newer public release is available for launcher v"+Updates.CurrentVersion+".";
                     Label("UpdateBadge").Visibility=Visibility.Collapsed;
                 } else {
                     Label("UpdateState").Text="Available: "+availableUpdate.name+" ("+(availableUpdate.size/(1024*1024))+" MB).";

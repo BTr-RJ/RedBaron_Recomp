@@ -34,6 +34,14 @@ namespace RedBaron {
             Directory.CreateDirectory(directory);
             var results=new List<string>();
             try {
+                using(var stream=System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("MainWindow.xaml")) {
+                    var versionWindow=(System.Windows.Window)System.Windows.Markup.XamlReader.Load(stream);
+                    new LauncherWindow(versionWindow,new Settings {Root=Path.Combine(directory,"version display")},new string[0]);
+                    var versionLabel=(System.Windows.Controls.TextBlock)versionWindow.FindName("LauncherVersion");
+                    Assert(versionLabel!=null && versionLabel.Text=="Launcher version: "+Updates.CurrentVersion+" — test build","Displayed launcher version differs from the updater version");
+                    versionWindow.Close();
+                }
+                results.Add("Update screen: actual embedded window displays the same version used by the updater");
                 InstallProgress progress;
                 Assert(InstallProgress.TryParse("@@RBPROGRESS {\"stage\":\"Downloading\",\"completed\":25,\"total\":100}",out progress) && progress.Known && progress.Percent==25,"Measured download progress rejected");
                 Assert(InstallProgress.TryParse("[90/180] Building CXX object",out progress) && progress.Percent==50 && progress.stage=="Compiling","Ninja progress not recognized");

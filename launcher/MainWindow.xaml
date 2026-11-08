@@ -170,7 +170,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
           <TextBlock Text="Project updates" Style="{StaticResource Heading}"/>
           <TextBlock Text="Download and install the latest release. The launcher verifies the download, prepares the updated game and reopens when it is ready. Your settings, saves and DLCs are kept." Style="{StaticResource Muted}" Margin="0,0,0,24" MaxWidth="740" HorizontalAlignment="Left"/>
-          <TextBlock Text="Launcher version: 0.21 — test build" FontSize="16" Margin="0,0,0,16"/>
+          <TextBlock Name="LauncherVersion" FontSize="16" Margin="0,0,0,16"/>
           <Button Name="ApplyInstallerUpdate" Content="Update selected installation" Style="{StaticResource Primary}" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,0,0,14"/>
           <TextBlock Name="UpdateState" Text="Checking for releases…" Style="{StaticResource Muted}" Margin="0,0,0,18"/>
           <ProgressBar Name="UpdateProgress" Height="8" Minimum="0" Maximum="100" Visibility="Collapsed" Margin="0,0,0,16"/>
