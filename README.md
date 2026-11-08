@@ -4,6 +4,8 @@ A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built 
 
 **v0.23 is a public testing release.** It fixes the launcher version display: the original v0.22 showed **0.21** even though its updater already used **0.22.0**. The version label now follows the actual updater version, **0.23.0**. It retains the LLVM extraction fix from v0.22, automatic updates from v0.21 and the v0.20 compiler-selection fix. The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
 
+v0.23 also keeps the verified compatible Clang ahead of shared CMake/Ninja directories after importing the Visual Studio environment. This fixes a reproduced case where an incompatible Clang in a reused tool directory hid the selected compiler. Final tool checks now report selected paths and identify incompatible tools.
+
 [Download v0.23](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.23) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
 **Epic sign-in update — November 7, 2026:** If you downloaded the game and saw **Application Access Is Restricted**, Epic's application-access restriction likely prevented your account from signing in. The project owner reports that the RedBaron_Recomp brand is now published in Epic Account Services, so previously affected players are encouraged to try again. Close and reopen the game, then retry Epic sign-in. Successful sign-in with an account outside the developer organization still needs player confirmation. See [details and reporting steps](docs/EOS.md#epic-sign-in-update--november-7-2026).
