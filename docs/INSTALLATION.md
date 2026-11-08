@@ -114,7 +114,7 @@ Use the game's **FlyingAce** control preset. **W/A/S/D** navigate, **Space** con
 
 For controller plus keyboard in local play, select **Exclusive player 2** for the keyboard and keep player 1 on the controller. Save, restart and join through the local menu. Two native split-screen cameras are supported.
 
-Sign in to Epic when prompted for online features. Create a public Player Match or use Quick Game / Custom Match to find compatible hosts. Private matches use Epic invitations; RT in the hangar/lobby opens friends, and **Shift+F3** opens the Epic overlay. Co-op has its own two-player category. No room-server address is needed. Public Epic account access has restrictions; see [Online](EOS.md). Offline play remains available when authentication is unavailable.
+Sign in to Epic when prompted for online features. Create a public Player Match or use Quick Game / Custom Match to find compatible hosts. Private matches use Epic invitations; RT in the hangar/lobby opens friends, and **Shift+F3** opens the Epic overlay. Co-op has its own two-player category. No room-server address is needed. For the November 7 Epic access update and retry instructions, see [Online](EOS.md#epic-sign-in-update--november-7-2026). Offline play remains available when authentication is unavailable.
 
 ## Where your files and logs are kept
 
@@ -131,6 +131,7 @@ Successful installation removes owned temporary compilation files and keeps reus
 
 ## Troubleshooting and reporting a problem
 
+- **Epic sign-in: Application Access Is Restricted:** the project's Epic application-access restriction likely affected external accounts. The owner reports the RedBaron_Recomp brand is now published. Close and reopen the game and retry sign-in; a working installation does not need reinstalling for this service-side update. External-account success still needs player confirmation. See the [Epic sign-in update](EOS.md#epic-sign-in-update--november-7-2026) to report success or a continuing failure.
 - **LLVM extraction error mentioning `xz -d -qq` in an older installer:** use the **v0.22** standard or offline installer in a **new, empty installation folder**. v0.22 extracts LLVM with CMake and does not require external `tar` or `xz` for that step. Keep the failed installation and its log for diagnosis. You cannot update an installation that never finished.
 - **Compilation failed in v0.10:** use the v0.22 installer in a new empty destination. It includes the v0.20 fix for incompatible Clang selection, including errors mentioning `std::chrono::clock_time_conversion`.
 - **Update selected installation is missing:** open the extracted **full v0.22 installer**, select **Install > Use existing installation…**, choose the folder containing `game` and `build_cpp_release`, and return to **Update**. The lightweight installed launcher uses **Download and install update** for newer releases instead.

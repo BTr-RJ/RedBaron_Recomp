@@ -14,7 +14,21 @@ Epic Online Services supplies lobby discovery and P2P transport, with relay fall
 
 Epic Account Services provides login, friends and presence; EOS Connect supplies gameplay product-user identity. Basic Profile, Friends and Presence must be enabled and the same GameClient linked to the application. The official overlay/redistributable is included in the installation workflow.
 
-**Public-access limitation:** brand review / authorization for arbitrary external Epic accounts has not been verified. Until approved, login or social features may be restricted to organization members and authorized test accounts. Code cannot bypass Epic access checks. Offline play remains available after authentication failure.
+### Epic sign-in update — November 7, 2026
+
+A player reported **Application Access Is Restricted** during Epic sign-in. Other players who downloaded the game may have encountered the same restriction, especially when using accounts outside the developer organization or its authorized testers. This is the likely explanation for that specific message; it does not establish the cause of every sign-in failure.
+
+Epic requires an approved brand review before an application using Epic Account Services can authenticate general public accounts. See Epic's [brand review documentation](https://dev.epicgames.com/docs/epic-online-services/accounts-and-social/eos-epic-account-services/brand-review).
+
+The project owner reports that the RedBaron_Recomp brand is now published in Epic Account Services. Previously affected accounts are therefore expected to be able to retry public sign-in, but **successful external-account sign-in has not yet been confirmed**. This service-side status update does not require a new game build or a reinstall of an otherwise working installation, and does not establish that every online feature works.
+
+If you were affected:
+
+1. Close and reopen the game, then try Epic sign-in again with your own account.
+2. Report whether sign-in succeeds through [GitHub Issues](https://github.com/BTr-RJ/RedBaron_Recomp/issues). Mention your game version and whether you previously saw **Application Access Is Restricted**; never post your account credentials.
+3. If it still fails, include the exact error, when it occurred and a redacted log from **Update > Open logs folder**. Remove tokens and personal information; do not upload `eos/config.ini` or game files.
+
+Code cannot bypass Epic access checks. Offline play remains available after authentication failure. Sign-in, friends/overlay, matchmaking and a completed multiplayer session are separate validation steps; successful sign-in alone does not confirm them all.
 
 Local configuration is `eos/config.ini` beside the game. A release may distribute the player GameClient configuration required by EOS; that client must require a signed-in user and have only player permissions. Never put TrustedServer or administrative credentials in a game. Do not post local configuration or token-bearing logs in issues.
 

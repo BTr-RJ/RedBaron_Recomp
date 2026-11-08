@@ -6,6 +6,8 @@ A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built 
 
 [Download v0.22](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.22) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
+**Epic sign-in update — November 7, 2026:** If you downloaded the game and saw **Application Access Is Restricted**, Epic's application-access restriction likely prevented your account from signing in. The project owner reports that the RedBaron_Recomp brand is now published in Epic Account Services, so previously affected players are encouraged to try again. Close and reopen the game, then retry Epic sign-in. Successful sign-in with an account outside the developer organization still needs player confirmation. See [details and reporting steps](docs/EOS.md#epic-sign-in-update--november-7-2026).
+
 | Start here | Instructions |
 |---|---|
 | First installation, or an earlier installation failed | [Install v0.22 into a new empty folder](docs/INSTALLATION.md#install-the-game-or-retry-a-failed-installation) |
@@ -51,7 +53,7 @@ This manual extraction is needed once to move from the old launcher. From v0.21 
 A clean Windows 11 installation and an Internet lobby/flight between two PCs have been exercised. This does **not** establish complete coverage of every mode, eight simultaneous human players, invitation acceptance, end-of-round statistics or achievement synchronization.
 
 - Four configurable controller profiles do not enable four cameras. **Four-player local play is not implemented.**
-- Friends/overlay require Epic Account Services authorization. Public access/brand review has not been verified; accounts outside the developer organization or approved test accounts may be restricted. Sign-in failures do not prevent offline play.
+- Friends/overlay require Epic Account Services authorization. The project owner reports the RedBaron_Recomp brand is now published; successful sign-in by external accounts and the full online flow still need player confirmation. See the [Epic sign-in update](docs/EOS.md#epic-sign-in-update--november-7-2026). Sign-in failures do not prevent offline play.
 - Temporal upscaling may show HUD shimmer, ghosting and moving-object artifacts. HUD separation and full object motion vectors remain unfinished. Bilinear, FSR 1 or CAS provide alternatives.
 - Leaderboard writes, friend filters, full pagination and weekly rollover need gameplay testing. Weekly periods require service-side administration. Historic Xbox Live scores are not imported.
 - Only Windows x64 is supported. Linux, Android and cross-platform play are future work.
