@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][Alias('EosConfig')][string]$EosClientConfig,
     [string]$OutputDirectory='', [string]$OfflineToolsRoot='', [string]$BuildDirectory=''
@@ -27,6 +27,7 @@ foreach($name in @('RedBaron_Launcher.exe','RedBaron_Launcher.exe.config')){
 }
 $guide=[IO.File]::ReadAllText((Join-Path $root 'docs/INSTALLATION.md'))
 $guide=$guide.Replace('(../port/config/CONTROLS.txt)','(https://github.com/BTr-RJ/RedBaron_Recomp/blob/main/port/config/CONTROLS.txt)').Replace('(EOS.md)','(https://github.com/BTr-RJ/RedBaron_Recomp/blob/main/docs/EOS.md)')
+$guide=$guide.Replace('(EOS.md#','(https://github.com/BTr-RJ/RedBaron_Recomp/blob/main/docs/EOS.md#')
 [IO.File]::WriteAllText((Join-Path $folder 'INSTALLATION.md'),$guide)
 Copy-Item -LiteralPath (Join-Path $root 'CREDITS.md') -Destination $folder -Force
 if($OfflineToolsRoot) {

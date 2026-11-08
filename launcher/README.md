@@ -11,4 +11,6 @@ A Windows WPF/.NET Framework 4.8 launcher/installer with an English interface.
 
 See [Installation](../docs/INSTALLATION.md) and [Building](../docs/BUILDING.md). Full installers embed authored source/SDK payloads; installed lightweight launchers omit them. Original assets, generated C++ and personal login caches are not embedded.
 
-The current release is **v0.22**. An installed v0.21 launcher can download and install it through **Update > Check for updates > Download and install update**. Checking alone does not start installation.
+The current release is **v0.23**. An installed v0.21 or v0.22 launcher can download and install it through **Update > Check for updates > Download and install update**. Checking alone does not start installation.
+
+The update screen reads its version from the updater itself. v0.23 fixes the original v0.22 label, which incorrectly displayed 0.21.

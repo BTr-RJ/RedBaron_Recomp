@@ -2,22 +2,22 @@
 
 A native Windows x64 recompilation of **Snoopy Flying Ace** for Xbox 360, built with ReXGlue/ReXAuto.
 
-**v0.22 is a public testing release.** It fixes LLVM extraction on PCs where `tar.exe` requires an unavailable external `xz` program. The fix was confirmed by the player who reported the installation failure. It keeps automatic updates from v0.21 and the v0.20 compiler-selection fix. The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
+**v0.23 is a public testing release.** It fixes the launcher version display: the original v0.22 showed **0.21** even though its updater already used **0.22.0**. The version label now follows the actual updater version, **0.23.0**. It retains the LLVM extraction fix from v0.22, automatic updates from v0.21 and the v0.20 compiler-selection fix. The installer builds the game locally from files you supply. No original game files or DLCs are distributed here.
 
-[Download v0.22](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.22) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
+[Download v0.23](https://github.com/BTr-RJ/RedBaron_Recomp/releases/tag/v0.23) | [Step-by-step guide](docs/INSTALLATION.md) | [Report a problem](https://github.com/BTr-RJ/RedBaron_Recomp/issues)
 
 **Epic sign-in update — November 7, 2026:** If you downloaded the game and saw **Application Access Is Restricted**, Epic's application-access restriction likely prevented your account from signing in. The project owner reports that the RedBaron_Recomp brand is now published in Epic Account Services, so previously affected players are encouraged to try again. Close and reopen the game, then retry Epic sign-in. Successful sign-in with an account outside the developer organization still needs player confirmation. See [details and reporting steps](docs/EOS.md#epic-sign-in-update--november-7-2026).
 
 | Start here | Instructions |
 |---|---|
-| First installation, or an earlier installation failed | [Install v0.22 into a new empty folder](docs/INSTALLATION.md#install-the-game-or-retry-a-failed-installation) |
-| Working v0.10/v0.20 installation | [One-time migration to v0.22](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v022) |
+| First installation, or an earlier installation failed | [Install v0.23 into a new empty folder](docs/INSTALLATION.md#install-the-game-or-retry-a-failed-installation) |
+| Working v0.10/v0.20 installation | [One-time migration to v0.23](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v023) |
 | Working v0.21 or newer installation | [Download and install from the new launcher](docs/INSTALLATION.md#install-future-updates-from-v021-onward) |
 | Add your own DLCs | [DLC installation steps](docs/INSTALLATION.md#add-dlcs-to-an-installed-game) |
 
 ## Install and play
 
-1. Download **RedBaron_Recomp-v0.22-windows-x64.zip** and use **Extract All**. Choose the larger **offline** ZIP for bundled build tools; both contain the same port. Keep the offline **Tools** folder beside its launcher.
+1. Download **RedBaron_Recomp-v0.23-windows-x64.zip** and use **Extract All**. Choose the larger **offline** ZIP for bundled build tools; both contain the same port. Keep the offline **Tools** folder beside its launcher.
 2. Open **RedBaron_Launcher.exe**. In **Install**, select your extracted game folder / `default.xex`, or the compatible original Xbox 360 content package (including packages without an extension).
 3. Optionally select your **DLC files** folder. Select a new, empty installation folder and click **Install**. Missing tools are detected and downloaded, or installed from the offline package. Allow the Microsoft installer elevation prompt if requested.
 4. Wait for extraction, code generation and compilation. Successful installation removes temporary build files and preserves reusable tools, saves and logs.
@@ -29,11 +29,11 @@ See the [full installation guide](docs/INSTALLATION.md) for requirements, contro
 
 ## Updating an existing game
 
-If you already use **v0.21**, close the game, open the installed launcher and select **Update > Check for updates > Download and install update**. The updater downloads v0.22, verifies it, rebuilds and installs the new components, then reopens the launcher. No manual ZIP extraction is needed. Checking alone does not start the download.
+If you already use **v0.21 or v0.22**, close the game, open the installed launcher and select **Update > Check for updates > Download and install update**. The updater downloads v0.23, verifies it, rebuilds and installs the new components, then reopens the launcher. No manual ZIP extraction is needed. Checking alone does not start the download.
 
-The v0.10/v0.20 updater can find and download v0.22 after **Check for updates > Download update**. Close the old launcher, extract the new ZIP into a separate folder and open its launcher. Select **Install > Use existing installation…**, choose your installed game folder (the one containing `game` and `build_cpp_release`), then select **Update > Update selected installation**. Wait for the updater to finish and reopen the installed launcher. Your installed game files, saves, settings and DLCs are kept.
+The v0.10/v0.20 updater can find and download v0.23 after **Check for updates > Download update**. Close the old launcher, extract the new ZIP into a separate folder and open its launcher. Select **Install > Use existing installation…**, choose your installed game folder (the one containing `game` and `build_cpp_release`), then select **Update > Update selected installation**. Wait for the updater to finish and reopen the installed launcher. Your installed game files, saves, settings and DLCs are kept.
 
-This manual extraction is needed once to move from the old launcher. From v0.21 onward, **Update > Download and install update** prepares and applies future releases automatically after you click it. Checking alone does not start a download. If your original installation failed, use a new empty destination for v0.22 instead. See the [full migration steps](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v022).
+This manual extraction is needed once to move from the old launcher. From v0.21 onward, **Update > Download and install update** prepares and applies future releases automatically after you click it. Checking alone does not start a download. If your original installation failed, use a new empty destination for v0.23 instead. See the [full migration steps](docs/INSTALLATION.md#move-a-working-v010-or-v020-installation-to-v023).
 
 ## Features
 
@@ -57,6 +57,8 @@ A clean Windows 11 installation and an Internet lobby/flight between two PCs hav
 - Temporal upscaling may show HUD shimmer, ghosting and moving-object artifacts. HUD separation and full object motion vectors remain unfinished. Bilinear, FSR 1 or CAS provide alternatives.
 - Leaderboard writes, friend filters, full pagination and weekly rollover need gameplay testing. Weekly periods require service-side administration. Historic Xbox Live scores are not imported.
 - Only Windows x64 is supported. Linux, Android and cross-platform play are future work.
+
+The version-display defect does not establish the cause of every reported update-check failure.
 
 Read [Online](docs/EOS.md), [Multiplayer](docs/MULTIPLAYER.md), [Video](docs/VIDEO.md) and [Leaderboards](docs/LEADERBOARDS.md). Report reproducible problems through [Issues](https://github.com/BTr-RJ/RedBaron_Recomp/issues), with version, hardware and a redacted log. Do not attach game files, EOS configuration or authentication data.
 
