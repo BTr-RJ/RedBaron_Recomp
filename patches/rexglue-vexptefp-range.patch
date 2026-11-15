@@ -1,0 +1,86 @@
+diff --git a/src/codegen/builders/vector.cpp b/src/codegen/builders/vector.cpp
+index cbdd7f7..7e44702 100644
+--- a/src/codegen/builders/vector.cpp
++++ b/src/codegen/builders/vector.cpp
+@@ -148,10 +148,14 @@ bool build_vexptefp(BuilderContext& ctx) {
+   ctx.emit_set_flush_mode(true);
+   ctx.println("\t{{");
+   ctx.println("\t\tsimde__m128 x = simde_mm_load_ps({}.f32);", vA);
++  // Keep the exponent construction in range; NaN lanes are restored after the estimate.
+   ctx.println(
+-      "\t\tsimde__m128 n = simde_mm_round_ps(x, "
++      "\t\tsimde__m128 xc = simde_mm_min_ps(simde_mm_max_ps(x, simde_mm_set1_ps(-127.0f)), "
++      "simde_mm_set1_ps(128.0f));");
++  ctx.println(
++      "\t\tsimde__m128 n = simde_mm_round_ps(xc, "
+       "SIMDE_MM_FROUND_TO_NEG_INF | SIMDE_MM_FROUND_NO_EXC);");
+-  ctx.println("\t\tsimde__m128 f = simde_mm_sub_ps(x, n);");
++  ctx.println("\t\tsimde__m128 f = simde_mm_sub_ps(xc, n);");
+   // 4th-order minimax polynomial for 2^f, f in [0,1), ~12-bit accuracy
+   ctx.println("\t\tsimde__m128 p = simde_mm_set1_ps(1.8775767e-3f);");
+   ctx.println("\t\tp = simde_mm_add_ps(simde_mm_mul_ps(p, f), simde_mm_set1_ps(8.9893397e-3f));");
+@@ -162,10 +166,20 @@ bool build_vexptefp(BuilderContext& ctx) {
+   // Construct 2^n by adding n to the IEEE 754 exponent bias and shifting into place
+   ctx.println("\t\tsimde__m128i exp_bits = simde_mm_slli_epi32(");
+   ctx.println("\t\t\tsimde_mm_add_epi32(simde_mm_cvttps_epi32(n), simde_mm_set1_epi32(127)), 23);");
++  ctx.println("\t\tsimde__m128 r = simde_mm_mul_ps(p, simde_mm_castsi128_ps(exp_bits));");
++  // PowerPC semantics: underflow -> +0, overflow/+Inf -> +Inf, NaN -> NaN.
++  // The underflow cut is -127, not -126: for x in [-127,-126) the biased exponent is 0, so the
++  // product above is already +0 (2^x < FLT_MIN is flushed); only n <= -128 builds a negative
++  // exponent field (-Inf / huge negative). x = -126 itself must stay FLT_MIN.
++  ctx.println("\t\tsimde__m128 lo = simde_mm_cmplt_ps(x, simde_mm_set1_ps(-127.0f));");
++  ctx.println("\t\tsimde__m128 hi = simde_mm_cmpge_ps(x, simde_mm_set1_ps(128.0f));");
++  ctx.println("\t\tsimde__m128 nn = simde_mm_cmpunord_ps(x, x);");
++  ctx.println("\t\tr = simde_mm_andnot_ps(lo, r);");
+   ctx.println(
+-      "\t\tsimde_mm_store_ps({}.f32, "
+-      "simde_mm_mul_ps(p, simde_mm_castsi128_ps(exp_bits)));",
+-      vD);
++      "\t\tr = simde_mm_or_ps(simde_mm_and_ps(hi, simde_mm_set1_ps(__builtin_inff())), "
++      "simde_mm_andnot_ps(hi, r));");
++  ctx.println("\t\tr = simde_mm_or_ps(simde_mm_and_ps(nn, x), simde_mm_andnot_ps(nn, r));");
++  ctx.println("\t\tsimde_mm_store_ps({}.f32, r);", vD);
+   ctx.println("\t}}");
+   return true;
+ }
+diff --git a/tests/ppc/asm/instr_vexptefp.s b/tests/ppc/asm/instr_vexptefp.s
+index ae85683..754951a 100644
+--- a/tests/ppc/asm/instr_vexptefp.s
++++ b/tests/ppc/asm/instr_vexptefp.s
+@@ -4,3 +4,36 @@ test_vexptefp_1:
+   blr
+   #_ REGISTER_OUT v3 [40000000, 40400000, 40800000, 40A00000]
+   #_ REGISTER_OUT v4 [40800000, 41000000, 41800000, 42000000]
++
++# Underflow: -Inf, -200, -128 and -127 all give +0 (the old translation gave NaN, huge
++# negative values and -Inf for these).
++test_vexptefp_underflow:
++  #_ REGISTER_IN v3 [FF800000, C3480000, C3000000, C2FE0000]
++  vexptefp v4, v3
++  blr
++  #_ REGISTER_OUT v3 [FF800000, C3480000, C3000000, C2FE0000]
++  #_ REGISTER_OUT v4 [00000000, 00000000, 00000000, 00000000]
++
++# Edge of the normal range: 2^-126 = FLT_MIN, 2^127, then overflow to +Inf at 128 and 129.
++test_vexptefp_range_edges:
++  #_ REGISTER_IN v3 [C2FC0000, 42FE0000, 43000000, 43010000]
++  vexptefp v4, v3
++  blr
++  #_ REGISTER_OUT v3 [C2FC0000, 42FE0000, 43000000, 43010000]
++  #_ REGISTER_OUT v4 [00800000, 7F000000, 7F800000, 7F800000]
++
++# +Inf and large positive overflow to +Inf; -0 and +0 give 1.0.
++test_vexptefp_overflow:
++  #_ REGISTER_IN v3 [7F800000, 43480000, 80000000, 00000000]
++  vexptefp v4, v3
++  blr
++  #_ REGISTER_OUT v3 [7F800000, 43480000, 80000000, 00000000]
++  #_ REGISTER_OUT v4 [7F800000, 7F800000, 3F800000, 3F800000]
++
++# NaN stays NaN; ordinary lanes next to it are unaffected (-5, 1, -256).
++test_vexptefp_nan_and_lanes:
++  #_ REGISTER_IN v3 [7FC00000, C0A00000, 3F800000, C3800000]
++  vexptefp v4, v3
++  blr
++  #_ REGISTER_OUT v3 [7FC00000, C0A00000, 3F800000, C3800000]
++  #_ REGISTER_OUT v4 [7FC00000, 3D000000, 40000000, 00000000]

@@ -107,6 +107,15 @@ try {
     $languagePatch=Join-Path $project 'patches/rexglue-language-selection.patch'
     Native 'git' @('apply','--check','--ignore-space-change',$languagePatch)
     Native 'git' @('apply','--ignore-space-change',$languagePatch)
+    $vexptefpPatch=Join-Path $project 'patches/rexglue-vexptefp-range.patch'
+    & git apply --check --quiet --ignore-space-change $vexptefpPatch
+    if($LASTEXITCODE -eq 0) {
+        Native 'git' @('apply','--ignore-space-change',$vexptefpPatch)
+    } else {
+        & git apply --reverse --check --quiet --ignore-space-change $vexptefpPatch
+        if($LASTEXITCODE -ne 0){throw 'SDK vexptefp codegen differs from the pinned base and cannot be patched safely.'}
+        Write-Output 'SDK vexptefp patch is already present.'
+    }
     if($Fsr315) {
         $stabilityPatch=Join-Path $project 'patches/rexglue-temporal-stability.patch'
         Native 'git' @('apply','--check','--ignore-space-change',$stabilityPatch)

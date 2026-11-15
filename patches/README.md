@@ -16,6 +16,7 @@
 | rexglue-eos-matchmaking | Native Quick Game and compatible filters |
 | rexglue-native-leaderboards | Stats/ranking enumerator and provider ABI |
 | rexglue-language-selection | Configured XGetLanguage result |
+| rexglue-vexptefp-range | PowerPC `vexptefp` range handling (underflow to 0, overflow/+Inf to +Inf, NaN preserved); fixes NaN/Inf audio corruption. Includes the `instr_vexptefp.s` boundary test; apply after the codegen patch |
 | rexglue-temporal-stability | Optional history/resource and stable sampling fixes |
 
 Filenames use `.patch`. The historical standalone `rexglue-snoopy-fallback-v2.patch` is already included in the complete codegen patch; do not apply both. That fallback is specific to verified addresses/grouping in this title.
